@@ -1,5 +1,6 @@
 ﻿import { google } from 'googleapis'
 import { getSiteName } from '@/lib/site-config'
+import { getGoogleOAuthCredentials } from '@/lib/google-oauth-config'
 
 function getFolderName(email: string) {
   return `Ghi Chú - ${email} - ${getSiteName()}`
@@ -7,10 +8,12 @@ function getFolderName(email: string) {
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'
 
-function getOAuth2Client(redirectUri: string) {
+async function getOAuth2Client(redirectUri: string) {
+  const credentials = await getGoogleOAuthCredentials()
+  if (!credentials) throw new Error('Google OAuth is not configured')
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
+    credentials.clientId,
+    credentials.clientSecret,
     redirectUri,
   )
 }
@@ -19,8 +22,8 @@ function buildRedirectUri(baseUrl: string) {
   return `${baseUrl}/api/drive/callback`
 }
 
-export function getDriveAuthUrl(baseUrl: string) {
-  const oauth2 = getOAuth2Client(buildRedirectUri(baseUrl))
+export async function getDriveAuthUrl(baseUrl: string) {
+  const oauth2 = await getOAuth2Client(buildRedirectUri(baseUrl))
   return oauth2.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -29,14 +32,14 @@ export function getDriveAuthUrl(baseUrl: string) {
 }
 
 export async function exchangeCodeForTokens(code: string, baseUrl: string) {
-  const oauth2 = getOAuth2Client(buildRedirectUri(baseUrl))
+  const oauth2 = await getOAuth2Client(buildRedirectUri(baseUrl))
   const { tokens } = await oauth2.getToken(code)
   return tokens
 }
 
 export async function getDriveUserEmail(refreshToken: string): Promise<string | null> {
   try {
-    const oauth2 = getOAuth2Client('')
+    const oauth2 = await getOAuth2Client('')
     oauth2.setCredentials({ refresh_token: refreshToken })
     const oauth2Api = google.oauth2({ version: 'v2', auth: oauth2 })
     const info = await oauth2Api.userinfo.get()
@@ -46,8 +49,8 @@ export async function getDriveUserEmail(refreshToken: string): Promise<string | 
   }
 }
 
-function getDriveClient(refreshToken: string) {
-  const oauth2 = getOAuth2Client('')
+async function getDriveClient(refreshToken: string) {
+  const oauth2 = await getOAuth2Client('')
   oauth2.setCredentials({ refresh_token: refreshToken })
   return google.drive({ version: 'v3', auth: oauth2 })
 }
@@ -57,7 +60,7 @@ export async function getOrCreateDriveFolder(
   email: string,
   existingFolderId?: string | null,
 ): Promise<string> {
-  const drive = getDriveClient(refreshToken)
+  const drive = await getDriveClient(refreshToken)
   const folderName = getFolderName(email)
 
   // Try existing folder first
@@ -105,7 +108,7 @@ export async function createDriveFile(
   title: string,
   content: string,
 ): Promise<string> {
-  const drive = getDriveClient(refreshToken)
+  const drive = await getDriveClient(refreshToken)
   const file = await drive.files.create({
     requestBody: { name: safeName(title), parents: [folderId] },
     media: { mimeType: 'text/plain', body: buildFileContent(title, content) },
@@ -120,7 +123,7 @@ export async function updateDriveFile(
   title: string,
   content: string,
 ): Promise<void> {
-  const drive = getDriveClient(refreshToken)
+  const drive = await getDriveClient(refreshToken)
   await drive.files.update({
     fileId,
     requestBody: { name: safeName(title) },
@@ -133,7 +136,7 @@ export async function getOrCreateSubFolder(
   parentFolderId: string,
   subFolderName: string,
 ): Promise<string> {
-  const drive = getDriveClient(refreshToken)
+  const drive = await getDriveClient(refreshToken)
 
   const search = await drive.files.list({
     q: `name='${subFolderName}' and mimeType='application/vnd.google-apps.folder' and '${parentFolderId}' in parents and trashed=false`,
@@ -161,7 +164,7 @@ export async function moveFileBetweenFolders(
   fileId: string,
   toFolderId: string,
 ): Promise<void> {
-  const drive = getDriveClient(refreshToken)
+  const drive = await getDriveClient(refreshToken)
   const fileInfo = await drive.files.get({ fileId, fields: 'parents' })
   const currentParents = fileInfo.data.parents?.join(',') || ''
   await drive.files.update({

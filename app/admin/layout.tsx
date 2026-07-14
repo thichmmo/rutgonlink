@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   Activity,
+  Chrome,
   CreditCard,
   ExternalLink,
   Film,
@@ -31,6 +32,7 @@ const navItems: Array<{
   { href: '/admin/logs', label: 'Request Logs', icon: ExternalLink, permission: 'logs.read' },
   { href: '/admin/audit', label: 'Audit Logs', icon: ScrollText, permission: 'logs.read' },
   { href: '/admin/system', label: 'System Health', icon: ServerCog, permission: 'system.read' },
+  { href: '/admin/oauth', label: 'Google OAuth', icon: Chrome, permission: 'system.read' },
   { href: '/admin/facebook-token', label: 'Facebook Token', icon: KeyRound, permission: 'system.read' },
   { href: '/admin/phim', label: 'Web Phim', icon: Film, permission: 'system.read' },
 ]

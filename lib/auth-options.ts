@@ -3,27 +3,25 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
 import { prisma } from './prisma'
 import bcrypt from 'bcryptjs'
+import {
+  getEnvironmentGoogleOAuthCredentials,
+  getGoogleOAuthCredentials,
+  type GoogleOAuthCredentials,
+} from '@/lib/google-oauth-config'
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 // 30 ngày tính bằng giây
 const isProduction = process.env.NODE_ENV === 'production'
-const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim()
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim()
-const isGoogleAuthConfigured = Boolean(googleClientId && googleClientSecret)
 
-if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
-  console.error('[auth] err google oauth config incomplete')
-}
-
-export const authOptions: NextAuthOptions = {
+export const buildAuthOptions = (googleOAuth: GoogleOAuthCredentials | null): NextAuthOptions => ({
   providers: [
-    // Google OAuth — requires GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in .env
-    ...(isGoogleAuthConfigured
-      ? [
-          GoogleProvider({
-            clientId: googleClientId!,
-            clientSecret: googleClientSecret!,
-          }),
-        ]
+      // Cấu hình DB từ admin được ưu tiên; biến môi trường là fallback an toàn.
+      ...(googleOAuth
+        ? [
+            GoogleProvider({
+              clientId: googleOAuth.clientId,
+              clientSecret: googleOAuth.clientSecret,
+            }),
+          ]
       : []),
 
     CredentialsProvider({
@@ -174,4 +172,9 @@ export const authOptions: NextAuthOptions = {
       })
     },
   },
-}
+})
+
+// Các getServerSession chỉ cần callbacks/JWT; auth route dùng bản động bên dưới.
+export const authOptions = buildAuthOptions(getEnvironmentGoogleOAuthCredentials())
+
+export const getDynamicAuthOptions = async () => buildAuthOptions(await getGoogleOAuthCredentials())

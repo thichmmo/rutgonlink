@@ -27,14 +27,16 @@ https://your-domain.com/api/auth/callback/google
 https://your-domain.com/api/drive/callback
 ```
 
-4. Khai báo trên hosting rồi restart app:
+4. Đăng nhập owner và nhập Client ID/Secret tại `/admin/oauth`. Secret được mã hóa trong database và có hiệu lực ngay cho đăng nhập Google lẫn Google Drive.
+
+Biến môi trường vẫn được hỗ trợ làm fallback khi chưa có cấu hình trong admin:
 
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-Google chỉ xuất hiện trên trang đăng nhập/đăng ký khi máy chủ đã nhận đủ hai biến. Kiểm tra nhanh `GET /api/auth/providers`; response phải có provider `google`.
+Google chỉ xuất hiện trên trang đăng nhập/đăng ký khi có đủ credentials từ admin hoặc environment. Kiểm tra nhanh `GET /api/auth/providers`; response phải có provider `google`.
 
 SePay webhook yêu cầu cấu hình `SEPAY_WEBHOOK_SECRET` trên hosting và gửi cùng giá trị bằng `Authorization: Bearer ...` hoặc header `x-sepay-secret`.
 

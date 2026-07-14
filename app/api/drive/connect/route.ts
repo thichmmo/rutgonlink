@@ -11,6 +11,6 @@ export async function GET() {
   }
 
   const origin = getSiteUrl()
-  const url = getDriveAuthUrl(origin)
+  const url = await getDriveAuthUrl(origin)
   return NextResponse.json({ url })
 }

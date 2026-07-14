@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/admin-auth'
 import { recordAdminAudit } from '@/lib/admin-audit'
 import { buildSiteUrl, getSiteHostname } from '@/lib/site-config'
+import { getGoogleOAuthStatus } from '@/lib/google-oauth-config'
 
 const cleanupSchema = z.object({
   action: z.literal('cleanup-logs'),
@@ -24,7 +25,8 @@ export async function GET() {
     database = { ok: false, latencyMs: Date.now() - startedAt, message: String(error) }
   }
 
-  const [lastCron, lastWebhook, failedJobs, pendingJobs, unresolvedPayments, recentErrors] = await Promise.all([
+  const [googleOAuth, lastCron, lastWebhook, failedJobs, pendingJobs, unresolvedPayments, recentErrors] = await Promise.all([
+    getGoogleOAuthStatus(),
     prisma.systemEvent.findFirst({ where: { type: 'cron' }, orderBy: { createdAt: 'desc' } }),
     prisma.systemEvent.findFirst({ where: { type: 'payment_webhook' }, orderBy: { createdAt: 'desc' } }),
     prisma.fbDebugJob.count({ where: { status: 'failed' } }),
@@ -42,7 +44,7 @@ export async function GET() {
     app: {
       hostname: getSiteHostname(),
       nodeEnv: process.env.NODE_ENV || 'development',
-      googleOAuth: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+        googleOAuth: googleOAuth.configured,
       googleCallback: buildSiteUrl('/api/auth/callback/google'),
       driveCallback: buildSiteUrl('/api/drive/callback'),
       cronSecret: Boolean(process.env.CRON_SECRET),
