@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.next
+.git
+.gitignore
+.env.local
+.env
+.DS_Store
+*.md
+.gitlab-ci.yml
+Dockerfile
+.eslintignore

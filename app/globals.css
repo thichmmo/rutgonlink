@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* ── Brand colour override: remap Tailwind "blue" → brand green #00A800 ── */
+@theme {
+  --color-blue-50:  #f0fff2;
+  --color-blue-100: #dcfede;
+  --color-blue-200: #b9fdc0;
+  --color-blue-300: #87f58e;
+  --color-blue-400: #4de855;
+  --color-blue-500: #22cc27;
+  --color-blue-600: #00a800;
+  --color-blue-700: #008800;
+  --color-blue-800: #006c00;
+  --color-blue-900: #005200;
+  --color-blue-950: #002d00;
+}
+
+:root {
+  --primary: #00a800;
+  --primary-dark: #008800;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}

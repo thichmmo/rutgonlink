@@ -1,0 +1,499 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id                      String            @id @default(cuid())
+  email                   String            @unique
+  password                String?
+  name                    String?
+  plan                    String            @default("free")
+  planExpiresAt           DateTime?
+  apiKey                  String?           @unique
+  googleDriveRefreshToken String?           @db.Text
+  googleDriveEmail        String?
+  googleDriveFolderId     String?
+  fbDebugIntervalMinutes  Int               @default(20)
+  fbDebugMinClicksPerDay  Int               @default(0)
+  fbDebugAllActiveLinks   Boolean           @default(false)
+  fbDebugDailyAllActiveLinks Boolean         @default(false)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  domains                 Domain[]
+  links                   Link[]
+  notes                   Note[]
+  noteShares              NoteShare[]
+  noteFolders             NoteFolder[]
+  categories              Category[]
+  bioPages                BioPage[]
+  ownedWorkspaces         Workspace[]       @relation("OwnedWorkspaces")
+  workspaceMembers        WorkspaceMember[]
+  subscriptions           Subscription[]
+  payments                Payment[]
+  linkFolders             LinkFolder[]
+  fbTokens                FbToken[]
+  folderGroups            FolderGroup[]
+  fbDebugJobs             FbDebugJob[]
+}
+
+model Subscription {
+  id        String    @id @default(cuid())
+  userId    String
+  plan      String
+  period    String
+  status    String    @default("pending")
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments  Payment[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  transactionID  String?       @unique
+  amount         Int
+  content        String        @unique
+  status         String        @default("pending")
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId])
+  @@index([content])
+  @@index([transactionID])
+}
+
+model NoteFolder {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String   @default("#6366f1")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes     Note[]
+
+  @@index([userId])
+}
+
+model Note {
+  id             String      @id @default(cuid())
+  userId         String
+  folderId       String?
+  title          String
+  content        String      @db.LongText
+  starred        Boolean     @default(false)
+  pinned         Boolean     @default(false)
+  isPublic       Boolean     @default(false)
+  publicToken    String?     @unique
+  publicPassword String?
+  driveFileId    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder         NoteFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  shares         NoteShare[]
+
+  @@index([userId])
+  @@index([folderId])
+}
+
+model NoteShare {
+  id         String   @id @default(cuid())
+  noteId     String
+  userId     String
+  permission String   @default("viewer")
+  createdAt  DateTime @default(now())
+  note       Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, userId])
+  @@index([userId])
+  @@index([noteId])
+}
+
+model Domain {
+  id        String   @id @default(cuid())
+  userId    String
+  domain    String   @unique
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links     Link[]
+
+  @@index([userId], map: "Domain_userId_fkey")
+}
+
+model Link {
+  id              String         @id @default(cuid())
+  userId          String
+  domainId        String?
+  categoryId      String?
+  workspaceId     String?
+  shortCode       String         @unique
+  originalUrl     String         @db.Text
+  title           String?
+  sharedDomain    String?
+  password        String?
+  expiresAt       DateTime?
+  maxClicks       Int?
+  isActive        Boolean        @default(true)
+  isArchived      Boolean        @default(false)
+  ogEnabled       Boolean        @default(true)
+  ogAutoReset     Boolean        @default(false)
+  ogTitle         String?
+  ogDescription   String?        @db.Text
+  ogImage         String?        @db.LongText
+  deepLinkIos     String?        @db.Text
+  deepLinkAndroid String?        @db.Text
+  lastFbDebug            DateTime?
+  ogScheduledDisableAt   DateTime?
+  clickResetAt           DateTime?
+  useFolderRotation      Boolean        @default(false)
+  folderRotationStartDate DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  clicks          Click[]
+  countryRules    CountryRule[]
+  deviceRules     DeviceRule[]
+  languageRules   LanguageRule[]
+  folderAssignments LinkFolderAssignment[]
+  fbDebugJobItems  FbDebugJobItem[]
+  domain          Domain?        @relation(fields: [domainId], references: [id])
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category        Category?      @relation(fields: [categoryId], references: [id])
+  workspace       Workspace?     @relation(fields: [workspaceId], references: [id])
+
+  @@index([domainId], map: "Link_domainId_fkey")
+  @@index([userId], map: "Link_userId_fkey")
+  @@index([categoryId])
+  @@index([workspaceId])
+}
+
+model FolderGroup {
+  id        String       @id @default(cuid())
+  userId    String
+  name      String
+  order     Int
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders   LinkFolder[]
+  categories Category[]
+
+  @@index([userId])
+}
+
+model LinkFolder {
+  id            String       @id @default(cuid())
+  userId        String
+  folderGroupId String?
+  name          String
+  urls          String       @db.Text
+  order         Int
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderGroup   FolderGroup? @relation(fields: [folderGroupId], references: [id], onDelete: SetNull)
+  linkAssignments LinkFolderAssignment[]
+
+  @@index([userId])
+  @@index([folderGroupId])
+}
+
+model LinkFolderAssignment {
+  id        String   @id @default(cuid())
+  linkId    String
+  folderId  String
+  order     Int
+  link      Link     @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  folder    LinkFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([linkId, folderId])
+  @@index([linkId])
+}
+
+model Category {
+  id            String       @id @default(cuid())
+  userId        String
+  name          String
+  color         String       @default("#6366f1")
+  folderGroupId String?
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderGroup   FolderGroup? @relation(fields: [folderGroupId], references: [id], onDelete: SetNull)
+  links         Link[]
+
+  @@index([userId])
+  @@index([folderGroupId])
+}
+
+model FbToken {
+  id          String   @id @default(cuid())
+  userId      String
+  label       String
+  token       String   @db.Text
+  status      String   @default("unknown")
+  lastChecked DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model FbDebugJob {
+  id          String           @id @default(cuid())
+  userId      String
+  mode        String           @default("manual")
+  status      String           @default("pending")
+  total       Int              @default(0)
+  processed   Int              @default(0)
+  success     Int              @default(0)
+  failed      Int              @default(0)
+  batchLimit  Int              @default(10)
+  nextRunAt   DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       FbDebugJobItem[]
+
+  @@index([userId])
+  @@index([status, nextRunAt])
+}
+
+model FbDebugJobItem {
+  id          String      @id @default(cuid())
+  jobId       String
+  linkId      String
+  order       Int
+  status      String      @default("pending")
+  attempts    Int         @default(0)
+  shortUrl    String?     @db.Text
+  message     String?     @db.Text
+  errorCode   Int?
+  processedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  job         FbDebugJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  link        Link        @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, linkId])
+  @@index([jobId, status, order])
+  @@index([linkId])
+}
+
+model LanguageRule {
+  id           String @id @default(cuid())
+  linkId       String
+  languageCode String
+  redirectUrl  String @db.Text
+  link         Link   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId])
+}
+
+model Click {
+  id          String   @id @default(cuid())
+  linkId      String
+  ip          String?
+  country     String?
+  city        String?
+  device      String?
+  deviceModel String?
+  browser     String?
+  os          String?
+  osVersion   String?
+  referer     String?
+  language    String?
+  createdAt   DateTime @default(now())
+  link        Link     @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId], map: "Click_linkId_fkey")
+  @@index([createdAt])
+}
+
+model DeviceRule {
+  id          String @id @default(cuid())
+  linkId      String
+  deviceType  String
+  redirectUrl String @db.Text
+  link        Link   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId], map: "DeviceRule_linkId_fkey")
+}
+
+model CountryRule {
+  id          String @id @default(cuid())
+  linkId      String
+  countryCode String
+  redirectUrl String @db.Text
+  link        Link   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId], map: "CountryRule_linkId_fkey")
+}
+
+model BioPage {
+  id          String    @id @default(cuid())
+  userId      String
+  username    String    @unique
+  title       String?
+  description String?   @db.Text
+  avatar      String?   @db.LongText
+  theme       String    @default("default")
+  isPublic    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links       BioLink[]
+
+  @@index([userId])
+}
+
+model BioLink {
+  id        String   @id @default(cuid())
+  bioPageId String
+  title     String
+  url       String   @db.Text
+  icon      String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  bioPage   BioPage  @relation(fields: [bioPageId], references: [id], onDelete: Cascade)
+
+  @@index([bioPageId])
+}
+
+model Workspace {
+  id        String            @id @default(cuid())
+  name      String
+  slug      String            @unique
+  ownerId   String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  owner     User              @relation("OwnedWorkspaces", fields: [ownerId], references: [id], onDelete: Cascade)
+  members   WorkspaceMember[]
+  links     Link[]
+
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("member")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model RequestLog {
+  id        Int      @id @default(autoincrement())
+  site      String   @db.VarChar(20)
+  method    String   @db.VarChar(10)
+  path      String   @db.VarChar(500)
+  ip        String?  @db.VarChar(45)
+  country   String?  @db.VarChar(2)
+  device    String?  @db.VarChar(20)
+  browser   String?  @db.VarChar(50)
+  os        String?  @db.VarChar(50)
+  userAgent String?  @db.VarChar(500)
+  referer   String?  @db.VarChar(500)
+  userId    String?
+  userEmail String?  @db.VarChar(255)
+  createdAt DateTime @default(now())
+
+  @@index([site])
+  @@index([ip])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("request_logs")
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========== WEB PHIM (vmephim.media) ==========
+
+// Lượt truy cập trang vmephim.media (IP dedup 10 phút, lọc bot)
+model PhimPageVisit {
+  id        String   @id @default(cuid())
+  ip        String   @db.VarChar(45)
+  userAgent String?  @db.VarChar(500)
+  device    String?  @db.VarChar(20)
+  browser   String?  @db.VarChar(50)
+  os        String?  @db.VarChar(50)
+  referer   String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  @@index([ip])
+  @@index([createdAt])
+  @@index([device])
+}
+
+// Lượt click xem phim (IP dedup 10 phút, lọc bot) — tách riêng khỏi PhimRedirectClick
+model PhimMovieClick {
+  id        String   @id @default(cuid())
+  linkId    String?
+  ip        String?  @db.VarChar(45)
+  device    String?  @db.VarChar(20)
+  browser   String?  @db.VarChar(50)
+  os        String?  @db.VarChar(50)
+  referer   String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  @@index([linkId])
+  @@index([ip])
+  @@index([createdAt])
+  @@index([device])
+}
+
+model PhimRedirectLink {
+  id        String              @id @default(cuid())
+  url       String              @db.Text
+  label     String?
+  isActive  Boolean             @default(true)
+  sortOrder Int                 @default(0)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  clicks    PhimRedirectClick[]
+
+  @@index([isActive])
+}
+
+model PhimRedirectClick {
+  id        String            @id @default(cuid())
+  linkId    String?
+  ip        String?           @db.VarChar(45)
+  device    String?           @db.VarChar(20)
+  browser   String?           @db.VarChar(50)
+  os        String?           @db.VarChar(50)
+  referer   String?           @db.VarChar(500)
+  createdAt DateTime          @default(now())
+  link      PhimRedirectLink? @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId])
+  @@index([createdAt])
+  @@index([device])
+}

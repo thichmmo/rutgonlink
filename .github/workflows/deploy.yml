@@ -1,0 +1,89 @@
+name: Build & Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: thichcuu
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            thichcuu/rutgonlink:${{ github.sha }}
+            thichcuu/rutgonlink:latest
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Create directory on VPS
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "mkdir -p /root/boc-link"
+
+      - name: Upload docker-compose.yml to VPS
+        run: sshpass -p "$VPS_PASSWORD" scp -o StrictHostKeyChecking=no docker-compose.yml "root@$VPS_HOST:/root/boc-link/"
+
+      - name: Deploy nginx config
+        run: |
+          sshpass -p "$VPS_PASSWORD" scp -o StrictHostKeyChecking=no nginx-vps.conf "root@$VPS_HOST:/etc/nginx/sites-available/rutgonlink.site"
+          sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "
+            ln -sf /etc/nginx/sites-available/rutgonlink.site /etc/nginx/sites-enabled/rutgonlink.site 2>/dev/null || true
+            nginx -t && systemctl reload nginx
+          "
+
+      - name: Ensure DB is running
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "cd /root/boc-link && docker compose up -d mariadb"
+
+      - name: Pull image on runner and stream to VPS
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login -u "thichcuu" --password-stdin
+          docker pull thichcuu/rutgonlink:latest
+          docker logout
+          docker save thichcuu/rutgonlink:latest | gzip | sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "docker load"
+
+      - name: Stop and remove old app container
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "cd /root/boc-link && docker compose stop app && docker compose rm -f app"
+
+      - name: Prune old images
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "docker image prune -f || true"
+
+      - name: Start new app container
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "cd /root/boc-link && docker compose up -d app"
+
+      - name: Wait for app to start
+        run: sleep 50
+
+      - name: Run Prisma migrations
+        run: |
+          sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "
+            docker exec boc-link-app npx --yes prisma@7.5.0 migrate deploy 2>&1 || true
+            docker exec boc-link-app npx --yes prisma@7.5.0 db push --accept-data-loss 2>&1
+          "
+
+      - name: Check container status
+        run: sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no "root@$VPS_HOST" "docker ps --filter 'name=boc-link'"
+
+    env:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}

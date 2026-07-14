@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `fbDebugIntervalMinutes` INTEGER NOT NULL DEFAULT 20,
+    ADD COLUMN `fbDebugMinClicksPerDay` INTEGER NOT NULL DEFAULT 0;

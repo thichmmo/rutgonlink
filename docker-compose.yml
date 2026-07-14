@@ -1,0 +1,64 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: boc-link-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    command:
+      - --innodb-buffer-pool-size=512M
+      - --innodb-log-file-size=128M
+      - --innodb-flush-log-at-trx-commit=2
+      - --max-connections=200
+      - --query-cache-type=0
+      - --skip-name-resolve
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - boc-link-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: thichcuu/rutgonlink:latest
+    container_name: boc-link-app
+    restart: always
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3939}:3939"
+    environment:
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      DATABASE_URL: "mysql://${DB_USER}:${DB_PASSWORD_URL_ENCODED}@mariadb:3306/${DB_NAME}"
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=768
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      LOG_SECRET: ${LOG_SECRET}
+      CRON_SECRET: ${CRON_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+    networks:
+      - boc-link-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3939"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mariadb_data:
+    driver: local
+
+networks:
+  boc-link-network:
+    driver: bridge

@@ -1,0 +1,92 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  DOCKER_USERNAME: your_docker_username
+  DOCKER_PASSWORD: YOUR_DOCKER_TOKEN
+  DOCKER_IMAGE_NAME: your_image_name
+  DOCKER_IMAGE: your_docker_username/your_image_name
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+  VPS_HOST: YOUR_VPS_IP
+  VPS_USER: root
+  VPS_PASSWORD: YOUR_VPS_PASSWORD
+
+  NEXTAUTH_URL: https://YOUR_NEXTAUTH_URL
+  NEXTAUTH_SECRET: YOUR_NEXTAUTH_SECRET
+  GOOGLE_CLIENT_ID: YOUR_GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET: YOUR_GOOGLE_CLIENT_SECRET
+
+  DB_ROOT_PASSWORD: YOUR_DB_ROOT_PASSWORD
+  DB_NAME: your_db_name
+  DB_USER: your_db_user
+  DB_PASSWORD: YOUR_DB_PASSWORD
+  DATABASE_URL: mysql://your_db_user:YOUR_DB_PASSWORD@mariadb:3306/your_db_name?connection_limit=50&pool_timeout=10
+  ENCRYPTION_KEY: "YOUR_ENCRYPTION_KEY"
+
+# ========== BUILD STAGE ==========
+build_docker:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker build -t $DOCKER_IMAGE:$CI_COMMIT_SHA -t $DOCKER_IMAGE:latest .
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_SHA
+    - docker push $DOCKER_IMAGE:latest
+    - docker logout
+  only:
+    - master
+
+# ========== DEPLOY STAGE ==========
+deploy_vps:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - apk add --no-cache openssh-client sshpass
+  script:
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "mkdir -p /root/boc-link"
+
+    # Upload docker-compose.yml
+    - sshpass -p "$VPS_PASSWORD" scp -o StrictHostKeyChecking=no docker-compose.yml $VPS_USER@$VPS_HOST:/root/boc-link/
+
+    # Tao file .env tren VPS
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "echo 'GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID' > /root/boc-link/.env && echo 'GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET' >> /root/boc-link/.env && echo 'ENCRYPTION_KEY=$ENCRYPTION_KEY' >> /root/boc-link/.env"
+
+    # Dam bao DB dang chay
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "cd /root/boc-link && docker compose up -d mariadb"
+
+    # Pull image tren CI runner (khong can VPS ket noi Docker Hub)
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker pull $DOCKER_IMAGE:latest
+    - docker logout
+
+    # Stream image truc tiep tu CI runner sang VPS (VPS khong can truy cap Docker Hub)
+    - docker save $DOCKER_IMAGE:latest | gzip | sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "docker load"
+
+    # Chi stop va xoa container app (KHONG dong DB)
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "cd /root/boc-link && docker compose stop app && docker compose rm -f app"
+
+    # Xoa image cu
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "docker image prune -f"
+
+    # Start app moi
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "cd /root/boc-link && docker compose up -d app"
+
+    # Doi app khoi dong (healthcheck start_period la 40s)
+    - sleep 50
+
+    # Chay migration an toan, KHONG reset/khong drop du lieu
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "docker exec boc-link-app npx --yes prisma@7.5.0 migrate deploy"
+
+    # Kiem tra trang thai
+    - sshpass -p "$VPS_PASSWORD" ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "docker ps --filter 'name=boc-link'"
+  only:
+    - master
+  needs:
+    - build_docker
