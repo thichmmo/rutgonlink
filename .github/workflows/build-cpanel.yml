@@ -1,0 +1,45 @@
+name: Build cPanel Artifact
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build standalone release
+        run: pnpm build:cpanel
+
+      - name: Package release
+        run: |
+          release_dir="$RUNNER_TEMP/rutgonlink-cpanel"
+          mkdir -p "$release_dir/.next" "$release_dir/prisma/migrations/20260714000000_add_admin_operations"
+          cp -a .next/standalone "$release_dir/.next/standalone"
+          cp passenger_entry.js package.json pnpm-lock.yaml "$release_dir/"
+          cp prisma/migrations/20260714000000_add_admin_operations/migration.sql "$release_dir/prisma/migrations/20260714000000_add_admin_operations/"
+          git rev-parse HEAD > "$release_dir/RELEASE_COMMIT"
+          tar -C "$release_dir" -czf "$RUNNER_TEMP/rutgonlink-cpanel.tar.gz" .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rutgonlink-cpanel-${{ github.sha }}
+          path: ${{ runner.temp }}/rutgonlink-cpanel.tar.gz
+          if-no-files-found: error
+          retention-days: 7
