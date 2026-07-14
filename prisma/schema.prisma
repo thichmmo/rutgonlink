@@ -7,37 +7,47 @@ datasource db {
 }
 
 model User {
-  id                      String            @id @default(cuid())
-  email                   String            @unique
-  password                String?
-  name                    String?
-  plan                    String            @default("free")
-  planExpiresAt           DateTime?
-  apiKey                  String?           @unique
-  googleDriveRefreshToken String?           @db.Text
-  googleDriveEmail        String?
-  googleDriveFolderId     String?
-  fbDebugIntervalMinutes  Int               @default(20)
-  fbDebugMinClicksPerDay  Int               @default(0)
-  fbDebugAllActiveLinks   Boolean           @default(false)
-  fbDebugDailyAllActiveLinks Boolean         @default(false)
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
-  domains                 Domain[]
-  links                   Link[]
-  notes                   Note[]
-  noteShares              NoteShare[]
-  noteFolders             NoteFolder[]
-  categories              Category[]
-  bioPages                BioPage[]
-  ownedWorkspaces         Workspace[]       @relation("OwnedWorkspaces")
-  workspaceMembers        WorkspaceMember[]
-  subscriptions           Subscription[]
-  payments                Payment[]
-  linkFolders             LinkFolder[]
-  fbTokens                FbToken[]
-  folderGroups            FolderGroup[]
-  fbDebugJobs             FbDebugJob[]
+  id                         String            @id @default(cuid())
+  email                      String            @unique
+  password                   String?
+  name                       String?
+  status                     String            @default("active")
+  adminRole                  String?
+  lastLoginAt                DateTime?
+  suspendedAt                DateTime?
+  suspensionReason           String?           @db.VarChar(500)
+  deletedAt                  DateTime?
+  sessionsRevokedAt          DateTime?
+  plan                       String            @default("free")
+  planExpiresAt              DateTime?
+  apiKey                     String?           @unique
+  googleDriveRefreshToken    String?           @db.Text
+  googleDriveEmail           String?
+  googleDriveFolderId        String?
+  fbDebugIntervalMinutes     Int               @default(20)
+  fbDebugMinClicksPerDay     Int               @default(0)
+  fbDebugAllActiveLinks      Boolean           @default(false)
+  fbDebugDailyAllActiveLinks Boolean           @default(false)
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  domains                    Domain[]
+  links                      Link[]
+  notes                      Note[]
+  noteShares                 NoteShare[]
+  noteFolders                NoteFolder[]
+  categories                 Category[]
+  bioPages                   BioPage[]
+  ownedWorkspaces            Workspace[]       @relation("OwnedWorkspaces")
+  workspaceMembers           WorkspaceMember[]
+  subscriptions              Subscription[]
+  payments                   Payment[]
+  linkFolders                LinkFolder[]
+  fbTokens                   FbToken[]
+  folderGroups               FolderGroup[]
+  fbDebugJobs                FbDebugJob[]
+
+  @@index([status])
+  @@index([adminRole])
 }
 
 model Subscription {
@@ -58,17 +68,18 @@ model Subscription {
 }
 
 model Payment {
-  id             String        @id @default(cuid())
+  id             String         @id @default(cuid())
   userId         String
   subscriptionId String?
-  transactionID  String?       @unique
+  transactionID  String?        @unique
   amount         Int
-  content        String        @unique
-  status         String        @default("pending")
+  content        String         @unique
+  status         String         @default("pending")
   paidAt         DateTime?
-  createdAt      DateTime      @default(now())
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription   Subscription?  @relation(fields: [subscriptionId], references: [id])
+  events         PaymentEvent[]
 
   @@index([userId])
   @@index([content])
@@ -125,56 +136,61 @@ model NoteShare {
 }
 
 model Domain {
-  id        String   @id @default(cuid())
-  userId    String
-  domain    String   @unique
-  verified  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  links     Link[]
+  id             String    @id @default(cuid())
+  userId         String
+  domain         String    @unique
+  verified       Boolean   @default(false)
+  disabledAt     DateTime?
+  disabledReason String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links          Link[]
 
   @@index([userId], map: "Domain_userId_fkey")
 }
 
 model Link {
-  id              String         @id @default(cuid())
-  userId          String
-  domainId        String?
-  categoryId      String?
-  workspaceId     String?
-  shortCode       String         @unique
-  originalUrl     String         @db.Text
-  title           String?
-  sharedDomain    String?
-  password        String?
-  expiresAt       DateTime?
-  maxClicks       Int?
-  isActive        Boolean        @default(true)
-  isArchived      Boolean        @default(false)
-  ogEnabled       Boolean        @default(true)
-  ogAutoReset     Boolean        @default(false)
-  ogTitle         String?
-  ogDescription   String?        @db.Text
-  ogImage         String?        @db.LongText
-  deepLinkIos     String?        @db.Text
-  deepLinkAndroid String?        @db.Text
-  lastFbDebug            DateTime?
-  ogScheduledDisableAt   DateTime?
-  clickResetAt           DateTime?
-  useFolderRotation      Boolean        @default(false)
+  id                      String                 @id @default(cuid())
+  userId                  String
+  domainId                String?
+  categoryId              String?
+  workspaceId             String?
+  shortCode               String                 @unique
+  originalUrl             String                 @db.Text
+  title                   String?
+  sharedDomain            String?
+  password                String?
+  expiresAt               DateTime?
+  maxClicks               Int?
+  isActive                Boolean                @default(true)
+  isArchived              Boolean                @default(false)
+  disabledByAdmin         Boolean                @default(false)
+  adminNote               String?                @db.Text
+  moderatedAt             DateTime?
+  ogEnabled               Boolean                @default(true)
+  ogAutoReset             Boolean                @default(false)
+  ogTitle                 String?
+  ogDescription           String?                @db.Text
+  ogImage                 String?                @db.LongText
+  deepLinkIos             String?                @db.Text
+  deepLinkAndroid         String?                @db.Text
+  lastFbDebug             DateTime?
+  ogScheduledDisableAt    DateTime?
+  clickResetAt            DateTime?
+  useFolderRotation       Boolean                @default(false)
   folderRotationStartDate DateTime?
-  createdAt              DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  clicks          Click[]
-  countryRules    CountryRule[]
-  deviceRules     DeviceRule[]
-  languageRules   LanguageRule[]
-  folderAssignments LinkFolderAssignment[]
-  fbDebugJobItems  FbDebugJobItem[]
-  domain          Domain?        @relation(fields: [domainId], references: [id])
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category        Category?      @relation(fields: [categoryId], references: [id])
-  workspace       Workspace?     @relation(fields: [workspaceId], references: [id])
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  clicks                  Click[]
+  countryRules            CountryRule[]
+  deviceRules             DeviceRule[]
+  languageRules           LanguageRule[]
+  folderAssignments       LinkFolderAssignment[]
+  fbDebugJobItems         FbDebugJobItem[]
+  domain                  Domain?                @relation(fields: [domainId], references: [id])
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category                Category?              @relation(fields: [categoryId], references: [id])
+  workspace               Workspace?             @relation(fields: [workspaceId], references: [id])
 
   @@index([domainId], map: "Link_domainId_fkey")
   @@index([userId], map: "Link_userId_fkey")
@@ -183,28 +199,28 @@ model Link {
 }
 
 model FolderGroup {
-  id        String       @id @default(cuid())
-  userId    String
-  name      String
-  order     Int
-  createdAt DateTime     @default(now())
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folders   LinkFolder[]
+  id         String       @id @default(cuid())
+  userId     String
+  name       String
+  order      Int
+  createdAt  DateTime     @default(now())
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders    LinkFolder[]
   categories Category[]
 
   @@index([userId])
 }
 
 model LinkFolder {
-  id            String       @id @default(cuid())
-  userId        String
-  folderGroupId String?
-  name          String
-  urls          String       @db.Text
-  order         Int
-  createdAt     DateTime     @default(now())
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folderGroup   FolderGroup? @relation(fields: [folderGroupId], references: [id], onDelete: SetNull)
+  id              String                 @id @default(cuid())
+  userId          String
+  folderGroupId   String?
+  name            String
+  urls            String                 @db.Text
+  order           Int
+  createdAt       DateTime               @default(now())
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderGroup     FolderGroup?           @relation(fields: [folderGroupId], references: [id], onDelete: SetNull)
   linkAssignments LinkFolderAssignment[]
 
   @@index([userId])
@@ -212,12 +228,12 @@ model LinkFolder {
 }
 
 model LinkFolderAssignment {
-  id        String   @id @default(cuid())
-  linkId    String
-  folderId  String
-  order     Int
-  link      Link     @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  folder    LinkFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  id       String     @id @default(cuid())
+  linkId   String
+  folderId String
+  order    Int
+  link     Link       @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  folder   LinkFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
   @@unique([linkId, folderId])
   @@index([linkId])
@@ -239,14 +255,14 @@ model Category {
 }
 
 model FbToken {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   label       String
-  token       String   @db.Text
-  status      String   @default("unknown")
+  token       String    @db.Text
+  status      String    @default("unknown")
   lastChecked DateTime?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -274,20 +290,20 @@ model FbDebugJob {
 }
 
 model FbDebugJobItem {
-  id          String      @id @default(cuid())
+  id          String     @id @default(cuid())
   jobId       String
   linkId      String
   order       Int
-  status      String      @default("pending")
-  attempts    Int         @default(0)
-  shortUrl    String?     @db.Text
-  message     String?     @db.Text
+  status      String     @default("pending")
+  attempts    Int        @default(0)
+  shortUrl    String?    @db.Text
+  message     String?    @db.Text
   errorCode   Int?
   processedAt DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  job         FbDebugJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  link        Link        @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  job         FbDebugJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  link        Link       @relation(fields: [linkId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, linkId])
   @@index([jobId, status, order])
@@ -432,6 +448,59 @@ model AppSetting {
   value     String   @db.LongText
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  adminUserId String?
+  adminEmail  String
+  adminRole   String
+  action      String
+  entityType  String
+  entityId    String?
+  reason      String?  @db.Text
+  beforeData  String?  @db.LongText
+  afterData   String?  @db.LongText
+  ip          String?  @db.VarChar(45)
+  userAgent   String?  @db.VarChar(500)
+  createdAt   DateTime @default(now())
+
+  @@index([adminUserId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model SystemEvent {
+  id        String   @id @default(cuid())
+  type      String
+  source    String
+  status    String
+  message   String?  @db.Text
+  details   String?  @db.LongText
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([status, createdAt])
+}
+
+model PaymentEvent {
+  id             String    @id @default(cuid())
+  provider       String    @default("sepay")
+  externalId     String?   @unique
+  paymentId      String?
+  transferAmount Int
+  content        String    @db.Text
+  status         String    @default("received")
+  message        String?   @db.Text
+  payload        String?   @db.LongText
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  payment        Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 // ========== WEB PHIM (vmephim.media) ==========

@@ -1,20 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ''
-
-async function checkAdmin() {
-  const session = await getServerSession(authOptions)
-  return session?.user?.email === ADMIN_EMAIL
-}
+import { requireAdmin } from '@/lib/admin-auth'
+import { recordAdminAudit } from '@/lib/admin-audit'
 
 // GET: Lấy tất cả redirect links (kèm tổng click) + desktop redirect URL
 export async function GET() {
-  if (!(await checkAdmin())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('system.read')
+  if (!access.ok) return access.response
 
   const [links, desktopSetting] = await Promise.all([
     prisma.phimRedirectLink.findMany({
@@ -29,9 +21,8 @@ export async function GET() {
 
 // POST: Thêm link mới
 export async function POST(request: NextRequest) {
-  if (!(await checkAdmin())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('system.write')
+  if (!access.ok) return access.response
 
   const body = await request.json()
   const { url, label, isActive, sortOrder } = body
@@ -49,14 +40,23 @@ export async function POST(request: NextRequest) {
     },
   })
 
+  await recordAdminAudit({
+    admin: access.admin,
+    request,
+    action: 'phim-link.create',
+    entityType: 'phim_link',
+    entityId: link.id,
+    reason: 'Tạo redirect link',
+    after: link,
+  })
+
   return NextResponse.json(link, { status: 201 })
 }
 
 // PUT: Cập nhật link
 export async function PUT(request: NextRequest) {
-  if (!(await checkAdmin())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('system.write')
+  if (!access.ok) return access.response
 
   const body = await request.json()
   const { id, url, label, isActive, sortOrder } = body
@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 })
   }
 
+  const before = await prisma.phimRedirectLink.findUnique({ where: { id } })
   const link = await prisma.phimRedirectLink.update({
     where: { id },
     data: {
@@ -75,14 +76,24 @@ export async function PUT(request: NextRequest) {
     },
   })
 
+  await recordAdminAudit({
+    admin: access.admin,
+    request,
+    action: 'phim-link.update',
+    entityType: 'phim_link',
+    entityId: id,
+    reason: 'Cập nhật redirect link',
+    before,
+    after: link,
+  })
+
   return NextResponse.json(link)
 }
 
 // PATCH: Cập nhật desktop redirect URL
 export async function PATCH(request: NextRequest) {
-  if (!(await checkAdmin())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('system.write')
+  if (!access.ok) return access.response
 
   const { desktopRedirectUrl } = await request.json()
 
@@ -92,14 +103,22 @@ export async function PATCH(request: NextRequest) {
     create: { key: 'phim_desktop_redirect_url', value: desktopRedirectUrl?.trim() ?? '' },
   })
 
+  await recordAdminAudit({
+    admin: access.admin,
+    request,
+    action: 'phim.desktop-redirect.update',
+    entityType: 'system',
+    reason: 'Cập nhật desktop redirect',
+    after: { configured: Boolean(desktopRedirectUrl?.trim()) },
+  })
+
   return NextResponse.json({ ok: true })
 }
 
 // DELETE: Xóa link
 export async function DELETE(request: NextRequest) {
-  if (!(await checkAdmin())) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('system.write')
+  if (!access.ok) return access.response
 
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
@@ -108,7 +127,18 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 })
   }
 
+  const before = await prisma.phimRedirectLink.findUnique({ where: { id } })
   await prisma.phimRedirectLink.delete({ where: { id } })
+
+  await recordAdminAudit({
+    admin: access.admin,
+    request,
+    action: 'phim-link.delete',
+    entityType: 'phim_link',
+    entityId: id,
+    reason: 'Xóa redirect link',
+    before,
+  })
 
   return NextResponse.json({ ok: true })
 }

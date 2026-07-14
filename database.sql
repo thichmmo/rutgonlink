@@ -3,7 +3,7 @@
 -- Generated from prisma/schema.prisma with Prisma 7, then adjusted for cPanel.
 -- Every table explicitly uses InnoDB/DYNAMIC to support utf8mb4 composite indexes.
 -- Recommended server: MySQL 5.7+ or MariaDB 10.2+ with InnoDB enabled.
--- Contains 29 empty tables; application data is not included.
+-- Contains 32 empty tables; application data is not included.
 --
 -- Import this file into an EMPTY database using cPanel/phpMyAdmin.
 -- Do not configure DATABASE_URL to this file: DATABASE_URL must point
@@ -22,6 +22,13 @@ CREATE TABLE `User` (
     `email` VARCHAR(191) NOT NULL,
     `password` VARCHAR(191) NULL,
     `name` VARCHAR(191) NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'active',
+    `adminRole` VARCHAR(191) NULL,
+    `lastLoginAt` DATETIME(3) NULL,
+    `suspendedAt` DATETIME(3) NULL,
+    `suspensionReason` VARCHAR(500) NULL,
+    `deletedAt` DATETIME(3) NULL,
+    `sessionsRevokedAt` DATETIME(3) NULL,
     `plan` VARCHAR(191) NOT NULL DEFAULT 'free',
     `planExpiresAt` DATETIME(3) NULL,
     `apiKey` VARCHAR(191) NULL,
@@ -37,6 +44,8 @@ CREATE TABLE `User` (
 
     UNIQUE INDEX `User_email_key`(`email`),
     UNIQUE INDEX `User_apiKey_key`(`apiKey`),
+    INDEX `User_status_idx`(`status`),
+    INDEX `User_adminRole_idx`(`adminRole`),
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -132,6 +141,8 @@ CREATE TABLE `Domain` (
     `userId` VARCHAR(191) NOT NULL,
     `domain` VARCHAR(191) NOT NULL,
     `verified` BOOLEAN NOT NULL DEFAULT false,
+    `disabledAt` DATETIME(3) NULL,
+    `disabledReason` VARCHAR(500) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     UNIQUE INDEX `Domain_domain_key`(`domain`),
@@ -155,6 +166,9 @@ CREATE TABLE `Link` (
     `maxClicks` INTEGER NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
     `isArchived` BOOLEAN NOT NULL DEFAULT false,
+    `disabledByAdmin` BOOLEAN NOT NULL DEFAULT false,
+    `adminNote` TEXT NULL,
+    `moderatedAt` DATETIME(3) NULL,
     `ogEnabled` BOOLEAN NOT NULL DEFAULT true,
     `ogAutoReset` BOOLEAN NOT NULL DEFAULT false,
     `ogTitle` VARCHAR(191) NULL,
@@ -440,6 +454,65 @@ CREATE TABLE `AppSetting` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
+CREATE TABLE `AdminAuditLog` (
+    `id` VARCHAR(191) NOT NULL,
+    `adminUserId` VARCHAR(191) NULL,
+    `adminEmail` VARCHAR(191) NOT NULL,
+    `adminRole` VARCHAR(191) NOT NULL,
+    `action` VARCHAR(191) NOT NULL,
+    `entityType` VARCHAR(191) NOT NULL,
+    `entityId` VARCHAR(191) NULL,
+    `reason` TEXT NULL,
+    `beforeData` LONGTEXT NULL,
+    `afterData` LONGTEXT NULL,
+    `ip` VARCHAR(45) NULL,
+    `userAgent` VARCHAR(500) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `AdminAuditLog_adminUserId_idx`(`adminUserId`),
+    INDEX `AdminAuditLog_action_idx`(`action`),
+    INDEX `AdminAuditLog_entityType_entityId_idx`(`entityType`, `entityId`),
+    INDEX `AdminAuditLog_createdAt_idx`(`createdAt`),
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `SystemEvent` (
+    `id` VARCHAR(191) NOT NULL,
+    `type` VARCHAR(191) NOT NULL,
+    `source` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL,
+    `message` TEXT NULL,
+    `details` LONGTEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `SystemEvent_type_createdAt_idx`(`type`, `createdAt`),
+    INDEX `SystemEvent_status_createdAt_idx`(`status`, `createdAt`),
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `PaymentEvent` (
+    `id` VARCHAR(191) NOT NULL,
+    `provider` VARCHAR(191) NOT NULL DEFAULT 'sepay',
+    `externalId` VARCHAR(191) NULL,
+    `paymentId` VARCHAR(191) NULL,
+    `transferAmount` INTEGER NOT NULL,
+    `content` TEXT NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'received',
+    `message` TEXT NULL,
+    `payload` LONGTEXT NULL,
+    `processedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `PaymentEvent_externalId_key`(`externalId`),
+    INDEX `PaymentEvent_paymentId_idx`(`paymentId`),
+    INDEX `PaymentEvent_status_createdAt_idx`(`status`, `createdAt`),
+    INDEX `PaymentEvent_createdAt_idx`(`createdAt`),
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `PhimPageVisit` (
     `id` VARCHAR(191) NOT NULL,
     `ip` VARCHAR(45) NOT NULL,
@@ -513,6 +586,9 @@ ALTER TABLE `Payment` ADD CONSTRAINT `Payment_userId_fkey` FOREIGN KEY (`userId`
 
 -- AddForeignKey
 ALTER TABLE `Payment` ADD CONSTRAINT `Payment_subscriptionId_fkey` FOREIGN KEY (`subscriptionId`) REFERENCES `Subscription`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `PaymentEvent` ADD CONSTRAINT `PaymentEvent_paymentId_fkey` FOREIGN KEY (`paymentId`) REFERENCES `Payment`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `NoteFolder` ADD CONSTRAINT `NoteFolder_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

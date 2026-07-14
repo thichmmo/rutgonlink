@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { getVietnamStartOfRange } from '@/lib/vn-time'
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""
+import { requireAdmin } from '@/lib/admin-auth'
 const VN_OFFSET = 7 * 60 * 60 * 1000
 
 function buildGarbageRequestWhere(): Prisma.RequestLogWhereInput {
@@ -47,10 +44,8 @@ function buildGarbageRequestWhere(): Prisma.RequestLogWhereInput {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (session?.user?.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('logs.read')
+  if (!access.ok) return access.response
 
   const { searchParams } = req.nextUrl
   const site = searchParams.get('site') || 'all'
@@ -66,8 +61,6 @@ export async function GET(req: NextRequest) {
 
   const since = getVietnamStartOfRange(days)
   const garbageWhere = buildGarbageRequestWhere()
-
-  await prisma.requestLog.deleteMany({ where: garbageWhere })
 
   const baseWhere: Prisma.RequestLogWhereInput = {
     createdAt: { gte: since },

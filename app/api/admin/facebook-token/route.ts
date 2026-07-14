@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { getFacebookAppToken, getFacebookTokenMasked, setFacebookAppToken, triggerFbScrape, getFbDebugIntervalMinutes, setFbDebugIntervalMinutes } from '@/lib/runtime-config'
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""
-
-function isAdminEmail(email: string | null | undefined): boolean {
-    return !!email && email === ADMIN_EMAIL
-}
+import { requireAdmin } from '@/lib/admin-auth'
+import { recordAdminAudit } from '@/lib/admin-audit'
 
 export async function GET() {
-    const session = await getServerSession(authOptions)
-    if (!isAdminEmail(session?.user?.email)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const access = await requireAdmin('system.read')
+    if (!access.ok) return access.response
 
     const [data, intervalMinutes] = await Promise.all([
         getFacebookTokenMasked(),
@@ -23,23 +15,27 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-    const session = await getServerSession(authOptions)
-    if (!isAdminEmail(session?.user?.email)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const access = await requireAdmin('system.write')
+    if (!access.ok) return access.response
 
     const body = await req.json().catch(() => ({}))
     const token = typeof body?.token === 'string' ? body.token : ''
 
     await setFacebookAppToken(token || null)
+    await recordAdminAudit({
+        admin: access.admin,
+        request: req,
+        action: 'integration.facebook-token.update',
+        entityType: 'system',
+        reason: 'Cập nhật Facebook app token',
+        after: { configured: Boolean(token) },
+    })
     return NextResponse.json({ ok: true })
 }
 
 export async function POST(req: NextRequest) {
-    const session = await getServerSession(authOptions)
-    if (!isAdminEmail(session?.user?.email)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const access = await requireAdmin('system.write')
+    if (!access.ok) return access.response
 
     const body = await req.json().catch(() => ({}))
     const inputToken = typeof body?.token === 'string' ? body.token.trim() : ''
@@ -104,10 +100,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-    const session = await getServerSession(authOptions)
-    if (!isAdminEmail(session?.user?.email)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const access = await requireAdmin('system.write')
+    if (!access.ok) return access.response
 
     const body = await req.json().catch(() => ({}))
     const url = typeof body?.url === 'string' ? body.url.trim() : ''
@@ -147,10 +141,8 @@ export async function PATCH(req: NextRequest) {
 
 // Dùng DELETE để lưu interval cron (tránh tạo thêm file route)
 export async function DELETE(req: NextRequest) {
-    const session = await getServerSession(authOptions)
-    if (!isAdminEmail(session?.user?.email)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const access = await requireAdmin('system.write')
+    if (!access.ok) return access.response
 
     const body = await req.json().catch(() => ({}))
     const minutes = typeof body?.intervalMinutes === 'number' ? body.intervalMinutes : null
@@ -160,5 +152,13 @@ export async function DELETE(req: NextRequest) {
     }
 
     await setFbDebugIntervalMinutes(minutes)
+    await recordAdminAudit({
+        admin: access.admin,
+        request: req,
+        action: 'integration.fb-debug-interval.update',
+        entityType: 'system',
+        reason: 'Cập nhật chu kỳ Facebook Debug',
+        after: { intervalMinutes: minutes },
+    })
     return NextResponse.json({ ok: true, intervalMinutes: minutes })
 }

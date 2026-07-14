@@ -1,88 +1,99 @@
-import {getServerSession} from 'next-auth';
-import {authOptions} from '@/lib/auth-options';
-import {notFound} from 'next/navigation';
-import Link from 'next/link';
-import {LayoutDashboard, Users, Activity, CreditCard, Globe, KeyRound, Film} from 'lucide-react';
-import AdminSignOut from './AdminSignOut';
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import {
+  Activity,
+  CreditCard,
+  ExternalLink,
+  Film,
+  Gauge,
+  Globe2,
+  KeyRound,
+  Link2,
+  ScrollText,
+  ServerCog,
+  Users,
+} from 'lucide-react'
+import AdminSignOut from './AdminSignOut'
+import { getAdminContext, hasAdminPermission, type AdminPermission } from '@/lib/admin-auth'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? '';
+const navItems: Array<{
+  href: string
+  label: string
+  icon: typeof Gauge
+  permission: AdminPermission
+}> = [
+  { href: '/admin', label: 'Tổng quan', icon: Gauge, permission: 'overview.read' },
+  { href: '/admin/users', label: 'Người dùng', icon: Users, permission: 'users.read' },
+  { href: '/admin/links', label: 'Links', icon: Link2, permission: 'links.read' },
+  { href: '/admin/domains', label: 'Domains', icon: Globe2, permission: 'domains.read' },
+  { href: '/admin/transactions', label: 'Thanh toán', icon: CreditCard, permission: 'billing.read' },
+  { href: '/admin/traffic', label: 'Traffic', icon: Activity, permission: 'logs.read' },
+  { href: '/admin/logs', label: 'Request Logs', icon: ExternalLink, permission: 'logs.read' },
+  { href: '/admin/audit', label: 'Audit Logs', icon: ScrollText, permission: 'logs.read' },
+  { href: '/admin/system', label: 'System Health', icon: ServerCog, permission: 'system.read' },
+  { href: '/admin/facebook-token', label: 'Facebook Token', icon: KeyRound, permission: 'system.read' },
+  { href: '/admin/phim', label: 'Web Phim', icon: Film, permission: 'system.read' },
+]
 
-const navItems = [
-    {href: '/admin', label: 'Tổng quan', icon: LayoutDashboard},
-    {href: '/admin/users', label: 'Người dùng', icon: Users},
-    {href: '/admin/traffic', label: 'Traffic', icon: Activity},
-    {href: '/admin/transactions', label: 'Giao dịch', icon: CreditCard},
-    {href: '/admin/logs', label: 'Request Logs', icon: Globe},
-    {href: '/admin/facebook-token', label: 'Facebook Token', icon: KeyRound},
-    {href: '/admin/phim', label: 'Web Phim', icon: Film},
-];
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Owner',
+  support: 'Support',
+  finance: 'Finance',
+  ops: 'Operations',
+  viewer: 'Viewer',
+}
 
-export default async function AdminLayout({children}: {children: React.ReactNode}) {
-    const session = await getServerSession(authOptions);
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const admin = await getAdminContext()
+  if (!admin) notFound()
 
-    if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-        notFound();
-    }
+  const visibleItems = navItems.filter((item) => hasAdminPermission(admin, item.permission))
 
-    return (
-        <div className="h-screen bg-gray-950 flex overflow-hidden">
-            {/* Sidebar */}
-            <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col fixed h-full z-20">
-                <div className="p-5 border-b border-gray-800">
-                    <Link
-                        href="/admin"
-                        className="flex items-center gap-2.5 text-white font-bold text-lg"
-                    >
-                        <span className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-sm font-bold shrink-0">
-                            A
-                        </span>
-                        Admin Panel
-                    </Link>
-                </div>
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 lg:flex">
+      <aside className="border-b border-gray-800 bg-gray-900 lg:fixed lg:inset-y-0 lg:w-64 lg:border-b-0 lg:border-r">
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b border-gray-800 p-5">
+            <Link href="/admin" className="flex items-center gap-2.5 text-lg font-bold text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-600 text-sm">A</span>
+              Admin Panel
+            </Link>
+            <AdminSignOut />
+          </div>
 
-                <nav className="flex-1 p-3 space-y-0.5">
-                    {navItems.map(({href, label, icon: Icon}) => (
-                        <Link
-                            key={href}
-                            href={href}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium"
-                        >
-                            <Icon className="w-4 h-4 shrink-0" />
-                            {label}
-                        </Link>
-                    ))}
-                </nav>
+          <nav className="flex gap-1 overflow-x-auto p-3 lg:flex-1 lg:flex-col lg:overflow-y-auto">
+            {visibleItems.map(({ href, label, icon: Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                className="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Link>
+            ))}
+          </nav>
 
-                <div className="p-4 border-t border-gray-800">
-                    <div className="flex items-center gap-2.5 mb-3">
-                        <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">
-                            A
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold text-white">Admin</div>
-                            <div className="text-xs text-gray-500 truncate">{session.user.email}</div>
-                        </div>
-                        <AdminSignOut />
-                    </div>
-                    <Link
-                        href="/dashboard"
-                        className="block text-center text-xs text-gray-500 hover:text-gray-300 transition-colors py-1"
-                    >
-                        ← Vào Dashboard
-                    </Link>
-                </div>
-            </aside>
-
-            {/* Main */}
-            <div className="flex-1 ml-56 flex flex-col min-w-0 overflow-hidden">
-                <header className="bg-gray-900 border-b border-gray-800 px-8 py-3 flex items-center gap-3 sticky top-0 z-10">
-                    <span className="px-2 py-0.5 bg-red-600/20 text-red-400 text-xs font-bold rounded-full border border-red-600/30">
-                        ADMIN
-                    </span>
-                    <span className="text-gray-500 text-sm">Quản trị hệ thống · LinkShort</span>
-                </header>
-                <main className="flex-1 overflow-y-auto p-8 bg-gray-950">{children}</main>
-            </div>
+          <div className="hidden border-t border-gray-800 p-4 lg:block">
+            <div className="text-sm font-medium text-white">{admin.email}</div>
+            <div className="mt-1 text-xs uppercase tracking-wider text-red-400">{ROLE_LABEL[admin.role]}</div>
+            <Link href="/dashboard" className="mt-3 block text-xs text-gray-500 hover:text-gray-300">
+              ← Vào Dashboard
+            </Link>
+          </div>
         </div>
-    );
+      </aside>
+
+      <div className="min-w-0 flex-1 lg:ml-64">
+        <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3 lg:px-8">
+          <div>
+            <span className="rounded-full border border-red-600/30 bg-red-600/20 px-2 py-0.5 text-xs font-bold text-red-400">ADMIN</span>
+            <span className="ml-3 text-sm text-gray-500">Quản trị LinkShort</span>
+          </div>
+          <span className="text-xs text-gray-500 lg:hidden">{ROLE_LABEL[admin.role]}</span>
+        </header>
+        <main className="p-4 lg:p-8">{children}</main>
+      </div>
+    </div>
+  )
 }

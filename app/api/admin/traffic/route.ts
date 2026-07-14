@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { formatDateKeyVN } from '@/lib/utils'
 import { getVietnamStartOfRange } from '@/lib/vn-time'
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""
+import { requireAdmin } from '@/lib/admin-auth'
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+    const access = await requireAdmin('logs.read')
+    if (!access.ok) return access.response
 
   const { searchParams } = new URL(req.url)
   const days = Math.min(90, Math.max(7, parseInt(searchParams.get('days') ?? '30')))

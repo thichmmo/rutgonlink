@@ -8,12 +8,11 @@ import MobileNav from './MobileNav';
 import DashboardNavLinks from './DashboardNavLinks';
 import CreateLinkButton from './CreateLinkButton';
 import DashboardClock from './DashboardClock';
-import {prisma} from '@/lib/prisma';
 
 export default async function DashboardLayout({children}: {children: React.ReactNode}) {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user) {
+    if (!session?.user?.email || session.user.status !== 'active') {
         redirect('/login');
     }
 

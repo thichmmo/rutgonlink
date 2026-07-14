@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runFbDebugBatch, runScheduledActions } from '@/lib/fb-debug-cron'
+import { recordSystemEvent } from '@/lib/system-events'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,6 +48,15 @@ async function handleCronRun(request: NextRequest) {
   }
 
   const ok = results.every((result) => result.status === 'ok')
+
+  // Heartbeat không được làm cron thất bại nếu riêng bước ghi monitoring gặp lỗi.
+  await recordSystemEvent({
+    type: 'cron',
+    source: 'api/cron/run',
+    status: ok ? 'ok' : 'error',
+    message: ok ? 'Cron completed' : 'Cron completed with errors',
+    details: { startedAt, results },
+  }).catch((error) => console.error('[cron/run] err heartbeat', error))
 
   return NextResponse.json(
     {

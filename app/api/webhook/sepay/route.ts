@@ -2,19 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeTransferContent } from '@/lib/plan-limits'
 import { paymentEmitter } from '@/lib/payment-emitter'
+import { activatePayment } from '@/lib/billing'
+import { recordSystemEvent } from '@/lib/system-events'
+import { timingSafeEqual } from 'node:crypto'
 
-type Period = '1m' | '6m' | '1y' | 'lifetime'
-
-/** Compute end date from period, stacking on top of currentExpiresAt if still active. */
-function computeEndDate(period: Period, currentExpiresAt: Date | null | undefined): Date | null {
-  if (period === 'lifetime') return null
-  const months = period === '1m' ? 1 : period === '6m' ? 6 : 12
-  const now = new Date()
-  // Stack from current expiry if it's still in the future
-  const base = currentExpiresAt && currentExpiresAt > now ? new Date(currentExpiresAt) : now
-  const end = new Date(base)
-  end.setMonth(end.getMonth() + months)
-  return end
+function isValidWebhookSecret(req: NextRequest): boolean {
+  const expected = process.env.SEPAY_WEBHOOK_SECRET
+  if (!expected) return false
+  const authorization = req.headers.get('authorization') || ''
+  const provided = req.headers.get('x-sepay-secret') ||
+    (authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7) : '')
+  const expectedBuffer = Buffer.from(expected)
+  const providedBuffer = Buffer.from(provided)
+  return expectedBuffer.length === providedBuffer.length && timingSafeEqual(expectedBuffer, providedBuffer)
 }
 
 /**
@@ -37,6 +37,14 @@ function computeEndDate(period: Period, currentExpiresAt: Date | null | undefine
  * Must respond HTTP 200 + { "success": true }
  */
 export async function POST(req: NextRequest) {
+  if (!process.env.SEPAY_WEBHOOK_SECRET) {
+    console.error('[SePay] err webhook secret missing')
+    return NextResponse.json({ success: false, message: 'Webhook not configured' }, { status: 500 })
+  }
+  if (!isValidWebhookSecret(req)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
+  }
+
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -57,11 +65,39 @@ export async function POST(req: NextRequest) {
   const txAmount = Number(transferAmount ?? 0)
   const txType = String(transferType ?? '').toUpperCase()
   const txContent = String(content ?? '')
+  const eventPayload = JSON.stringify({
+    id,
+    gateway: body.gateway,
+    transactionDate,
+    transferType,
+    transferAmount,
+    content,
+    referenceCode,
+  })
+
+  const paymentEvent = txId
+    ? await prisma.paymentEvent.upsert({
+        where: { externalId: txId },
+        create: {
+          externalId: txId,
+          transferAmount: txAmount,
+          content: txContent,
+          payload: eventPayload,
+        },
+        update: { transferAmount: txAmount, content: txContent, payload: eventPayload },
+      })
+    : await prisma.paymentEvent.create({
+        data: { transferAmount: txAmount, content: txContent, payload: eventPayload },
+      })
 
   console.log(`[SePay] TX id=${txId} type=${txType} amount=${txAmount} content="${txContent}"`)
 
   // Only process incoming transfers
   if (txType !== 'IN') {
+    await prisma.paymentEvent.update({
+      where: { id: paymentEvent.id },
+      data: { status: 'ignored', message: 'Outgoing transfer', processedAt: new Date() },
+    })
     return NextResponse.json({ success: true, message: 'Ignored outgoing transfer' })
   }
 
@@ -70,6 +106,15 @@ export async function POST(req: NextRequest) {
     const existingByTx = await prisma.payment.findUnique({ where: { transactionID: txId } })
     if (existingByTx?.status === 'completed') {
       console.log(`[SePay] TX ${txId} already processed`)
+      await prisma.paymentEvent.update({
+        where: { id: paymentEvent.id },
+        data: {
+          paymentId: existingByTx.id,
+          status: 'duplicate',
+          message: 'Payment already completed',
+          processedAt: new Date(),
+        },
+      })
       return NextResponse.json({ success: true, message: 'Already processed' })
     }
   }
@@ -91,62 +136,80 @@ export async function POST(req: NextRequest) {
 
   if (!matchedPayment) {
     console.log(`[SePay] No matching pending payment for content: "${txContent}"`)
-    // Still save for audit if we have a txId
+    await prisma.paymentEvent.update({
+      where: { id: paymentEvent.id },
+      data: { status: 'unmatched', message: 'No matching pending payment' },
+    })
+    await recordSystemEvent({
+      type: 'payment_webhook',
+      source: 'sepay',
+      status: 'warning',
+      message: 'Unmatched bank transfer',
+      details: { paymentEventId: paymentEvent.id, amount: txAmount },
+    })
     return NextResponse.json({ success: true, message: 'No matching payment found' })
   }
 
   // Verify amount matches
   if (txAmount < matchedPayment.amount) {
     console.warn(`[SePay] Amount mismatch: received ${txAmount}, expected ${matchedPayment.amount} for payment ${matchedPayment.id}`)
+    await prisma.paymentEvent.update({
+      where: { id: paymentEvent.id },
+      data: {
+        paymentId: matchedPayment.id,
+        status: 'amount_mismatch',
+        message: `Received ${txAmount}, expected ${matchedPayment.amount}`,
+      },
+    })
     return NextResponse.json({ success: true, message: 'Amount mismatch — not activated' })
   }
 
   const subscription = matchedPayment.subscription
   if (!subscription) {
     console.error(`[SePay] Payment ${matchedPayment.id} has no subscription`)
+    await prisma.paymentEvent.update({
+      where: { id: paymentEvent.id },
+      data: {
+        paymentId: matchedPayment.id,
+        status: 'error',
+        message: 'Payment has no subscription',
+        processedAt: new Date(),
+      },
+    })
     return NextResponse.json({ success: true, message: 'Missing subscription' })
   }
 
-  const period = subscription.period as Period
-  const endDate = computeEndDate(period, matchedPayment.user.planExpiresAt as Date | null)
   const now = new Date()
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // Update payment
-      await tx.payment.update({
-        where: { id: matchedPayment.id },
-        data: {
-          status: 'completed',
-          transactionID: txId || null,
+    try {
+      await prisma.$transaction(async (tx) => {
+        await activatePayment(tx, {
+          paymentId: matchedPayment.id,
+          transactionId: txId || null,
           paidAt: transactionDate ? new Date(String(transactionDate)) : now,
-        },
+        })
+        await tx.paymentEvent.update({
+          where: { id: paymentEvent.id },
+          data: {
+            paymentId: matchedPayment.id,
+            status: 'matched',
+            message: 'Payment confirmed and plan activated',
+            processedAt: now,
+          },
+        })
       })
 
-      // Update subscription
-      await tx.subscription.update({
-        where: { id: subscription.id },
-        data: {
-          status: 'active',
-          startDate: now,
-          endDate: endDate,
-        },
-      })
+      console.log(
+        `[SePay] Activated plan="${subscription.plan}" period="${subscription.period}" for user=${matchedPayment.userId}`
+      )
 
-      // Update user plan
-      await tx.user.update({
-        where: { id: matchedPayment.userId },
-        data: {
-          plan: subscription.plan,
-          planExpiresAt: endDate,
-        },
+      await recordSystemEvent({
+        type: 'payment_webhook',
+        source: 'sepay',
+        status: 'ok',
+        message: 'Payment confirmed and plan activated',
+        details: { paymentId: matchedPayment.id, paymentEventId: paymentEvent.id },
       })
-    })
-
-    console.log(
-      `[SePay] Activated plan="${subscription.plan}" period="${period}" for user=${matchedPayment.userId}` +
-      (endDate ? ` expires=${endDate.toISOString()}` : ' (lifetime)')
-    )
 
     // Notify SSE clients immediately
     paymentEmitter.emit('payment:completed', matchedPayment.id)
@@ -156,8 +219,12 @@ export async function POST(req: NextRequest) {
       message: 'Payment confirmed and plan activated',
       referenceCode: referenceCode ?? null,
     })
-  } catch (err) {
-    console.error('[SePay] DB error during activation:', err)
-    return NextResponse.json({ success: false, message: 'Internal error' }, { status: 500 })
+    } catch (err) {
+      console.error('[SePay] DB error during activation:', err)
+      await prisma.paymentEvent.update({
+        where: { id: paymentEvent.id },
+        data: { status: 'error', message: String(err), processedAt: new Date() },
+      })
+      return NextResponse.json({ success: false, message: 'Internal error' }, { status: 500 })
   }
 }

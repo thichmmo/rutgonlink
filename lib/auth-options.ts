@@ -39,7 +39,7 @@ export const authOptions: NextAuthOptions = {
           where: { email: credentials.email },
         })
 
-        if (!user || !user.password) return null
+        if (!user || user.status !== 'active' || !user.password) return null
 
         const isValid = await bcrypt.compare(credentials.password, user.password)
         if (!isValid) return null
@@ -55,7 +55,7 @@ export const authOptions: NextAuthOptions = {
         if (!user.email) return false
 
         // Upsert tránh lỗi unique email khi hai callback Google đến gần nhau.
-        await prisma.user.upsert({
+        const dbUser = await prisma.user.upsert({
           where: { email: user.email },
           update: {},
           create: {
@@ -64,6 +64,7 @@ export const authOptions: NextAuthOptions = {
             password: null,
           },
         })
+        if (dbUser.status !== 'active') return false
       }
       return true
     },
@@ -78,21 +79,39 @@ export const authOptions: NextAuthOptions = {
         } else {
           token.id = user.id
         }
-        // Ghi lại thời điểm tạo token để tính sliding refresh
-        token.createdAt = Math.floor(Date.now() / 1000)
+          // Ghi lại thời điểm tạo token để tính sliding refresh
+          token.createdAt = Math.floor(Date.now() / 1000)
+          token.sessionIssuedAtMs = Date.now()
         // Đánh dấu admin
-        token.isAdmin = user.email === process.env.ADMIN_EMAIL
+        token.isAdmin = user.email?.toLowerCase() === process.env.ADMIN_EMAIL?.trim().toLowerCase()
       }
-      // Tự sửa token cũ bị lưu Google OAuth ID (chuỗi số thuần)
-      // Google OAuth IDs là số nguyên dài (~21 chữ số), DB cuids bắt đầu bằng chữ cái
-      if (token.id && typeof token.id === 'string' && /^\d+$/.test(token.id) && token.email) {
-        const dbUser = await prisma.user.findUnique({ where: { email: token.email as string } })
-        if (dbUser) token.id = dbUser.id
-      }
-      // Fallback: nếu vẫn chưa có id, tìm theo email
-      if (!token.id && token.email) {
-        const dbUser = await prisma.user.findUnique({ where: { email: token.email as string } })
-        if (dbUser) token.id = dbUser.id
+
+      if (token.email) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: token.email as string },
+          select: {
+            id: true,
+            status: true,
+            adminRole: true,
+            deletedAt: true,
+            sessionsRevokedAt: true,
+          },
+        })
+        const issuedAtMs = Number(token.sessionIssuedAtMs || 0) || Number(token.createdAt || token.iat || 0) * 1000
+        const wasRevoked = Boolean(
+          dbUser?.sessionsRevokedAt &&
+          (!issuedAtMs || dbUser.sessionsRevokedAt.getTime() >= issuedAtMs),
+        )
+
+        // Mọi getServerSession đều kiểm tra DB để khóa user/thu hồi phiên có hiệu lực ngay.
+        token.invalid = !dbUser || dbUser.status !== 'active' || Boolean(dbUser.deletedAt) || wasRevoked
+        if (dbUser && !token.invalid) {
+          token.id = dbUser.id
+          token.status = dbUser.status
+          token.adminRole = dbUser.adminRole
+          token.isAdmin =
+            token.email.toLowerCase() === process.env.ADMIN_EMAIL?.trim().toLowerCase() || Boolean(dbUser.adminRole)
+        }
       }
       // Sliding refresh: gia hạn thêm 30 ngày mỗi khi user còn active
       token.exp = Math.floor(Date.now() / 1000) + THIRTY_DAYS
@@ -100,9 +119,15 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
+      if (token.invalid) {
+        return { ...session, user: undefined }
+      }
+
       if (token.id && session.user) {
-        (session.user as { id?: string; isAdmin?: boolean }).id = token.id as string
-        ;(session.user as { id?: string; isAdmin?: boolean }).isAdmin = token.isAdmin as boolean
+        session.user.id = token.id as string
+        session.user.isAdmin = token.isAdmin as boolean
+        session.user.status = (token.status as string) || 'active'
+        session.user.adminRole = (token.adminRole as string | null) || null
       }
       // Đồng bộ thời hạn session với token
       session.expires = new Date(Date.now() + THIRTY_DAYS * 1000).toISOString()
@@ -139,4 +164,14 @@ export const authOptions: NextAuthOptions = {
   },
 
   secret: process.env.NEXTAUTH_SECRET,
+
+  events: {
+    async signIn({ user }) {
+      if (!user.email) return
+      await prisma.user.updateMany({
+        where: { email: user.email, status: 'active' },
+        data: { lastLoginAt: new Date() },
+      })
+    },
+  },
 }

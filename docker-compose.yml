@@ -49,6 +49,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       LOG_SECRET: ${LOG_SECRET}
       CRON_SECRET: ${CRON_SECRET}
+      SEPAY_WEBHOOK_SECRET: ${SEPAY_WEBHOOK_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
     networks:
       - boc-link-network

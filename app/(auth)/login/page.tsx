@@ -72,11 +72,12 @@ function LoginContent() {
         password: data.password,
         redirect: false,
       })
-      if (result?.error) {
-        setError('Email hoặc mật khẩu không đúng')
-      } else {
-        const dest = data.email === 'vmetavn@gmail.com' ? '/admin' : redirectTo
-        router.push(dest)
+        if (result?.error) {
+          setError('Email hoặc mật khẩu không đúng')
+        } else {
+          const currentSession = await fetch('/api/auth/session').then((response) => response.json())
+          const dest = currentSession?.user?.isAdmin ? '/admin' : redirectTo
+          router.push(dest)
         router.refresh()
       }
     } catch {

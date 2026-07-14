@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { getVietnamDayBoundaries, getVietnamStartOfMonthUtc, getVietnamStartOfRange } from '@/lib/vn-time'
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ''
+import { requireAdmin } from '@/lib/admin-auth'
 
 function normLabel(v: string | null): string {
   return v && v.trim() ? v : 'Không rõ'
@@ -21,10 +18,8 @@ function extractDomain(referer: string | null): string | null {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+    const access = await requireAdmin('system.read')
+    if (!access.ok) return access.response
 
   const { searchParams } = new URL(request.url)
   const days = parseInt(searchParams.get('days') ?? '7', 10)

@@ -1,83 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { requireAdmin } from '@/lib/admin-auth'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""
+const PAGE_SIZE = 20
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const access = await requireAdmin('users.read')
+  if (!access.ok) return access.response
+
+  const { searchParams } = req.nextUrl
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
+  const search = searchParams.get('search')?.trim() || ''
+  const plan = searchParams.get('plan') || ''
+  const status = searchParams.get('status') || ''
+  const loginType = searchParams.get('loginType') || ''
+
+  const where = {
+    ...(search
+      ? {
+          OR: [
+            { email: { contains: search } },
+            { name: { contains: search } },
+            { id: { contains: search } },
+          ],
+        }
+      : {}),
+    ...(plan ? { plan } : {}),
+    ...(status ? { status } : {}),
+    ...(loginType === 'google'
+      ? { AND: [{ OR: [{ password: null }, { password: '' }] }] }
+      : loginType === 'password'
+        ? { AND: [{ password: { not: null } }, { password: { not: '' } }] }
+        : {}),
   }
 
-  const { searchParams } = new URL(req.url)
-  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
-  const limit = 20
-  const search = searchParams.get('search') ?? ''
-  const plan = searchParams.get('plan') ?? ''
-
-  const where: Record<string, unknown> = {}
-  if (search) {
-    where.OR = [
-      { email: { contains: search } },
-      { name: { contains: search } },
-    ]
-  }
-  if (plan) {
-    where.plan = plan
-  }
-
-  const [users, total] = await Promise.all([
+  const [users, total, statusCounts, planCounts] = await Promise.all([
     prisma.user.findMany({
       where,
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         name: true,
         email: true,
         password: true,
+        status: true,
+        adminRole: true,
         plan: true,
         planExpiresAt: true,
+        lastLoginAt: true,
+        suspendedAt: true,
         createdAt: true,
-        _count: { select: { links: true } },
+        _count: { select: { links: true, domains: true, payments: true } },
       },
     }),
     prisma.user.count({ where }),
+    prisma.user.groupBy({ by: ['status'], _count: { id: true } }),
+    prisma.user.groupBy({ by: ['plan'], _count: { id: true } }),
   ])
 
-  // Fetch click counts per user (sum clicks across all their links)
-  const userIds = users.map(u => u.id)
-  const clickCounts = await prisma.click.groupBy({
-    by: ['linkId'],
-    where: {
-      link: { userId: { in: userIds } },
-    },
-    _count: { id: true },
-  })
+  const userIds = users.map((user) => user.id)
+  const links = userIds.length
+    ? await prisma.link.findMany({
+        where: { userId: { in: userIds } },
+        select: { userId: true, _count: { select: { clicks: true } } },
+      })
+    : []
 
-  // Map linkId -> userId
-  const links = await prisma.link.findMany({
-    where: { userId: { in: userIds } },
-    select: { id: true, userId: true },
-  })
-  const linkToUser: Record<string, string> = {}
-  for (const l of links) linkToUser[l.id] = l.userId
-
-  const userClicks: Record<string, number> = {}
-  for (const c of clickCounts) {
-    const uid = linkToUser[c.linkId]
-    if (uid) userClicks[uid] = (userClicks[uid] ?? 0) + c._count.id
+  const clickCountByUser = new Map<string, number>()
+  for (const link of links) {
+    clickCountByUser.set(
+      link.userId,
+      (clickCountByUser.get(link.userId) || 0) + link._count.clicks,
+    )
   }
 
-  const result = users.map(({ password, _count, ...u }) => ({
-    ...u,
-    loginType: password && password.length > 0 ? 'password' : 'google',
-    linkCount: _count.links,
-    clickCount: userClicks[u.id] ?? 0,
-  }))
-
-  return NextResponse.json({ users: result, total, page, pages: Math.ceil(total / limit) })
+  return NextResponse.json({
+    users: users.map(({ password, _count, ...user }) => ({
+      ...user,
+      loginType: password ? 'password' : 'google',
+      linkCount: _count.links,
+      domainCount: _count.domains,
+      paymentCount: _count.payments,
+      clickCount: clickCountByUser.get(user.id) || 0,
+    })),
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    summary: {
+      statuses: Object.fromEntries(statusCounts.map((item) => [item.status, item._count.id])),
+      plans: Object.fromEntries(planCounts.map((item) => [item.plan, item._count.id])),
+    },
+  })
 }

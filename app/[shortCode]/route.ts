@@ -13,6 +13,7 @@ interface LinkResult {
   shortCode: string
   originalUrl: string
   isActive: boolean
+  disabledByAdmin: boolean
   ogEnabled: boolean
   ogAutoReset: boolean
   ogTitle: string | null
@@ -32,7 +33,7 @@ interface LinkResult {
   countryRules: { id: string; linkId: string; countryCode: string; redirectUrl: string }[]
   languageRules: { id: string; linkId: string; languageCode: string; redirectUrl: string }[]
   _count: { clicks: number }
-  user: { plan: string; planExpiresAt: Date | null }
+  user: { plan: string; planExpiresAt: Date | null; status: string }
 }
 
 // In-memory click count cache to avoid DB hit on every redirect: userId → { count, cachedAt }
@@ -59,6 +60,7 @@ const KNOWN_PATHS = ['dashboard', 'login', 'register', 'api', '_next', 'favicon.
 
 async function getCachedLink(shortCode: string, hostname: string): Promise<LinkResult | null> {
   const domainRecord = await prisma.domain.findUnique({ where: { domain: hostname } })
+  if (domainRecord?.disabledAt) return null
   const domainId = domainRecord ? domainRecord.id : null
   const result = await prisma.link.findFirst({
     where: { shortCode, domainId },
@@ -73,10 +75,11 @@ async function getCachedLink(shortCode: string, hostname: string): Promise<LinkR
       },
       _count: { select: { clicks: true } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      user: { select: { plan: true, planExpiresAt: true } } as any,
-    },
-  })
-  return result as unknown as LinkResult | null
+        user: { select: { plan: true, planExpiresAt: true, status: true } } as any,
+      },
+    })
+  const link = result as unknown as LinkResult | null
+  return link?.user.status === 'active' ? link : null
 }
 
 // Batch click writer: gom click trong 2 giây rồi INSERT một lần
@@ -225,7 +228,7 @@ export async function GET(
 
   const mainOrigin = getSiteUrl()
 
-  if (!link || !link.isActive) {
+  if (!link || !link.isActive || link.disabledByAdmin) {
     return new NextResponse(
       `<!DOCTYPE html><html><head><meta charset="utf-8"><title>404</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;font-family:sans-serif}h1{font-size:2rem;font-weight:600;color:#111;letter-spacing:.05em}span{color:#999}</style></head><body><h1>404 <span>NOT FOUND</span></h1></body></html>`,
       { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }

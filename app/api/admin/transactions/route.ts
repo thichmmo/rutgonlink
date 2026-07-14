@@ -1,57 +1,116 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { hasAdminPermission, requireAdmin } from '@/lib/admin-auth'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || ""
+const PAGE_SIZE = 20
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const access = await requireAdmin('billing.read')
+  if (!access.ok) return access.response
 
-  const { searchParams } = new URL(req.url)
-  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
-  const tab = searchParams.get('tab') ?? 'payments' // 'payments' | 'subscriptions'
-  const limit = 20
+  const page = Math.max(1, Number.parseInt(req.nextUrl.searchParams.get('page') || '1', 10) || 1)
+  const tab = req.nextUrl.searchParams.get('tab') || 'payments'
+  const status = req.nextUrl.searchParams.get('status') || ''
+  const search = req.nextUrl.searchParams.get('search')?.trim() || ''
 
   if (tab === 'subscriptions') {
+    const where = {
+      ...(status ? { status } : {}),
+      ...(search
+        ? { OR: [{ user: { email: { contains: search } } }, { plan: { contains: search } }] }
+        : {}),
+    }
     const [items, total] = await Promise.all([
       prisma.subscription.findMany({
-        skip: (page - 1) * limit,
-        take: limit,
+        where,
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
         orderBy: { createdAt: 'desc' },
         include: { user: { select: { id: true, name: true, email: true } } },
       }),
-      prisma.subscription.count(),
+      prisma.subscription.count({ where }),
     ])
-    return NextResponse.json({ items, total, page, pages: Math.ceil(total / limit) })
+    return NextResponse.json({ items, total, page, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), canWrite: hasAdminPermission(access.admin, 'billing.write') })
   }
 
-  // payments tab
-  const [items, total, revenueResult] = await Promise.all([
+  if (tab === 'events') {
+    const where = {
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { externalId: { contains: search } },
+              { content: { contains: search } },
+              { payment: { user: { email: { contains: search } } } },
+            ],
+          }
+        : {}),
+    }
+    const [items, total, unresolved] = await Promise.all([
+      prisma.paymentEvent.findMany({
+        where,
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          payment: {
+            select: {
+              id: true,
+              amount: true,
+              status: true,
+              user: { select: { id: true, email: true } },
+            },
+          },
+        },
+      }),
+      prisma.paymentEvent.count({ where }),
+      prisma.paymentEvent.count({ where: { status: { in: ['unmatched', 'amount_mismatch', 'error'] } } }),
+    ])
+    return NextResponse.json({
+      items,
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      unresolved,
+      canWrite: hasAdminPermission(access.admin, 'billing.write'),
+    })
+  }
+
+  const where = {
+    ...(status ? { status } : {}),
+    ...(search
+      ? {
+          OR: [
+            { content: { contains: search } },
+            { transactionID: { contains: search } },
+            { user: { email: { contains: search } } },
+          ],
+        }
+      : {}),
+  }
+  const [items, total, revenue, pending] = await Promise.all([
     prisma.payment.findMany({
-      skip: (page - 1) * limit,
-      take: limit,
+      where,
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { id: true, name: true, email: true } },
-        subscription: { select: { plan: true, period: true } },
+        subscription: { select: { plan: true, period: true, status: true } },
       },
     }),
-    prisma.payment.count(),
-    prisma.payment.aggregate({
-      where: { status: 'completed' },
-      _sum: { amount: true },
-    }),
+    prisma.payment.count({ where }),
+    prisma.payment.aggregate({ where: { status: 'completed' }, _sum: { amount: true } }),
+    prisma.payment.count({ where: { status: 'pending' } }),
   ])
 
   return NextResponse.json({
     items,
     total,
     page,
-    pages: Math.ceil(total / limit),
-    totalRevenue: revenueResult._sum.amount ?? 0,
+    pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    totalRevenue: revenue._sum.amount || 0,
+    pending,
+    canWrite: hasAdminPermission(access.admin, 'billing.write'),
   })
 }

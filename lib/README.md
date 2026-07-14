@@ -8,4 +8,6 @@
 
 `auth-options.ts` chỉ bật Google khi có đủ `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET`, đồng thời upsert user theo email để callback lặp không lỗi unique. `auth-redirect.ts` chặn callback path ngoài origin và chuẩn hóa thông báo lỗi OAuth.
 
+`admin-auth.ts` tập trung role/permission với `ADMIN_EMAIL` làm owner dự phòng. `admin-audit.ts` ghi lại mọi mutation và tự redact key nhạy cảm. `billing.ts` dùng chung quy tắc cộng dồn hạn gói cho webhook lẫn thao tác admin; `system-events.ts` lưu heartbeat/lỗi vận hành.
+
 Đã kiểm tra file bằng scoped ESLint từ project root.
