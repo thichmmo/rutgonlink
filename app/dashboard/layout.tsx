@@ -19,6 +19,7 @@ export default async function DashboardLayout({children}: {children: React.React
     const userName = session.user.name || 'Người dùng';
     const userEmail = session.user.email || '';
     const userInitial = (session.user.name?.[0] || session.user.email?.[0] || 'U').toUpperCase();
+    const isAdmin = Boolean(session.user.isAdmin);
 
     return (
         <div className="h-dvh bg-gray-50 flex overflow-hidden">
@@ -41,7 +42,7 @@ export default async function DashboardLayout({children}: {children: React.React
                     </Link>
                 </div>
 
-                <DashboardNavLinks />
+                <DashboardNavLinks isAdmin={isAdmin} />
 
                 {/* User */}
                 <div className="p-4 border-t border-gray-100">
@@ -70,6 +71,7 @@ export default async function DashboardLayout({children}: {children: React.React
                             userName={userName}
                             userEmail={userEmail}
                             userInitial={userInitial}
+                            isAdmin={isAdmin}
                         />
                         {/* Mobile: show logo in header */}
                         <Link

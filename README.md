@@ -64,6 +64,8 @@ Nếu lần import cũ đã dừng với lỗi `#1071`, database đang ở trạ
 
 Với database đang chạy từ bản trước, **phải** áp dụng `prisma/migrations/20260714000000_add_admin_operations/migration.sql` trước khi restart source admin mới. Database cPanel đã khởi tạo bằng `database.sql` thường không có lịch sử Prisma migration, vì vậy import trực tiếp file migration này một lần bằng phpMyAdmin thay vì chạy toàn bộ `prisma migrate deploy`. Migration chỉ thêm cột/bảng/index và giữ nguyên dữ liệu hiện có.
 
+Sau admin migration, áp dụng `prisma/migrations/20260714110000_add_numeric_user_id/migration.sql` để đổi cột `User.id` thành số tự tăng. CUID cũ được giữ ở `User.internalId` làm khóa quan hệ, nên không phải viết lại foreign key hoặc session hiện có.
+
 ## Các file cPanel chính
 
 ```text

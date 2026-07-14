@@ -27,6 +27,7 @@ const actionSchema = z.object({
 
 const USER_SNAPSHOT_SELECT = {
   id: true,
+  numericId: true,
   email: true,
   name: true,
   status: true,

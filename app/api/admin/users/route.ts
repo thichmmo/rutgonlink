@@ -14,6 +14,10 @@ export async function GET(req: NextRequest) {
   const plan = searchParams.get('plan') || ''
   const status = searchParams.get('status') || ''
   const loginType = searchParams.get('loginType') || ''
+  const parsedNumericId = /^\d+$/.test(search) ? Number(search) : null
+  const numericSearchId = parsedNumericId && Number.isInteger(parsedNumericId) && parsedNumericId <= 2_147_483_647
+    ? parsedNumericId
+    : null
 
   const where = {
     ...(search
@@ -22,6 +26,7 @@ export async function GET(req: NextRequest) {
             { email: { contains: search } },
             { name: { contains: search } },
             { id: { contains: search } },
+            ...(numericSearchId ? [{ numericId: numericSearchId }] : []),
           ],
         }
       : {}),
@@ -42,6 +47,7 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        numericId: true,
         name: true,
         email: true,
         password: true,

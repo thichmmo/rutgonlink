@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
-  Menu, X, Link2, LayoutDashboard, BarChart2, NotebookPen, Settings, LogOut, Share2,
+  Menu, X, Link2, LayoutDashboard, BarChart2, NotebookPen, Settings, LogOut, Share2, ShieldCheck,
 } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 
@@ -22,11 +22,15 @@ interface Props {
   userName: string
   userEmail: string
   userInitial: string
+  isAdmin: boolean
 }
 
-export default function MobileNav({ userName, userEmail, userInitial }: Props) {
+export default function MobileNav({ userName, userEmail, userInitial, isAdmin }: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const visibleNavItems = isAdmin
+    ? [...navItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
+    : navItems
 
   // Close drawer on route change
   useEffect(() => {
@@ -83,7 +87,7 @@ export default function MobileNav({ userName, userEmail, userInitial }: Props) {
 
         {/* Nav items */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -128,6 +132,7 @@ export default function MobileNav({ userName, userEmail, userInitial }: Props) {
           { href: '/dashboard/analytics', label: 'Thống kê', icon: BarChart2 },
           { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
           { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
+          ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
         ].map((item) => (
           <Link
             key={item.href}

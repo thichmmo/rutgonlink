@@ -35,10 +35,10 @@ jobs:
       - name: Package release
         run: |
           release_dir="$RUNNER_TEMP/rutgonlink-cpanel"
-          mkdir -p "$release_dir/.next" "$release_dir/prisma/migrations/20260714000000_add_admin_operations"
+          mkdir -p "$release_dir/.next" "$release_dir/prisma"
           cp -a .next/standalone "$release_dir/.next/standalone"
           cp passenger_entry.js package.json pnpm-lock.yaml "$release_dir/"
-          cp prisma/migrations/20260714000000_add_admin_operations/migration.sql "$release_dir/prisma/migrations/20260714000000_add_admin_operations/"
+          cp -a prisma/migrations "$release_dir/prisma/migrations"
           git rev-parse HEAD > "$release_dir/RELEASE_COMMIT"
           tar -C "$release_dir" -czf "$RUNNER_TEMP/rutgonlink-cpanel.tar.gz" .
 

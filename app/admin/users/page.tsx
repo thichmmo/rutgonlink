@@ -8,6 +8,7 @@ import { AdminBadge, AdminEmpty, AdminLoading, AdminPagination } from '../_compo
 
 type UserRow = {
   id: string
+  numericId: number
   name: string | null
   email: string
   loginType: 'password' | 'google'
@@ -116,7 +117,7 @@ function UsersContent() {
               <tbody className="divide-y divide-gray-800">
                 {users.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-800/40">
-                    <td className="px-4 py-3"><div className="font-medium text-white">{user.name || 'Chưa đặt tên'}</div><div className="text-xs text-gray-500">{user.email}</div><div className="mt-1 text-[11px] text-gray-600">{user.loginType}{user.adminRole ? ` · ${user.adminRole}` : ''}</div></td>
+                    <td className="px-4 py-3"><div className="font-medium text-white">#{user.numericId} · {user.name || 'Chưa đặt tên'}</div><div className="text-xs text-gray-500">{user.email}</div><div className="mt-1 text-[11px] text-gray-600">{user.loginType}{user.adminRole ? ` · ${user.adminRole}` : ''}</div></td>
                     <td className="px-4 py-3"><AdminBadge value={user.status} /></td>
                     <td className="px-4 py-3"><AdminBadge value={user.plan} label={PLAN_LABEL[user.plan] || user.plan} />{user.planExpiresAt && <div className="mt-1 text-xs text-gray-500">đến {new Date(user.planExpiresAt).toLocaleDateString('vi-VN')}</div>}</td>
                     <td className="px-4 py-3 text-xs text-gray-400"><div>{user.linkCount} links · {user.clickCount.toLocaleString()} clicks</div><div>{user.domainCount} domains · {user.paymentCount} payments</div></td>

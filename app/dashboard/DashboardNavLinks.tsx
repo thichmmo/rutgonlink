@@ -10,6 +10,7 @@ import {
   Settings,
   Share2,
   FolderOpen,
+  ShieldCheck,
 } from 'lucide-react'
 
 const navItems = [
@@ -22,12 +23,15 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 
-export default function DashboardNavLinks() {
+export default function DashboardNavLinks({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname()
+  const visibleItems = isAdmin
+    ? [...navItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
+    : navItems
 
   return (
     <nav className="flex-1 p-4 space-y-1">
-      {navItems.map((item) => {
+      {visibleItems.map((item) => {
         const isActive = item.href === '/dashboard'
           ? pathname === '/dashboard'
           : pathname.startsWith(item.href)

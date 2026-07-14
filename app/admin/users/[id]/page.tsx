@@ -8,7 +8,7 @@ import { AdminBadge, AdminDialog, AdminEmpty, AdminLoading } from '../../_compon
 
 type UserDetail = {
   user: {
-    id: string; email: string; name: string | null; status: string; adminRole: string | null
+      id: string; numericId: number; email: string; name: string | null; status: string; adminRole: string | null
     plan: string; planExpiresAt: string | null; lastLoginAt: string | null; createdAt: string
     suspendedAt: string | null; suspensionReason: string | null; deletedAt: string | null
     googleDriveEmail: string | null; hasApiKey: boolean
@@ -76,7 +76,7 @@ export default function AdminUserDetailPage() {
         <div>
           <Link href="/admin/users" className="mb-3 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-white"><ArrowLeft className="h-4 w-4" /> Người dùng</Link>
           <h1 className="text-2xl font-bold text-white">{user.name || 'Chưa đặt tên'}</h1>
-          <p className="text-sm text-gray-500">{user.email} · {user.id}</p>
+            <p className="text-sm text-gray-500">{user.email} · ID #{user.numericId}</p>
           <div className="mt-3 flex flex-wrap gap-2"><AdminBadge value={user.status} /><AdminBadge value={user.plan} />{user.adminRole && <AdminBadge value="active" label={`admin: ${user.adminRole}`} />}</div>
         </div>
         {canWrite && <div className="flex flex-wrap gap-2">
