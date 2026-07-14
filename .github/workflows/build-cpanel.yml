@@ -25,6 +25,8 @@ jobs:
 
       - name: Build standalone release
         run: pnpm build:cpanel
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Package release
         run: |
