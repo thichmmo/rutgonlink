@@ -2,16 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
+import { getSiteHostname } from "@/lib/site-config";
 import dns from "dns/promises";
 
 const SERVER_IPS = (process.env.VPS_HOST ? [process.env.VPS_HOST] : []);
-const SERVER_HOST = (() => {
-  try {
-    return new URL(process.env.NEXTAUTH_URL || "https://rutgonlink.site").hostname;
-  } catch {
-    return "rutgonlink.site";
-  }
-})();
+const SERVER_HOST = getSiteHostname();
 
 async function checkDomainPoints(domainName: string): Promise<boolean> {
   try {

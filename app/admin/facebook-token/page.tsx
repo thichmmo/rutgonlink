@@ -328,7 +328,7 @@ export default function AdminFacebookTokenPage() {
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') scrapeLink();
                         }}
-                        placeholder="https://rutgonlink.site/abc123"
+                            placeholder="https://your-domain.com/abc123"
                         className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
                 </div>

@@ -6,15 +6,22 @@ import bcrypt from 'bcryptjs'
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 // 30 ngày tính bằng giây
 const isProduction = process.env.NODE_ENV === 'production'
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim()
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim()
+const isGoogleAuthConfigured = Boolean(googleClientId && googleClientSecret)
+
+if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
+  console.error('[auth] err google oauth config incomplete')
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
     // Google OAuth — requires GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in .env
-    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ...(isGoogleAuthConfigured
       ? [
           GoogleProvider({
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            clientId: googleClientId!,
+            clientSecret: googleClientSecret!,
           }),
         ]
       : []),
@@ -44,18 +51,19 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async signIn({ user, account }) {
-      // Auto-create account for Google users
-      if (account?.provider === 'google' && user.email) {
-        const existing = await prisma.user.findUnique({ where: { email: user.email } })
-        if (!existing) {
-          await prisma.user.create({
-            data: {
-              email: user.email,
-              name: user.name || user.email.split('@')[0],
-              password: '',
-            },
-          })
-        }
+      if (account?.provider === 'google') {
+        if (!user.email) return false
+
+        // Upsert tránh lỗi unique email khi hai callback Google đến gần nhau.
+        await prisma.user.upsert({
+          where: { email: user.email },
+          update: {},
+          create: {
+            email: user.email,
+            name: user.name || user.email.split('@')[0],
+            password: null,
+          },
+        })
       }
       return true
     },
@@ -104,6 +112,7 @@ export const authOptions: NextAuthOptions = {
 
   pages: {
     signIn: '/login',
+    error: '/login',
   },
 
   session: {

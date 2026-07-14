@@ -1,8 +1,7 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPlanLimits, isPlanActive } from '@/lib/plan-limits'
-
-const ALLOWED_HOST = process.env.API_ALLOWED_HOST || 'rutgonlink.site'
+import { buildSiteUrl, getSiteHostname, isMainAppHostname } from '@/lib/site-config'
 
 export type ApiUser = {
   id: string
@@ -18,7 +17,7 @@ export type ApiAuthResult =
 
 /**
  * Xác thực API key cho các route /api/v1/*
- * - Kiểm tra host phải là domain cấu hình trong API_ALLOWED_HOST (trừ khi dev mode)
+ * - Kiểm tra host phải là domain chính/alias cấu hình từ NEXTAUTH_URL (trừ khi dev mode)
  * - Kiểm tra header X-API-Key hoặc Authorization: Bearer <key>
  * - Kiểm tra gói dịch vụ có hỗ trợ API (Ultra / Ultra+)
  */
@@ -31,12 +30,12 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
       ''
     ).split(':')[0].toLowerCase()
 
-    if (host !== ALLOWED_HOST) {
+    if (!isMainAppHostname(host)) {
       return {
         ok: false,
         response: NextResponse.json(
           {
-            error: 'API chỉ khả dụng tại ' + ALLOWED_HOST,
+            error: 'API chỉ khả dụng tại ' + getSiteHostname(),
             code: 'INVALID_HOST',
           },
           { status: 403 }
@@ -87,7 +86,7 @@ export async function authenticateApiKey(req: NextRequest): Promise<ApiAuthResul
       response: NextResponse.json(
         {
           error:
-      'Gói dịch vụ hiện tại không hỗ trợ API. Vui lòng nâng cấp lên gói Ultra hoặc Ultra+ tại https://rutgonlink.site/pricing.',
+        `Gói dịch vụ hiện tại không hỗ trợ API. Vui lòng nâng cấp lên gói Ultra hoặc Ultra+ tại ${buildSiteUrl('/pricing')}.`,
           code: 'PLAN_NOT_SUPPORTED',
           currentPlan: effectivePlan,
         },

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 : "${API_KEY:?Set API_KEY before running this test}"
-BASE_URL="https://rutgonlink.site/api/v1"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+BASE_URL="${APP_URL%/}/api/v1"
 
 echo "=== Test với link khác ==="
 echo ""
@@ -16,7 +17,7 @@ echo "   Link ID: $LINK_ID"
 echo "   Short Code: $SHORT_CODE"
 echo ""
 
-SHORT_URL="https://rutgonlink.site/$SHORT_CODE"
+SHORT_URL="${APP_URL%/}/$SHORT_CODE"
 
 echo "2. Test scrape: $SHORT_URL"
 SCRAPE_RESPONSE=$(curl -s -X PATCH \

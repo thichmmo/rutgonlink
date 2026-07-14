@@ -5,6 +5,7 @@ import { createUnlockToken } from '@/lib/unlock-token'
 import { getPlanLimits, isPlanActive } from '@/lib/plan-limits'
 import { triggerFbScrape } from '@/lib/runtime-config'
 import { getActiveFolderUrls } from '@/lib/folder-rotation'
+import { getSiteUrl } from '@/lib/site-config'
 
 interface LinkResult {
   id: string
@@ -146,7 +147,7 @@ function buildOgPage(params: {
   const { redirectUrl, deepLinkIos, deepLinkAndroid, ogTitle, ogDescription, ogImage, shortUrl, linkId, ua = '' } = params
   void params.slotUrl; void params.origin; void params.isSocialBot
   // Base64 image: serve qua main domain vì custom domain có thể không proxy /api/*
-  const mainOriginForImage = (process.env.NEXTAUTH_URL || 'https://rutgonlink.site').replace(/\/$/, '')
+    const mainOriginForImage = getSiteUrl()
   const resolvedOgImage = ogImage
     ? ogImage.startsWith('data:')
       ? `${mainOriginForImage}/api/og-image/${linkId}`
@@ -222,7 +223,7 @@ export async function GET(
 
   const link = await getCachedLink(shortCode, hostname)
 
-  const mainOrigin = process.env.NEXTAUTH_URL || 'https://rutgonlink.site'
+  const mainOrigin = getSiteUrl()
 
   if (!link || !link.isActive) {
     return new NextResponse(

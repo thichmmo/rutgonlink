@@ -1,7 +1,8 @@
 #!/bin/bash
 set -u
 
-APP_DIR="/home/akgywvuihosting/public_html/rutgonlink.site"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${APP_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 NODE_BIN="$APP_DIR/node-v20.15.1-linux-x64/bin/node"
 NEXT_BIN="$APP_DIR/node_modules/next/dist/bin/next"
 PORT=3001

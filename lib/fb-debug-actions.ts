@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { triggerFbScrape } from '@/lib/runtime-config'
 import { getVietnamDayBoundaries } from '@/lib/vn-time'
+import { getSiteUrl } from '@/lib/site-config'
 import {
   FB_DEBUG_BATCH_RETRY_MS,
   FB_DEBUG_BATCH_RETRY_MINUTES,
@@ -171,7 +172,7 @@ function buildShortUrl(link: {
   domain: { domain: string } | null
   sharedDomain: string | null
 }) {
-  const baseUrl = (process.env.NEXTAUTH_URL || 'https://rutgonlink.site').replace(/\/$/, '')
+  const baseUrl = getSiteUrl()
   const host = link.domain?.domain
     ? `https://${link.domain.domain}`
     : link.sharedDomain

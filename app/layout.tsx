@@ -2,11 +2,12 @@
 import { Inter } from 'next/font/google'
 import { AntdRegistry } from '@ant-design/nextjs-registry'
 import Providers from '@/components/Providers'
+import { getSiteHostname, getSiteUrl } from '@/lib/site-config'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin', 'vietnamese'] })
-const appUrl = process.env.NEXTAUTH_URL || 'https://rutgonlink.site'
-const appHostname = new URL(appUrl).hostname
+const appUrl = getSiteUrl()
+const appHostname = getSiteHostname()
 
 export const metadata: Metadata = {
   title: `${appHostname} - Rút gọn link chuyên nghiệp`,

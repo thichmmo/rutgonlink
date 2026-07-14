@@ -4,6 +4,8 @@
 
 `prisma.ts` yêu cầu `DATABASE_URL` hợp lệ và dừng sớm nếu chưa cấu hình, thay vì âm thầm kết nối tới địa chỉ mẫu.
 
-`api-v1-auth.ts` mặc định dùng `rutgonlink.site`; production nên khai báo rõ `API_ALLOWED_HOST`.
+`site-config.ts` chuẩn hóa `NEXTAUTH_URL`, sinh URL tuyệt đối và xác định domain chính/alias. `api-v1-auth.ts`, cron, Google Drive và các route tạo short URL đều dùng cấu hình này; không còn cần `API_ALLOWED_HOST` riêng.
+
+`auth-options.ts` chỉ bật Google khi có đủ `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET`, đồng thời upsert user theo email để callback lặp không lỗi unique. `auth-redirect.ts` chặn callback path ngoài origin và chuẩn hóa thông báo lỗi OAuth.
 
 Đã kiểm tra file bằng scoped ESLint từ project root.

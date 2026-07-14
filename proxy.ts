@@ -1,24 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isGarbageRequestLog } from "@/lib/request-log-filter";
-
-const configuredDomain = (() => {
-  try {
-    return new URL(process.env.NEXTAUTH_URL || "https://rutgonlink.site").hostname.toLowerCase();
-  } catch {
-    return "rutgonlink.site";
-  }
-})();
-
-const MAIN_DOMAINS = new Set([
-  configuredDomain,
-  `www.${configuredDomain}`,
-  "clonetot.site",
-  "www.clonetot.site",
-  "rutgonlink.site",
-  "localhost",
-  "127.0.0.1",
-]);
+import { isMainAppHostname } from "@/lib/site-config";
 
 function parseUA(ua: string) {
   const l = ua.toLowerCase();
@@ -79,10 +62,10 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-    // Domain chính lấy từ NEXTAUTH_URL; vẫn cho phép host nội bộ của reverse proxy.
-    if (
-      MAIN_DOMAINS.has(hostname) ||
-      hostname === process.env.VPS_HOST
+  // Domain chính lấy từ NEXTAUTH_URL; alias tùy chọn lấy từ APP_ALLOWED_HOSTS.
+  if (
+    isMainAppHostname(hostname) ||
+    hostname === process.env.VPS_HOST
   ) {
     // Check auth cho dashboard
     if (pathname.startsWith("/dashboard")) {

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, Suspense } from 'react'
-import { signIn } from 'next-auth/react'
+import { useEffect, useState, Suspense } from 'react'
+import { getProviders, signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import Image from 'next/image'
+import { getAuthErrorMessage, getSafeAuthRedirect } from '@/lib/auth-redirect'
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Tên phải có ít nhất 2 ký tự'),
@@ -32,12 +33,19 @@ function GoogleIcon() {
 function RegisterContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
+  const redirectTo = getSafeAuthRedirect(searchParams.get('redirect'))
 
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => getAuthErrorMessage(searchParams.get('error')))
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleAvailable, setGoogleAvailable] = useState(false)
+
+  useEffect(() => {
+    getProviders()
+      .then((providers) => setGoogleAvailable(Boolean(providers?.google)))
+      .catch(() => setGoogleAvailable(false))
+  }, [])
 
   const {
     register,
@@ -80,7 +88,13 @@ function RegisterContent() {
 
   const handleGoogle = async () => {
     setGoogleLoading(true)
-    await signIn('google', { callbackUrl: redirectTo })
+    setError('')
+    try {
+      await signIn('google', { callbackUrl: redirectTo })
+    } catch {
+      setError('Không thể kết nối đăng nhập Google. Vui lòng thử lại.')
+      setGoogleLoading(false)
+    }
   }
 
   return (
@@ -101,22 +115,24 @@ function RegisterContent() {
             <p className="text-gray-600 mt-1 text-sm">Miễn phí, không cần thẻ tín dụng.</p>
           </div>
 
-          {/* Google button */}
-          <button
-            onClick={handleGoogle}
-            disabled={googleLoading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60 mb-5 cursor-pointer"
-          >
-            {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-gray-400" /> : <GoogleIcon />}
-            Đăng ký bằng Google
-          </button>
+          {googleAvailable && (
+            <>
+              <button
+                onClick={handleGoogle}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60 mb-5 cursor-pointer"
+              >
+                {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-gray-400" /> : <GoogleIcon />}
+                Đăng ký bằng Google
+              </button>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-xs text-gray-400 font-medium">hoặc dùng email</span>
-            <div className="flex-1 h-px bg-gray-200" />
-          </div>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400 font-medium">hoặc dùng email</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="mb-5 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 : "${API_KEY:?Set API_KEY before checking tokens}"
-BASE_URL="https://rutgonlink.site/api/v1"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+BASE_URL="${APP_URL%/}/api/v1"
 
 echo "=== Kiểm tra tất cả tokens ==="
 echo ""

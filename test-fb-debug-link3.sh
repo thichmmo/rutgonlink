@@ -1,7 +1,8 @@
 #!/bin/bash
 
 : "${API_KEY:?Set API_KEY before running this test}"
-BASE_URL="https://rutgonlink.site/api/v1"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+BASE_URL="${APP_URL%/}/api/v1"
 
 echo "=== Test Facebook Debug cho Link thứ 3 ==="
 echo ""
@@ -37,10 +38,11 @@ echo ""
 # Lấy domain từ response
 DOMAIN=$(echo "$LINK_DETAIL" | grep -o '"domain":"[^"]*"' | head -1 | cut -d'"' -f4)
 if [ -z "$DOMAIN" ]; then
-  DOMAIN="rutgonlink.site"
+  SHORT_URL="${APP_URL%/}/$SHORT_CODE"
+else
+  SHORT_URL="https://$DOMAIN/$SHORT_CODE"
 fi
 
-SHORT_URL="https://$DOMAIN/$SHORT_CODE"
 echo "   - URL: $SHORT_URL"
 echo ""
 

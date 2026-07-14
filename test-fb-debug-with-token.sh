@@ -2,8 +2,9 @@
 
 : "${API_KEY:?Set API_KEY before running this test}"
 : "${FB_TOKEN:?Set FB_TOKEN before running this test}"
-BASE_URL="https://rutgonlink.site/api/v1"
-SHORT_URL="https://rutgonlink.site/xem-tron-tap"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+BASE_URL="${APP_URL%/}/api/v1"
+SHORT_URL="${SHORT_URL:-${APP_URL%/}/xem-tron-tap}"
 
 echo "=== Test Facebook Debug với Token ==="
 echo ""

@@ -19,24 +19,6 @@ import {
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 
-const configuredDomain = (() => {
-  try {
-    return new URL(process.env.NEXTAUTH_URL || 'https://rutgonlink.site').hostname.toLowerCase()
-  } catch {
-    return 'rutgonlink.site'
-  }
-})()
-
-const ALLOWED_DOMAINS = new Set([
-  configuredDomain,
-  `www.${configuredDomain}`,
-  'clonetot.site',
-  'www.clonetot.site',
-  'rutgonlink.site',
-  'localhost',
-  '127.0.0.1',
-])
-
 export default function HomePage() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
@@ -44,20 +26,12 @@ export default function HomePage() {
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
-      // Block custom domains from showing homepage
-      const hostname = window.location.hostname
-      if (!ALLOWED_DOMAINS.has(hostname.toLowerCase())) {
-        window.location.href = '/404'
-        return
-      }
-
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('error') === 'expired') {
-        queueMicrotask(() => setNotice('Link này đã hết hạn và không thể truy cập.'))
-      // Remove the param from URL without reload
-      const url = new URL(window.location.href)
-      url.searchParams.delete('error')
-      window.history.replaceState({}, '', url.toString())
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'expired') {
+      queueMicrotask(() => setNotice('Link này đã hết hạn và không thể truy cập.'))
+      const currentUrl = new URL(window.location.href)
+      currentUrl.searchParams.delete('error')
+      window.history.replaceState({}, '', currentUrl.toString())
     }
   }, [])
 

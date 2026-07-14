@@ -1,7 +1,8 @@
 #!/bin/bash
 
 : "${API_KEY:?Set API_KEY before updating test links}"
-BASE_URL="https://rutgonlink.site/api/v1"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+BASE_URL="${APP_URL%/}/api/v1"
 
 # Get all test links
 LINKS=$(curl -s -H "Authorization: Bearer $API_KEY" "$BASE_URL/links" | grep -o '"id":"cmozdq[^"]*"' | cut -d'"' -f4)

@@ -1,9 +1,10 @@
 ﻿import { ImageResponse } from 'next/og'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { getSiteHostname } from '@/lib/site-config'
 
 export const runtime = 'nodejs'
-export const alt = 'Rút gọn link chuyên nghiệp - rutgonlink.site'
+export const alt = `Rút gọn link chuyên nghiệp - ${getSiteHostname()}`
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -110,7 +111,7 @@ export default function Image() {
               }}
             />
             <span style={{ color: '#ef4444', fontSize: '28px', fontWeight: 700 }}>
-          rutgonlink.site
+            {getSiteHostname()}
             </span>
           </div>
 

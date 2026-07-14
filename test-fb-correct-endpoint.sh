@@ -1,7 +1,8 @@
 #!/bin/bash
 
 : "${FB_TOKEN:?Set FB_TOKEN before running this test}"
-SHORT_URL="https://rutgonlink.site/xem-tron-tap"
+APP_URL="${NEXTAUTH_URL:-http://localhost:3000}"
+SHORT_URL="${SHORT_URL:-${APP_URL%/}/xem-tron-tap}"
 
 echo "=== Test Facebook Sharing Debugger API ==="
 echo ""

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { customAlphabet } from 'nanoid'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
+import { getSiteHostname } from '@/lib/site-config'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   // Skip header row, process max 500 rows
   const dataRows = rows.slice(1, 501)
-  const appHost = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).hostname : 'rutgonlink.site'
+  const appHost = getSiteHostname()
 
   // Load user's verified domains once
   const userDomains = await prisma.domain.findMany({

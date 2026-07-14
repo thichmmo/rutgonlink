@@ -10,9 +10,10 @@ import {
   createDriveFile,
 } from '@/lib/google-drive'
 import { decrypt } from '@/lib/encrypt'
+import { getSiteUrl } from '@/lib/site-config'
 
 export async function GET(request: Request) {
-  const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin
+  const baseUrl = getSiteUrl()
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) {
     return NextResponse.redirect(new URL('/login', baseUrl))

@@ -10,8 +10,8 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const DAYS_OPTIONS = [1, 7, 14, 30]
 const SITE_OPTIONS = [
   { value: 'all', label: 'Tất cả' },
-  { value: 'rutgon', label: 'rutgonlink.site' },
-  { value: 'tienich', label: 'rutgonlink.site' },
+  { value: 'rutgon', label: 'Website chính' },
+  { value: 'tienich', label: 'Tiện ích' },
 ]
 
 interface Log {
@@ -147,8 +147,8 @@ export default function AdminLogsPage() {
         {[
           { label: 'Tổng requests', value: total.toLocaleString() },
           { label: 'Unique IPs', value: stats ? new Set(stats.topIPs.map((x) => x.ip)).size : '-' },
-          { label: 'rutgonlink.site', value: stats?.bySite.find((s) => s.site === 'rutgon')?.count.toLocaleString() ?? 0 },
-          { label: 'rutgonlink.site', value: stats?.bySite.find((s) => s.site === 'tienich')?.count.toLocaleString() ?? 0 },
+            { label: 'Website chính', value: stats?.bySite.find((s) => s.site === 'rutgon')?.count.toLocaleString() ?? 0 },
+            { label: 'Tiện ích', value: stats?.bySite.find((s) => s.site === 'tienich')?.count.toLocaleString() ?? 0 },
         ].map((item) => (
           <div key={item.label} className="bg-gray-900 rounded-xl p-4 border border-gray-800">
             <div className="text-2xl font-bold text-white">{item.value}</div>

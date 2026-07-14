@@ -1,7 +1,8 @@
 ﻿import { google } from 'googleapis'
+import { getSiteName } from '@/lib/site-config'
 
 function getFolderName(email: string) {
-  return `Ghi Chú - ${email} - rutgonlink.site`
+  return `Ghi Chú - ${email} - ${getSiteName()}`
 }
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email'

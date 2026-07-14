@@ -1,18 +1,21 @@
 ﻿import {Metadata} from 'next';
 import Link from 'next/link';
 import {Key, Terminal, Link2, CheckCircle, AlertCircle, ArrowRight, Code2, Shield, Globe, Zap} from 'lucide-react';
+import {getSiteHostname, getSiteUrl} from '@/lib/site-config';
 
 export const metadata: Metadata = {
     title: 'Hướng dẫn API - LinkShort',
     description: 'Tài liệu tích hợp API rút gọn link LinkShort. Hướng dẫn xác thực, các endpoint và ví dụ cụ thể.',
 };
 
-const BASE_URL = 'https://rutgonlink.site/api/v1';
+const SITE_URL = getSiteUrl();
+const SITE_HOSTNAME = getSiteHostname();
+const BASE_URL = `${SITE_URL}/api/v1`;
 
 function CodeBlock({code, lang = 'bash'}: {code: string; lang?: string}) {
     return (
         <pre className="bg-gray-900 text-gray-100 rounded-xl p-4 text-sm overflow-x-auto leading-relaxed whitespace-pre">
-            <code>{code}</code>
+              <code data-language={lang}>{code}</code>
         </pre>
     );
 }
@@ -177,7 +180,7 @@ export default function ApiDocsPage() {
                             Tất cả API endpoint đều có tiền tố sau. API <strong>chỉ hoạt động</strong> tại domain chính
                             thức.
                         </p>
-                        <CodeBlock code={`https://rutgonlink.site/api/v1`} />
+                          <CodeBlock code={BASE_URL} />
                     </div>
                 </section>
 
@@ -199,7 +202,7 @@ export default function ApiDocsPage() {
                                 nghị)
                             </p>
                             <CodeBlock
-                                code={`curl https://rutgonlink.site/api/v1/links \\
+                                  code={`curl ${BASE_URL}/links \\
   -H "X-API-Key: ls_live_YOUR_API_KEY_HERE"`}
                             />
                         </div>
@@ -210,7 +213,7 @@ export default function ApiDocsPage() {
                                 <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">Authorization: Bearer</code>
                             </p>
                             <CodeBlock
-                                code={`curl https://rutgonlink.site/api/v1/links \\
+                                  code={`curl ${BASE_URL}/links \\
   -H "Authorization: Bearer ls_live_YOUR_API_KEY_HERE"`}
                             />
                         </div>
@@ -244,7 +247,7 @@ export default function ApiDocsPage() {
                                         href="/register"
                                         className="text-blue-600 hover:underline"
                                     >
-                                        rutgonlink.site/register
+                                          {SITE_HOSTNAME}/register
                                     </Link>
                                 </div>
                             </li>
@@ -258,7 +261,7 @@ export default function ApiDocsPage() {
                                         href="/pricing"
                                         className="text-blue-600 hover:underline"
                                     >
-                                        rutgonlink.site/pricing
+                                          {SITE_HOSTNAME}/pricing
                                     </Link>{' '}
                                     (gói Cơ Bản và Pro không có API access)
                                 </div>
@@ -283,7 +286,7 @@ export default function ApiDocsPage() {
                                     4
                                 </span>
                                 <div>
-                                    Nhấn <strong>"Tạo API Key"</strong> để sinh key mới dạng{' '}
+                                      Nhấn <strong>&quot;Tạo API Key&quot;</strong> để sinh key mới dạng{' '}
                                     <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">
                                         ls_live_xxxxxxxxxx...
                                     </code>
@@ -433,7 +436,7 @@ export default function ApiDocsPage() {
     {
       "id": "clxyz123",
       "shortCode": "abc123",
-      "shortUrl": "https://rutgonlink.site/p/abc123",
+      "shortUrl": "${SITE_URL}/abc123",
       "originalUrl": "https://facebook.com/example",
       "title": "Trang Facebook",
       "isActive": true,
@@ -571,7 +574,7 @@ export default function ApiDocsPage() {
   "data": {
     "id": "clxyz456",
     "shortCode": "ex-home",
-    "shortUrl": "https://rutgonlink.site/p/ex-home",
+      "shortUrl": "${SITE_URL}/ex-home",
     "originalUrl": "https://example.com/very-long-url",
     "title": "Trang chủ Example",
     "isActive": true,
@@ -614,7 +617,7 @@ export default function ApiDocsPage() {
   "data": {
     "id": "clxyz456",
     "shortCode": "ex-home",
-    "shortUrl": "https://rutgonlink.site/p/ex-home",
+      "shortUrl": "${SITE_URL}/ex-home",
     "originalUrl": "https://example.com/very-long-url",
     "title": "Trang chủ Example",
     "isActive": true,
@@ -783,7 +786,7 @@ curl -X PATCH "${BASE_URL}/fb-debug" \\
 curl -X PATCH "${BASE_URL}/fb-debug" \\
   -H "X-API-Key: ls_live_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{ "action": "scrape", "url": "https://rutgonlink.site/abc123" }'
+    -d '{ "action": "scrape", "url": "${SITE_URL}/abc123" }'
 
 # Chạy debug ngay cho các link đủ điều kiện
 curl -X PATCH "${BASE_URL}/fb-debug" \\
@@ -838,7 +841,7 @@ curl -X DELETE "${BASE_URL}/fb-debug" \\
                                         {
                                             status: '403',
                                             code: 'INVALID_HOST',
-                                            desc: 'Request không đến từ domain cho phép (rutgonlink.site)',
+                                              desc: `Request không đến từ domain cho phép (${SITE_HOSTNAME})`,
                                         },
                                         {
                                             status: '403',
@@ -890,7 +893,7 @@ curl -X DELETE "${BASE_URL}/fb-debug" \\
                             <p className="text-sm font-semibold text-gray-700 mb-2">Node.js / TypeScript</p>
                             <CodeBlock
                                 code={`const API_KEY = process.env.LINKSHORT_API_KEY // ls_live_xxx
-const BASE    = 'https://rutgonlink.site/api/v1'
+  const BASE    = '${BASE_URL}'
 
 async function shortenUrl(originalUrl: string, title?: string) {
   const res = await fetch(\`\${BASE}/links\`, {
@@ -908,7 +911,7 @@ async function shortenUrl(originalUrl: string, title?: string) {
   }
 
   const { data } = await res.json()
-  return data.shortUrl  // "https://rutgonlink.site/p/abc123"
+  return data.shortUrl  // "${SITE_URL}/abc123"
 }
 
 // Sử dụng
@@ -925,7 +928,7 @@ console.log(shortUrl)`}
 import requests
 
 API_KEY = os.environ['LINKSHORT_API_KEY']  # ls_live_xxx
-BASE    = 'https://rutgonlink.site/api/v1'
+  BASE    = '${BASE_URL}'
 
 def shorten_url(original_url: str, title: str = None) -> str:
     response = requests.post(
@@ -938,7 +941,7 @@ def shorten_url(original_url: str, title: str = None) -> str:
 
 # Sử dụng
 short_url = shorten_url('https://example.com/very/long/path', 'Trang chủ')
-print(short_url)  # https://rutgonlink.site/p/abc123`}
+  print(short_url)  # ${SITE_URL}/abc123`}
                                 lang="python"
                             />
                         </div>
@@ -948,7 +951,7 @@ print(short_url)  # https://rutgonlink.site/p/abc123`}
                             <CodeBlock
                                 code={`<?php
 $apiKey = getenv('LINKSHORT_API_KEY'); // ls_live_xxx
-$base   = 'https://rutgonlink.site/api/v1';
+  $base   = '${BASE_URL}';
 
 function shortenUrl(string $url, string $title = ''): string {
     global $apiKey, $base;
@@ -965,7 +968,7 @@ function shortenUrl(string $url, string $title = ''): string {
 }
 
 echo shortenUrl('https://example.com/very/long/path', 'Trang chủ');
-// https://rutgonlink.site/p/abc123`}
+  // ${SITE_URL}/abc123`}
                                 lang="php"
                             />
                         </div>

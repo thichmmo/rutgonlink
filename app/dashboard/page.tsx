@@ -6,6 +6,7 @@ import {redirect} from 'next/navigation';
 import Link from 'next/link';
 import {Link2, MousePointer, Globe, TrendingUp} from 'lucide-react';
 import {formatNumber, formatDateTimeVN} from '@/lib/utils';
+import {getSiteUrl} from '@/lib/site-config';
 import DashboardQuickShorten from './DashboardQuickShorten';
 
 type RecentLink = Prisma.LinkGetPayload<{
@@ -73,7 +74,7 @@ export default async function DashboardPage() {
         },
     ];
 
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = getSiteUrl();
 
     return (
         <div className="space-y-6 sm:space-y-8">

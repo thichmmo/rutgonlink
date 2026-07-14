@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authenticateApiKey } from '@/lib/api-v1-auth'
 import { syncCategoryLinksToFolderGroup } from '@/lib/folder-rotation-actions'
 import { z } from 'zod'
+import { buildShortUrl } from '@/lib/site-config'
 
 const LINK_SELECT = {
   id: true,
@@ -71,11 +72,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Link không tồn tại' }, { status: 404 })
   }
 
-  const baseUrl = 'https://rutgonlink.site/'
   return NextResponse.json({
     data: {
       ...link,
-      shortUrl: baseUrl + link.shortCode,
+      shortUrl: buildShortUrl(link.shortCode),
       clicks: link._count.clicks,
       _count: undefined,
     },
@@ -141,11 +141,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (synced) updated = synced
   }
 
-  const baseUrl = 'https://rutgonlink.site/'
   return NextResponse.json({
     data: {
       ...updated,
-      shortUrl: baseUrl + updated.shortCode,
+      shortUrl: buildShortUrl(updated.shortCode),
       clicks: updated._count.clicks,
       _count: undefined,
     },

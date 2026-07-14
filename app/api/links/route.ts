@@ -7,6 +7,7 @@ import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { getVietnamDayBoundaries } from '@/lib/vn-time'
 import { getAlignedFolderRotationStartDateForGroup } from '@/lib/folder-active-preview-actions'
+import { getSiteHostname } from '@/lib/site-config'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
@@ -262,7 +263,7 @@ export async function POST(req: NextRequest) {
       if (!isMember) return NextResponse.json({ error: 'Bạn không phải thành viên workspace này' }, { status: 403 })
     }
 
-    const appHost = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).hostname : 'rutgonlink.site'
+      const appHost = getSiteHostname()
     const targetHost = new URL(data.originalUrl).hostname
     if (targetHost === appHost) {
       return NextResponse.json({ error: 'Không thể dùng domain của ứng dụng làm link đích' }, { status: 400 })

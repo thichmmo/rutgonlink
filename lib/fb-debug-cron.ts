@@ -2,6 +2,7 @@ import { prisma } from './prisma'
 import { getVietnamDayBoundaries } from './vn-time'
 import { FB_DEBUG_BLOCK_BACKOFF_MS, FB_DEBUG_MAX_LINKS_PER_RUN } from './fb-debug-limits'
 import { processDueFbDebugJobs, scrapeWithFbTokens } from './fb-debug-actions'
+import { getSiteUrl } from './site-config'
 
 interface FbDebugLink {
   id: string
@@ -38,7 +39,7 @@ const JITTER_MS = 2 * 60 * 1000
 // Tắt OG, FB debug và reset click theo thứ tự cho mỗi link đến hạn.
 export async function runScheduledActions() {
   const now = new Date()
-  const baseUrl = (process.env.NEXTAUTH_URL || 'https://rutgonlink.site').replace(/\/$/, '')
+  const baseUrl = getSiteUrl()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const links = (await (prisma.link as any).findMany({
@@ -174,7 +175,7 @@ export async function runFbDebugBatch() {
     linksByUser.set(link.userId, userLinks)
   }
 
-  const baseUrl = (process.env.NEXTAUTH_URL || 'https://rutgonlink.site').replace(/\/$/, '')
+  const baseUrl = getSiteUrl()
   const now = Date.now()
   const { startOfToday } = getVietnamDayBoundaries()
 

@@ -623,7 +623,7 @@ export default function FbDebugClient() {
               value={scrapeUrl}
               onChange={e => setScrapeUrl(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && scrapeLink()}
-              placeholder="https://rutgonlink.site/abc123"
+              placeholder="https://your-domain.com/abc123"
               className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/30"
             />
             <button

@@ -4,6 +4,38 @@
 
 Các thư mục sinh tự động như `node_modules` và `.next` không được lưu trên GitHub. Repository chỉ cung cấp `.env.example`; secret production phải được cấu hình trực tiếp trên hosting và không được commit.
 
+## Đổi domain
+
+Domain chính chỉ lấy từ một biến môi trường:
+
+```env
+NEXTAUTH_URL=https://your-domain.com
+```
+
+API, short URL, metadata, OAuth callback, cron và kiểm tra host đều dùng giá trị này. Nếu cần giữ domain cũ làm alias cho toàn bộ giao diện, khai báo thêm `APP_ALLOWED_HOSTS=old-domain.com,www.old-domain.com`; custom domain rút gọn không cần thêm vào đây.
+
+Sau khi đổi `NEXTAUTH_URL`, cập nhật DNS/SSL và domain trong cPanel rồi build/restart ứng dụng. Không cần tìm và sửa domain trong source.
+
+## Đăng nhập Google
+
+1. Tạo OAuth Client loại **Web application** trong Google Cloud Console.
+2. Thêm **Authorized JavaScript origin**: `https://your-domain.com`.
+3. Thêm hai **Authorized redirect URI**:
+
+```text
+https://your-domain.com/api/auth/callback/google
+https://your-domain.com/api/drive/callback
+```
+
+4. Khai báo trên hosting rồi restart app:
+
+```env
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+```
+
+Google chỉ xuất hiện trên trang đăng nhập/đăng ký khi máy chủ đã nhận đủ hai biến. Kiểm tra nhanh `GET /api/auth/providers`; response phải có provider `google`.
+
 ## Database cPanel
 
 `database.sql` là schema MySQL/MariaDB gồm 29 bảng, được sinh trực tiếp từ `prisma/schema.prisma`. Đây là script import, không phải file database mà Node.js có thể mở trực tiếp.
@@ -66,14 +98,14 @@ pnpm build:cpanel
 
 Trong cPanel, đặt Application startup file là `passenger_entry.js`. Khai báo toàn bộ biến bắt buộc từ `.env.example` trong giao diện Node.js App rồi restart ứng dụng.
 
-Workflow Docker/VPS trong `.github/workflows/deploy.yml` chỉ chạy thủ công qua `workflow_dispatch`; push source hosting không tự động triển khai lên VPS. Nếu dùng workflow này, cấu hình các GitHub Secrets `DOCKERHUB_TOKEN`, `VPS_HOST` và `VPS_PASSWORD` trước khi chạy.
+Workflow Docker/VPS trong `.github/workflows/deploy.yml` chỉ chạy thủ công qua `workflow_dispatch`; push source hosting không tự động triển khai lên VPS. Nếu dùng workflow này, cấu hình các GitHub Secrets `APP_DOMAIN`, `DOCKERHUB_TOKEN`, `VPS_HOST` và `VPS_PASSWORD` trước khi chạy.
 
 ## cPanel Cron Job
 
 Chạy mỗi 5 phút:
 
 ```bash
-curl -fsS -H "x-cron-secret: YOUR_SECRET" "https://rutgonlink.site/api/cron/run" >/dev/null
+curl -fsS -H "x-cron-secret: YOUR_SECRET" "$NEXTAUTH_URL/api/cron/run" >/dev/null
 ```
 
 ## Verification

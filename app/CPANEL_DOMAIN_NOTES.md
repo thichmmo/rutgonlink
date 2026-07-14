@@ -1,5 +1,5 @@
 # Primary domain handling
 
-`app/page.tsx` and `proxy.ts` recognize the primary hostname configured by `NEXTAUTH_URL`. `rutgonlink.site` is the current primary domain; `clonetot.site` remains an allowed alias so a domain switch does not trigger `/404` during client hydration.
+`proxy.ts` recognizes the primary hostname configured by `NEXTAUTH_URL`; optional full-app aliases come from `APP_ALLOWED_HOSTS`. `app/page.tsx` no longer repeats a client-side domain allow-list, preventing a valid new domain from rendering briefly and then redirecting to `/404`.
 
-Metadata, sign-out redirect and custom-domain DNS validation also use the current deployment domain. Verification requires a production build plus browser/runtime checks through the public HTTPS domain.
+Metadata, Open Graph output, API docs and custom-domain DNS validation use the same central `lib/site-config.ts` values. Verification requires a production build plus browser/runtime checks through the public HTTPS domain.

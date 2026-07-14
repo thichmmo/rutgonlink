@@ -4,6 +4,7 @@ import { authenticateApiKey } from '@/lib/api-v1-auth'
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
+import { buildShortUrl, getSiteHostname } from '@/lib/site-config'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
@@ -63,12 +64,10 @@ export async function GET(req: NextRequest) {
     prisma.link.count({ where }),
   ])
 
-  const baseUrl = 'https://rutgonlink.site/'
-
   return NextResponse.json({
     data: links.map((l) => ({
       ...l,
-      shortUrl: baseUrl + l.shortCode,
+      shortUrl: buildShortUrl(l.shortCode),
       clicks: l._count.clicks,
       _count: undefined,
     })),
@@ -104,7 +103,7 @@ export async function POST(req: NextRequest) {
   const data = parsed.data
 
   // Tránh rút gọn domain chính của ứng dụng
-  const appHost = 'rutgonlink.site'
+  const appHost = getSiteHostname()
   try {
     const targetHost = new URL(data.originalUrl).hostname
     if (targetHost === appHost) {
@@ -141,13 +140,11 @@ export async function POST(req: NextRequest) {
     select: LINK_SELECT,
   })
 
-  const baseUrl = 'https://rutgonlink.site/'
-
   return NextResponse.json(
     {
       data: {
         ...link,
-        shortUrl: baseUrl + link.shortCode,
+          shortUrl: buildShortUrl(link.shortCode),
         clicks: link._count.clicks,
         _count: undefined,
       },

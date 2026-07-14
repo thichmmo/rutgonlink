@@ -19,10 +19,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
-  env: {
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL || "https://rutgonlink.site",
-  },
-  async headers() {
+    async headers() {
     return [
       {
         source: '/(.*)',

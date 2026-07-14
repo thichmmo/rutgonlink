@@ -4,6 +4,7 @@
 Make the "Debug ngay" feedback match the background job behavior.
 
 ## Behavior
+- Placeholder URL dùng domain mẫu, tránh yêu cầu sửa UI khi `NEXTAUTH_URL` thay đổi.
 - The button no longer reports `0/0` when the API has only queued a job.
 - Empty runs show that no link is eligible.
 - Queued runs show the total number of links waiting for the background batch.
