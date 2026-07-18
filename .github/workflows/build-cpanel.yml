@@ -28,7 +28,8 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
-          NEXTAUTH_URL: https://example.test
+          NEXTAUTH_URL: https://rutgonlink.site
+          SITE_NAME: rutgonlink.site
           NEXTAUTH_SECRET: build-only-placeholder
           ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
 
