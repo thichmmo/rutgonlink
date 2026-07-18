@@ -1,7 +1,26 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { BookOpen, Clock, ArrowRight } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { buildSiteUrl, getSiteName } from '@/lib/site-config'
+
+const blogDescription =
+  'Kiến thức về rút gọn link, QR Code, theo dõi click, domain tùy chỉnh và tối ưu chiến dịch marketing.'
+
+export const metadata: Metadata = {
+  title: 'Kiến thức và hướng dẫn rút gọn link',
+  description: blogDescription,
+  alternates: {
+    canonical: buildSiteUrl('/blog'),
+  },
+  openGraph: {
+    title: `Blog ${getSiteName()} - Kiến thức rút gọn link`,
+    description: blogDescription,
+    url: buildSiteUrl('/blog'),
+    type: 'website',
+  },
+}
 
 const categories = [
   { name: 'Tất cả', slug: '' },

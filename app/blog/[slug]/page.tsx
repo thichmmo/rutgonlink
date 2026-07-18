@@ -1,8 +1,11 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Clock, ArrowLeft, Tag, BookOpen } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { buildSiteUrl, getSiteName } from '@/lib/site-config'
+import { BLOG_SEO_ENTRIES } from '../blog-seo'
 
 const colorMap: Record<string, string> = {
   'Hướng dẫn': 'bg-sky-100 text-sky-700',
@@ -570,6 +573,13 @@ Cảm ơn cộng đồng LinkShort đã đồng hành và phản hồi giúp ch�
   },
 }
 
+const postSlugs = Object.keys(posts).sort()
+const seoSlugs = BLOG_SEO_ENTRIES.map(({ slug }) => slug).sort()
+if (JSON.stringify(postSlugs) !== JSON.stringify(seoSlugs)) {
+  // Không cho build nếu sitemap và dữ liệu bài viết có thể tạo URL 404.
+  throw new Error('BLOG_SEO_ENTRIES must match the blog post dataset')
+}
+
 function renderMarkdown(content: string) {
   const lines = content.trim().split('\n')
   const result: React.ReactNode[] = []
@@ -580,7 +590,6 @@ function renderMarkdown(content: string) {
 
     // Code block
     if (line.startsWith('```')) {
-      const lang = line.slice(3).trim()
       const codeLines: string[] = []
       i++
       while (i < lines.length && !lines[i].startsWith('```')) {
@@ -638,7 +647,50 @@ function renderMarkdown(content: string) {
 }
 
 export async function generateStaticParams() {
-  return Object.keys(posts).map((slug) => ({ slug }))
+  return postSlugs.map((slug) => ({ slug }))
+}
+
+function toIsoDate(date: string) {
+  const [day, month, year] = date.split('/')
+  return `${year}-${month}-${day}T00:00:00+07:00`
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const post = posts[slug]
+  if (!post) {
+    return {
+      title: 'Không tìm thấy bài viết',
+      robots: { index: false, follow: false },
+    }
+  }
+
+  const canonicalUrl = buildSiteUrl(`/blog/${slug}`)
+  return {
+    title: post.title,
+    description: post.excerpt,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title: post.title,
+      description: post.excerpt,
+      url: canonicalUrl,
+      siteName: getSiteName(),
+      locale: 'vi_VN',
+      type: 'article',
+      publishedTime: toIsoDate(post.date),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.excerpt,
+    },
+  }
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -648,9 +700,27 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
   const allSlugs = Object.keys(posts)
   const relatedSlugs = allSlugs.filter((s) => s !== slug).slice(0, 3)
+  const canonicalUrl = buildSiteUrl(`/blog/${slug}`)
+  const articleJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: post.title,
+    description: post.excerpt,
+    datePublished: toIsoDate(post.date),
+    mainEntityOfPage: canonicalUrl,
+    publisher: {
+      '@type': 'Organization',
+      name: getSiteName(),
+      url: buildSiteUrl('/'),
+    },
+  }
 
   return (
     <div className="min-h-screen bg-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+      />
       <Navbar />
 
       <article className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20">

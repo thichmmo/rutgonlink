@@ -10,7 +10,10 @@ const appUrl = getSiteUrl()
 const appHostname = getSiteHostname()
 
 export const metadata: Metadata = {
-  title: `${appHostname} - Rút gọn link chuyên nghiệp`,
+  title: {
+    default: `${appHostname} - Rút gọn link chuyên nghiệp`,
+    template: `%s | ${appHostname}`,
+  },
   description:
     'Dịch vụ rút gọn link miễn phí, theo dõi thống kê click, chuyển hướng theo thiết bị và quốc gia. Tạo link ngắn gọn, đẹp, dễ nhớ.',
   metadataBase: new URL(appUrl),
@@ -18,7 +21,6 @@ export const metadata: Metadata = {
     title: `${appHostname} - Rút gọn link chuyên nghiệp`,
     description:
       'Dịch vụ rút gọn link miễn phí, theo dõi thống kê click, chuyển hướng theo thiết bị và quốc gia.',
-    url: appUrl,
     siteName: appHostname,
     locale: 'vi_VN',
     type: 'website',
@@ -33,6 +35,9 @@ export const metadata: Metadata = {
     icon: '/logo_v_clean.svg',
     shortcut: '/logo_v_transparent.png',
     apple: '/logo_v_transparent.png',
+  },
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
   },
 }
 

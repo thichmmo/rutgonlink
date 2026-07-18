@@ -1,3 +1,4 @@
+import type {Metadata} from 'next';
 import {getServerSession} from 'next-auth';
 import {authOptions} from '@/lib/auth-options';
 import {redirect} from 'next/navigation';
@@ -8,6 +9,10 @@ import MobileNav from './MobileNav';
 import DashboardNavLinks from './DashboardNavLinks';
 import CreateLinkButton from './CreateLinkButton';
 import DashboardClock from './DashboardClock';
+
+export const metadata: Metadata = {
+    robots: {index: false, follow: false},
+};
 
 export default async function DashboardLayout({children}: {children: React.ReactNode}) {
     const session = await getServerSession(authOptions);

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
@@ -16,6 +17,10 @@ import {
 } from 'lucide-react'
 import AdminSignOut from './AdminSignOut'
 import { getAdminContext, hasAdminPermission, type AdminPermission } from '@/lib/admin-auth'
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 const navItems: Array<{
   href: string

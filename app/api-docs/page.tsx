@@ -1,11 +1,20 @@
 ﻿import {Metadata} from 'next';
 import Link from 'next/link';
 import {Key, Terminal, Link2, CheckCircle, AlertCircle, ArrowRight, Code2, Shield, Globe, Zap} from 'lucide-react';
-import {getSiteHostname, getSiteUrl} from '@/lib/site-config';
+import {buildSiteUrl, getSiteHostname, getSiteUrl} from '@/lib/site-config';
 
 export const metadata: Metadata = {
     title: 'Hướng dẫn API - LinkShort',
     description: 'Tài liệu tích hợp API rút gọn link LinkShort. Hướng dẫn xác thực, các endpoint và ví dụ cụ thể.',
+    alternates: {
+        canonical: buildSiteUrl('/api-docs'),
+    },
+    openGraph: {
+        title: 'Hướng dẫn API rút gọn link',
+        description: 'Tài liệu tích hợp API rút gọn link, xác thực và ví dụ sử dụng cụ thể.',
+        url: buildSiteUrl('/api-docs'),
+        type: 'website',
+    },
 };
 
 const SITE_URL = getSiteUrl();

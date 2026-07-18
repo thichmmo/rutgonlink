@@ -136,3 +136,7 @@ Admin release còn được kiểm tra bằng scoped ESLint cho `app/admin`, `ap
 Dependency security: Next.js/NextAuth được giữ ở bản vá đã audit; `pnpm.overrides` khóa các dependency gián tiếp có advisory nhưng chưa được package cha nâng phiên bản. Sau khi đổi dependency, chạy lại `pnpm audit --prod` và production build.
 
 Kết quả: schema hợp lệ, `database.sql` khớp 32 model Prisma, build standalone thành công, entry Passenger trả HTTP 200, cron không secret trả HTTP 401, static/public phục vụ thành công và artifact không chứa `.env`.
+
+## SEO production
+
+Build cPanel phải đặt `NEXTAUTH_URL=https://rutgonlink.site` để title, canonical, Open Graph, robots và sitemap dùng đúng origin. Release SEO hợp nhất `http`/`www` về HTTPS apex, tạo `/sitemap.xml`, thêm metadata riêng cho blog và không đưa route đăng nhập/dashboard/API vào sitemap.

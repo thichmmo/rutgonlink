@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isGarbageRequestLog } from "@/lib/request-log-filter";
-import { isMainAppHostname } from "@/lib/site-config";
+import { getSiteUrl, isMainAppHostname } from "@/lib/site-config";
 
 function parseUA(ua: string) {
   const l = ua.toLowerCase();
@@ -26,6 +26,28 @@ export async function proxy(req: NextRequest) {
   const host = req.headers.get("host") || "";
   const hostname = host.split(":")[0].toLowerCase();
   const pathname = req.nextUrl.pathname;
+
+  const isLocalRequest = hostname === "localhost" || hostname === "127.0.0.1";
+  if (!isLocalRequest && isMainAppHostname(hostname)) {
+    const primaryUrl = new URL(getSiteUrl());
+    const cloudflareVisitor = req.headers.get("cf-visitor");
+    let visitorScheme: string | undefined;
+    if (cloudflareVisitor) {
+      try {
+        visitorScheme = (JSON.parse(cloudflareVisitor) as { scheme?: string }).scheme;
+      } catch {
+        visitorScheme = undefined;
+      }
+    }
+    const usesWrongHost = hostname !== primaryUrl.hostname;
+    const usesInsecureProtocol = visitorScheme === "http";
+
+    // Hợp nhất tín hiệu SEO vào một origin nhưng không ảnh hưởng custom short-link domains.
+    if (usesWrongHost || usesInsecureProtocol) {
+      const canonicalUrl = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, primaryUrl);
+      return NextResponse.redirect(canonicalUrl, 308);
+    }
+  }
 
   // Fire-and-forget request log (skip all API calls, only log page navigations)
   if (!pathname.startsWith("/api/")) {

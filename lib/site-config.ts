@@ -1,18 +1,26 @@
 const LOCAL_SITE_URL = 'http://localhost:3000'
+const PRODUCTION_SITE_URL = 'https://rutgonlink.site'
+
+function getFallbackSiteUrl(): string {
+  return process.env.NODE_ENV === 'production' ? PRODUCTION_SITE_URL : LOCAL_SITE_URL
+}
 
 function normalizeSiteUrl(value: string | undefined): string {
   const rawValue = value?.trim()
-  if (!rawValue) return LOCAL_SITE_URL
+  if (!rawValue) return getFallbackSiteUrl()
 
-  const candidate = /^https?:\/\//i.test(rawValue) ? rawValue : `https://${rawValue}`
+  const hasExplicitScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(rawValue)
+  if (hasExplicitScheme && !/^https?:\/\//i.test(rawValue)) return getFallbackSiteUrl()
+
+  const candidate = hasExplicitScheme ? rawValue : `https://${rawValue}`
 
   try {
     const url = new URL(candidate)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return LOCAL_SITE_URL
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return getFallbackSiteUrl()
     // Chỉ giữ origin để path/query nhập nhầm không lan sang URL được sinh ra.
     return url.origin
   } catch {
-    return LOCAL_SITE_URL
+    return getFallbackSiteUrl()
   }
 }
 
