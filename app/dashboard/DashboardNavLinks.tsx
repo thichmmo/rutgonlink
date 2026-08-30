@@ -11,6 +11,7 @@ import {
   Share2,
   FolderOpen,
   ShieldCheck,
+  Music2,
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/dashboard/analytics', label: 'Thống kê', icon: BarChart2 },
   { href: '/dashboard/notes', label: 'Ghi chú', icon: NotebookPen },
   { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
+  { href: '/dashboard/tiktok-link', label: 'TikTok AFF', icon: Music2 },
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 
