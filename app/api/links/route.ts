@@ -9,6 +9,7 @@ import { getVietnamDayBoundaries } from '@/lib/vn-time'
 import { getAlignedFolderRotationStartDateForGroup } from '@/lib/folder-active-preview-actions'
 import { getSiteHostname } from '@/lib/site-config'
 import { isValidIntermediateImage, MAX_INTERMEDIATE_IMAGE_LENGTH } from '@/lib/intermediate-image'
+import { SHARED_DOMAINS } from '@/lib/shared-domains'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
@@ -75,7 +76,10 @@ const createLinkSchema = z.object({
   customCode: z.string().min(3).max(190).optional().or(z.literal('')),
   title: z.string().max(100).optional(),
   domainId: z.string().optional(),
-  sharedDomain: z.string().optional(),
+  sharedDomain: z.string().trim().toLowerCase().optional().refine(
+    (value) => !value || SHARED_DOMAINS.includes(value),
+    'Domain dùng chung không hợp lệ',
+  ),
   categoryId: z.string().optional(),
   workspaceId: z.string().optional(),
   expiresAt: z.string().optional(),
@@ -291,7 +295,7 @@ export async function POST(req: NextRequest) {
         shortCode,
         originalUrl: data.originalUrl,
         title: data.title || null,
-        domainId: data.domainId || null,
+        domainId: data.sharedDomain ? null : (data.domainId || null),
         sharedDomain: data.sharedDomain || null,
         categoryId: data.categoryId || null,
         workspaceId: data.workspaceId || null,

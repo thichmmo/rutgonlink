@@ -5,8 +5,9 @@ import { createUnlockToken } from '@/lib/unlock-token'
 import { getPlanLimits, isPlanActive } from '@/lib/plan-limits'
 import { triggerFbScrape } from '@/lib/runtime-config'
 import { getActiveFolderUrls } from '@/lib/folder-rotation'
-import { getSiteUrl } from '@/lib/site-config'
+import { getSiteUrl, isMainAppHostname } from '@/lib/site-config'
 import { isValidIntermediateImage } from '@/lib/intermediate-image'
+import { SHARED_DOMAINS } from '@/lib/shared-domains'
 
 interface LinkResult {
   id: string
@@ -62,11 +63,24 @@ async function getMonthlyClicks(userId: string): Promise<number> {
 const KNOWN_PATHS = ['dashboard', 'login', 'register', 'api', '_next', 'favicon.ico', 'public', 'bio', 'p', 'share']
 
 async function getCachedLink(shortCode: string, hostname: string): Promise<LinkResult | null> {
-  const domainRecord = await prisma.domain.findUnique({ where: { domain: hostname } })
+  const normalizedHostname = hostname.toLowerCase().replace(/\.$/, '')
+  const isSharedDomain = SHARED_DOMAINS.includes(normalizedHostname)
+  const isMainDomain = isMainAppHostname(normalizedHostname)
+  const domainRecord = isSharedDomain || isMainDomain
+    ? null
+    : await prisma.domain.findUnique({ where: { domain: normalizedHostname } })
   if (domainRecord?.disabledAt) return null
+
+  // Shared domains use Link.sharedDomain; custom domains use Domain.id.
+  // Do not let an unknown Host header fall back to main-domain links.
+  if (!isSharedDomain && !isMainDomain && !domainRecord) return null
+
   const domainId = domainRecord ? domainRecord.id : null
+  const where = isSharedDomain
+    ? { shortCode, domainId: null, sharedDomain: normalizedHostname }
+    : { shortCode, domainId }
   const result = await prisma.link.findFirst({
-    where: { shortCode, domainId },
+    where,
     include: {
       category: { select: { id: true, folderGroupId: true } },
       deviceRules: true,

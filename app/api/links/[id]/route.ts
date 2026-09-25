@@ -7,6 +7,7 @@ import { syncCategoryLinksToFolderGroup } from '@/lib/folder-rotation-actions'
 import { getAlignedFolderRotationStartDateForGroup } from '@/lib/folder-active-preview-actions'
 import bcrypt from 'bcryptjs'
 import { isValidIntermediateImage } from '@/lib/intermediate-image'
+import { SHARED_DOMAINS } from '@/lib/shared-domains'
 
 async function getUserId(session: { user?: { email?: string | null } | null } | null) {
   if (!session?.user?.email) return null
@@ -74,6 +75,13 @@ export async function PATCH(
   }
 
   const body = await req.json()
+
+  if (body.sharedDomain !== undefined && body.sharedDomain !== null) {
+    if (typeof body.sharedDomain !== 'string' || (body.sharedDomain.trim() && !SHARED_DOMAINS.includes(body.sharedDomain.trim().toLowerCase()))) {
+      return NextResponse.json({ error: 'Domain dùng chung không hợp lệ' }, { status: 400 })
+    }
+    body.sharedDomain = body.sharedDomain.trim().toLowerCase()
+  }
 
   if (body.enableIntermediatePage !== undefined && typeof body.enableIntermediatePage !== 'boolean') {
     return NextResponse.json({ error: 'Giá trị màn hình trung gian không hợp lệ' }, { status: 400 })
@@ -143,7 +151,9 @@ export async function PATCH(
       originalUrl: body.originalUrl !== undefined ? body.originalUrl : link.originalUrl,
       shortCode: body.shortCode !== undefined ? body.shortCode : link.shortCode,
       sharedDomain: body.sharedDomain !== undefined ? (body.sharedDomain || null) : link.sharedDomain,
-      domainId: body.domainId !== undefined ? (body.domainId || null) : link.domainId,
+      domainId: body.sharedDomain
+        ? null
+        : (body.domainId !== undefined ? (body.domainId || null) : link.domainId),
       categoryId: nextCategoryId,
       workspaceId: body.workspaceId !== undefined ? (body.workspaceId || null) : link.workspaceId,
       ogTitle: body.ogTitle !== undefined ? (body.ogTitle || null) : link.ogTitle,
