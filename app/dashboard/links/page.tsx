@@ -53,6 +53,8 @@ interface Link {
     maxClicks: number | null;
     deepLinkIos: string | null;
     deepLinkAndroid: string | null;
+    enableIntermediatePage?: boolean;
+    intermediateImage?: string | null;
     category: {id: string; name: string; color: string; _count?: {links: number}} | null;
     workspace?: {id: string; name: string} | null;
     _count: {clicks: number};
@@ -299,6 +301,8 @@ function LinksPageInner() {
                     expiresAt: link.expiresAt || undefined,
                     deepLinkIos: link.deepLinkIos || undefined,
                     deepLinkAndroid: link.deepLinkAndroid || undefined,
+                    enableIntermediatePage: link.enableIntermediatePage,
+                    intermediateImage: link.intermediateImage || undefined,
                     isActive: link.isActive,
                     ogEnabled: link.ogEnabled,
                     ogAutoReset: link.ogAutoReset,

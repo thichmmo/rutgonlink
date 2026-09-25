@@ -178,6 +178,8 @@ CREATE TABLE `Link` (
     `ogImage` LONGTEXT NULL,
     `deepLinkIos` TEXT NULL,
     `deepLinkAndroid` TEXT NULL,
+    `enableIntermediatePage` BOOLEAN NOT NULL DEFAULT false,
+    `intermediateImage` LONGTEXT NULL,
     `lastFbDebug` DATETIME(3) NULL,
     `ogScheduledDisableAt` DATETIME(3) NULL,
     `clickResetAt` DATETIME(3) NULL,

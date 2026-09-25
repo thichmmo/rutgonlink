@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs'
 import { getVietnamDayBoundaries } from '@/lib/vn-time'
 import { getAlignedFolderRotationStartDateForGroup } from '@/lib/folder-active-preview-actions'
 import { getSiteHostname } from '@/lib/site-config'
+import { isValidIntermediateImage, MAX_INTERMEDIATE_IMAGE_LENGTH } from '@/lib/intermediate-image'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
@@ -89,6 +90,9 @@ const createLinkSchema = z.object({
   ogTitle: z.string().max(100).optional(),
   ogDescription: z.string().max(300).optional(),
   ogImage: z.string().max(2 * 1024 * 1024, 'Ảnh OG vượt quá 2MB').optional(),
+  enableIntermediatePage: z.boolean().optional(),
+  intermediateImage: z.string().max(MAX_INTERMEDIATE_IMAGE_LENGTH, 'Ảnh trang trung gian vượt quá 2MB')
+    .refine(isValidIntermediateImage, 'Ảnh trang trung gian phải là URL HTTP(S) hoặc ảnh tải lên').optional(),
   deviceRules: z
     .array(z.object({ deviceType: z.string(), redirectUrl: z.string().url() }))
     .optional(),
@@ -303,6 +307,8 @@ export async function POST(req: NextRequest) {
         ogTitle: data.ogTitle || null,
         ogDescription: data.ogDescription || null,
         ogImage: data.ogImage || null,
+        enableIntermediatePage: data.enableIntermediatePage ?? false,
+        intermediateImage: data.intermediateImage || null,
         deviceRules: data.deviceRules?.length ? { create: data.deviceRules } : undefined,
         countryRules: data.countryRules?.length ? { create: data.countryRules } : undefined,
         languageRules: data.languageRules?.length ? { create: data.languageRules } : undefined,

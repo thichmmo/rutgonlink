@@ -69,6 +69,8 @@ const schema = z.object({
     ogTitle: z.string().max(100).optional(),
     ogDescription: z.string().max(300).optional(),
     ogImage: z.string().optional(),
+    enableIntermediatePage: z.boolean().optional(),
+    intermediateImage: z.string().optional(),
     deviceRules: z
         .array(z.object({deviceType: z.string().min(1), redirectUrl: z.string().url('URL không hợp lệ')}))
         .optional(),
@@ -115,6 +117,8 @@ export default function CreateLinkModal({
     const [showUtm, setShowUtm] = useState(false);
     const [ogAutoReset, setOgAutoReset] = useState(false);
     const [ogImagePreview, setOgImagePreview] = useState('');
+    const [enableIntermediatePage, setEnableIntermediatePage] = useState(false);
+    const [intermediateImagePreview, setIntermediateImagePreview] = useState('');
     const [selectedDomainValue, setSelectedDomainValue] = useState(`${SHARED_PREFIX}${SHARED_DOMAINS[0]}`);
 
     // UTM state
@@ -125,6 +129,7 @@ export default function CreateLinkModal({
     const [utmContent, setUtmContent] = useState('');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const intermediateImageInputRef = useRef<HTMLInputElement>(null);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -134,6 +139,26 @@ export default function CreateLinkModal({
             const dataUrl = ev.target?.result as string;
             setOgImagePreview(dataUrl);
             setValue('ogImage', dataUrl);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleIntermediateImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            showToast('Vui lòng chọn tệp hình ảnh', 'error');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            showToast('Ảnh trang trung gian vượt quá 2MB', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const dataUrl = ev.target?.result as string;
+            setIntermediateImagePreview(dataUrl);
+            setValue('intermediateImage', dataUrl);
         };
         reader.readAsDataURL(file);
     };
@@ -229,6 +254,8 @@ export default function CreateLinkModal({
                     deepLinkIos: data.deepLinkIos || undefined,
                     deepLinkAndroid: data.deepLinkAndroid || undefined,
                     ogAutoReset,
+                    enableIntermediatePage,
+                    intermediateImage: intermediateImagePreview || undefined,
                 }),
             });
             const json = await res.json();
@@ -431,6 +458,60 @@ export default function CreateLinkModal({
                         </div>
                         {errors.customCode && <p className="mt-1 text-xs text-red-600">{errors.customCode.message}</p>}
                     </div>
+
+                    {/* Video-style intermediate page */}
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                        <input
+                            type="checkbox"
+                            id="enableIntermediatePage"
+                            checked={enableIntermediatePage}
+                            onChange={(e) => setEnableIntermediatePage(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                        />
+                        <label htmlFor="enableIntermediatePage" className="text-sm font-medium text-gray-700 cursor-pointer flex-1 select-none">
+                            <span className="text-blue-600 font-semibold">Hiển thị màn hình trung gian kiểu video</span>
+                            <p className="text-xs text-gray-500 mt-0.5">Truy cập sẽ hiện giao diện fake video player, click vào mới chuyển hướng</p>
+                        </label>
+                    </div>
+
+                    {enableIntermediatePage && (
+                        <div className="space-y-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
+                            <label className="block text-xs font-medium text-gray-700">
+                                Ảnh nền cho trang trung gian <span className="text-gray-400">(tùy chọn)</span>
+                            </label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="https://example.com/image.jpg"
+                                    className="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    value={intermediateImagePreview.startsWith('data:') ? '' : intermediateImagePreview}
+                                    onChange={(e) => {
+                                        setValue('intermediateImage', e.target.value);
+                                        setIntermediateImagePreview(e.target.value);
+                                    }}
+                                />
+                                <input ref={intermediateImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleIntermediateImageUpload} />
+                                <Button icon={<Upload className="w-4 h-4" />} onClick={() => intermediateImageInputRef.current?.click()} className="shrink-0">
+                                    Upload
+                                </Button>
+                            </div>
+                            {intermediateImagePreview && (
+                                <div className="mt-2">
+                                    <p className="text-xs text-gray-500 mb-1.5">Xem trước:</p>
+                                    <div
+                                        className="relative w-full h-32 bg-black rounded-lg overflow-hidden border border-gray-200"
+                                        style={{backgroundImage: `url('${intermediateImagePreview}')`, backgroundSize: 'cover', backgroundPosition: 'center'}}
+                                    >
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <div className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
+                                                <div className="w-0 h-0" style={{borderLeft: '14px solid white', borderTop: '8px solid transparent', borderBottom: '8px solid transparent'}} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* OG toggle */}
                     <div className="flex items-center justify-between">

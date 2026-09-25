@@ -261,7 +261,7 @@ export default function LinkStatsModal({link, onClose}: Props) {
                             />
                             <Tooltip
                                 labelFormatter={(v) =>
-                                    new Date(v).toLocaleDateString('vi-VN', {timeZone: 'Asia/Ho_Chi_Minh'})
+                                    new Date(String(v)).toLocaleDateString('vi-VN', {timeZone: 'Asia/Ho_Chi_Minh'})
                                 }
                                 formatter={(v) => [Number(v ?? 0), 'Clicks']}
                                 contentStyle={{borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 12}}

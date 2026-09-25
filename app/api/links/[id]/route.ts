@@ -6,6 +6,7 @@ import { invalidateLinkCache } from '@/lib/link-cache'
 import { syncCategoryLinksToFolderGroup } from '@/lib/folder-rotation-actions'
 import { getAlignedFolderRotationStartDateForGroup } from '@/lib/folder-active-preview-actions'
 import bcrypt from 'bcryptjs'
+import { isValidIntermediateImage } from '@/lib/intermediate-image'
 
 async function getUserId(session: { user?: { email?: string | null } | null } | null) {
   if (!session?.user?.email) return null
@@ -73,6 +74,14 @@ export async function PATCH(
   }
 
   const body = await req.json()
+
+  if (body.enableIntermediatePage !== undefined && typeof body.enableIntermediatePage !== 'boolean') {
+    return NextResponse.json({ error: 'Giá trị màn hình trung gian không hợp lệ' }, { status: 400 })
+  }
+  if (body.intermediateImage !== undefined && body.intermediateImage !== null &&
+    (typeof body.intermediateImage !== 'string' || !isValidIntermediateImage(body.intermediateImage))) {
+    return NextResponse.json({ error: 'Ảnh trang trung gian phải là URL HTTP(S) hoặc ảnh tải lên dưới 2MB' }, { status: 400 })
+  }
 
   // null = explicitly clear password, non-empty string = set new password, empty/undefined = keep current
   if (body.password === null) {
@@ -145,6 +154,12 @@ export async function PATCH(
       maxClicks: body.maxClicks !== undefined ? (body.maxClicks || null) : link.maxClicks,
       deepLinkIos: body.deepLinkIos !== undefined ? (body.deepLinkIos || null) : link.deepLinkIos,
       deepLinkAndroid: body.deepLinkAndroid !== undefined ? (body.deepLinkAndroid || null) : link.deepLinkAndroid,
+      enableIntermediatePage: body.enableIntermediatePage !== undefined
+        ? body.enableIntermediatePage
+        : link.enableIntermediatePage,
+      intermediateImage: body.intermediateImage !== undefined
+        ? (body.intermediateImage || null)
+        : link.intermediateImage,
       ogScheduledDisableAt: body.ogScheduledDisableAt !== undefined
         ? (body.ogScheduledDisableAt ? new Date(body.ogScheduledDisableAt) : null)
         : (link as unknown as { ogScheduledDisableAt?: Date | null }).ogScheduledDisableAt ?? null,

@@ -16,15 +16,19 @@ export const metadata: Metadata = {
 
 export default async function DashboardLayout({children}: {children: React.ReactNode}) {
     const session = await getServerSession(authOptions);
+    const sessionUser = session?.user as (NonNullable<typeof session>['user'] & {
+        status?: string;
+        isAdmin?: boolean;
+    }) | undefined;
 
-    if (!session?.user?.email || session.user.status !== 'active') {
+    if (!sessionUser?.email || sessionUser.status !== 'active') {
         redirect('/login');
     }
 
-    const userName = session.user.name || 'Người dùng';
-    const userEmail = session.user.email || '';
-    const userInitial = (session.user.name?.[0] || session.user.email?.[0] || 'U').toUpperCase();
-    const isAdmin = Boolean(session.user.isAdmin);
+    const userName = sessionUser.name || 'Người dùng';
+    const userEmail = sessionUser.email || '';
+    const userInitial = (sessionUser.name?.[0] || sessionUser.email?.[0] || 'U').toUpperCase();
+    const isAdmin = Boolean(sessionUser.isAdmin);
 
     return (
         <div className="h-dvh bg-gray-50 flex overflow-hidden">

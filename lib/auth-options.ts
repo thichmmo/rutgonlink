@@ -123,9 +123,14 @@ export const buildAuthOptions = (googleOAuth: GoogleOAuthCredentials | null): Ne
 
       if (token.id && session.user) {
         session.user.id = token.id as string
-        session.user.isAdmin = token.isAdmin as boolean
-        session.user.status = (token.status as string) || 'active'
-        session.user.adminRole = (token.adminRole as string | null) || null
+        const sessionUser = session.user as typeof session.user & {
+          isAdmin?: boolean
+          status?: string
+          adminRole?: string | null
+        }
+        sessionUser.isAdmin = token.isAdmin as boolean
+        sessionUser.status = (token.status as string) || 'active'
+        sessionUser.adminRole = (token.adminRole as string | null) || null
       }
       // Đồng bộ thời hạn session với token
       session.expires = new Date(Date.now() + THIRTY_DAYS * 1000).toISOString()

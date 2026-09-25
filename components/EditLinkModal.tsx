@@ -61,6 +61,8 @@ interface LinkData {
     maxClicks: number | null;
     deepLinkIos: string | null;
     deepLinkAndroid: string | null;
+    enableIntermediatePage?: boolean;
+    intermediateImage?: string | null;
     folderRotationStartDate: string | null;
     domain: Domain | null;
     sharedDomain: string | null;
@@ -99,6 +101,8 @@ const schema = z.object({
     ogTitle: z.string().max(100).optional(),
     ogDescription: z.string().max(300).optional(),
     ogImage: z.string().optional(),
+    enableIntermediatePage: z.boolean().optional(),
+    intermediateImage: z.string().optional(),
     deviceRules: z
         .array(z.object({deviceType: z.string().min(1), redirectUrl: z.string().url('URL không hợp lệ')}))
         .optional(),
@@ -153,7 +157,10 @@ export default function EditLinkModal({
     const [showPwd, setShowPwd] = useState(false);
     const [showUtm, setShowUtm] = useState(false);
     const [ogImagePreview, setOgImagePreview] = useState(link.ogImage || '');
+    const [enableIntermediatePage, setEnableIntermediatePage] = useState(link.enableIntermediatePage ?? false);
+    const [intermediateImagePreview, setIntermediateImagePreview] = useState(link.intermediateImage || '');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const intermediateImageInputRef = useRef<HTMLInputElement>(null);
 
     // UTM state
     const [utmSource, setUtmSource] = useState('');
@@ -213,6 +220,8 @@ export default function EditLinkModal({
             maxClicks: link.maxClicks ? String(link.maxClicks) : '',
             deepLinkIos: link.deepLinkIos || '',
             deepLinkAndroid: link.deepLinkAndroid || '',
+            enableIntermediatePage: link.enableIntermediatePage ?? false,
+            intermediateImage: link.intermediateImage || '',
             deviceRules: [],
             countryRules: [],
             languageRules: [],
@@ -336,6 +345,26 @@ export default function EditLinkModal({
         reader.readAsDataURL(file);
     };
 
+    const handleIntermediateImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            showToast('Vui lòng chọn tệp hình ảnh', 'error');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            showToast('Ảnh trang trung gian vượt quá 2MB', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const dataUrl = ev.target?.result as string;
+            setIntermediateImagePreview(dataUrl);
+            setValue('intermediateImage', dataUrl);
+        };
+        reader.readAsDataURL(file);
+    };
+
     const buildUtmUrl = (baseUrl: string) => {
         if (!baseUrl || !utmSource) return baseUrl;
         try {
@@ -407,6 +436,8 @@ export default function EditLinkModal({
                     clickResetAt: clickResetAt ? new Date(clickResetAt).toISOString() : null,
                     password: clearPassword ? null : data.password || '',
                     useFolderRotation,
+                    enableIntermediatePage,
+                    intermediateImage: intermediateImagePreview || null,
                 }),
             });
             const json = await res.json();
@@ -644,6 +675,60 @@ export default function EditLinkModal({
                         {errors.shortCode && <p className="mt-1 text-xs text-red-600">{errors.shortCode.message}</p>}
                         <p className="mt-1 text-xs text-gray-400 truncate">→ {shortUrl}</p>
                     </div>
+
+                    {/* Video-style intermediate page */}
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                        <input
+                            type="checkbox"
+                            id="enableIntermediatePage"
+                            checked={enableIntermediatePage}
+                            onChange={(e) => setEnableIntermediatePage(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                        />
+                        <label htmlFor="enableIntermediatePage" className="text-sm font-medium text-gray-700 cursor-pointer flex-1 select-none">
+                            <span className="text-blue-600 font-semibold">Hiển thị màn hình trung gian kiểu video</span>
+                            <p className="text-xs text-gray-500 mt-0.5">Truy cập sẽ hiện giao diện fake video player, click vào mới chuyển hướng</p>
+                        </label>
+                    </div>
+
+                    {enableIntermediatePage && (
+                        <div className="space-y-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
+                            <label className="block text-xs font-medium text-gray-700">
+                                Ảnh nền cho trang trung gian <span className="text-gray-400">(tùy chọn)</span>
+                            </label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="https://example.com/image.jpg"
+                                    className="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    value={intermediateImagePreview.startsWith('data:') ? '' : intermediateImagePreview}
+                                    onChange={(e) => {
+                                        setValue('intermediateImage', e.target.value);
+                                        setIntermediateImagePreview(e.target.value);
+                                    }}
+                                />
+                                <input ref={intermediateImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleIntermediateImageUpload} />
+                                <Button icon={<Upload className="w-4 h-4" />} onClick={() => intermediateImageInputRef.current?.click()} className="shrink-0">
+                                    Upload
+                                </Button>
+                            </div>
+                            {intermediateImagePreview && (
+                                <div className="mt-2">
+                                    <p className="text-xs text-gray-500 mb-1.5">Xem trước:</p>
+                                    <div
+                                        className="relative w-full h-32 bg-black rounded-lg overflow-hidden border border-gray-200"
+                                        style={{backgroundImage: `url('${intermediateImagePreview}')`, backgroundSize: 'cover', backgroundPosition: 'center'}}
+                                    >
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <div className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
+                                                <div className="w-0 h-0" style={{borderLeft: '14px solid white', borderTop: '8px solid transparent', borderBottom: '8px solid transparent'}} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* OG toggle */}
                     <div className="flex items-center justify-between">

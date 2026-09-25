@@ -6,6 +6,7 @@ import { getPlanLimits, isPlanActive } from '@/lib/plan-limits'
 import { triggerFbScrape } from '@/lib/runtime-config'
 import { getActiveFolderUrls } from '@/lib/folder-rotation'
 import { getSiteUrl } from '@/lib/site-config'
+import { isValidIntermediateImage } from '@/lib/intermediate-image'
 
 interface LinkResult {
   id: string
@@ -25,6 +26,8 @@ interface LinkResult {
   deepLinkIos: string | null
   deepLinkAndroid: string | null
   lastFbDebug: Date | null
+  enableIntermediatePage: boolean
+  intermediateImage: string | null
   useFolderRotation: boolean
   folderRotationStartDate: Date | null
   category: { id: string; folderGroupId: string | null } | null
@@ -116,21 +119,27 @@ function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
 
 // Fake video player UI: nền đen, nút play đỏ ở giữa, thanh tiến trình + các icon dưới đáy.
 // Toàn bộ player bọc trong <a href=...> → click đâu cũng redirect.
-const FAKE_VIDEO_CSS = `*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:Roboto,Arial,sans-serif}.vp-link{display:block;width:100%;height:100%;text-decoration:none;color:#fff}.vp-root{position:relative;width:100vw;height:100vh;background:#000}.vp-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72px;height:72px;background:#ff0000;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 16px rgba(0,0,0,.5)}.vp-play::before{content:"";display:block;width:0;height:0;border-left:22px solid #fff;border-top:13px solid transparent;border-bottom:13px solid transparent;margin-left:5px}.vp-controls{position:absolute;bottom:0;left:0;right:0;padding:0 14px 10px;color:#fff}.vp-progress{height:4px;background:rgba(255,255,255,.25);margin-bottom:8px;position:relative;border-radius:2px;overflow:hidden}.vp-progress-fill{position:absolute;top:0;left:0;height:100%;width:0%;background:#ff0000}.vp-row{display:flex;align-items:center;gap:16px;font-size:13px;line-height:1}.vp-row .vp-spacer{flex:1}.vp-icon{width:24px;height:24px;display:inline-flex;opacity:.95}.vp-icon svg{width:100%;height:100%}.vp-time{font-variant-numeric:tabular-nums;letter-spacing:.5px;white-space:nowrap}`
+const FAKE_VIDEO_CSS = `*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:Roboto,Arial,sans-serif}.vp-link{display:block;width:100%;height:100%;text-decoration:none;color:#fff}.vp-root{position:relative;width:100vw;height:100vh;background:#000;background-size:cover;background-position:center}.vp-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72px;height:72px;background:#ff0000;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 16px rgba(0,0,0,.5);z-index:10}.vp-play::before{content:"";display:block;width:0;height:0;border-left:22px solid #fff;border-top:13px solid transparent;border-bottom:13px solid transparent;margin-left:5px}.vp-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);z-index:5}.vp-controls{position:absolute;bottom:0;left:0;right:0;padding:0 14px 10px;color:#fff;z-index:15}.vp-progress{height:4px;background:rgba(255,255,255,.25);margin-bottom:8px;position:relative;border-radius:2px;overflow:hidden}.vp-progress-fill{position:absolute;top:0;left:0;height:100%;width:0%;background:#ff0000}.vp-row{display:flex;align-items:center;gap:16px;font-size:13px;line-height:1}.vp-row .vp-spacer{flex:1}.vp-icon{width:24px;height:24px;display:inline-flex;opacity:.95}.vp-icon svg{width:100%;height:100%}.vp-time{font-variant-numeric:tabular-nums;letter-spacing:.5px;white-space:nowrap}`
 
-function buildFakeVideoBody(safeUrl: string): string {
-  return `<a class="vp-link" href="${safeUrl}"><div class="vp-root"><div class="vp-play"></div><div class="vp-controls"><div class="vp-progress"><div class="vp-progress-fill"></div></div><div class="vp-row"><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></span><span class="vp-time">0:00 / 4:56</span><span class="vp-spacer"></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7 7 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.7A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.4L9.1 5.1a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7 7 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg></span></div></div></div></a>`
+function buildFakeVideoBody(safeUrl: string, backgroundImage?: string | null): string {
+  // Escape for CSS first, then HTML: HTML entities are decoded before CSS parses the style.
+  const cssUrl = backgroundImage && isValidIntermediateImage(backgroundImage)
+    ? backgroundImage.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n\f]/g, '')
+    : null
+  const bgStyle = cssUrl ? `style="background-image:url(&quot;${escapeHtml(cssUrl)}&quot;)"` : ''
+  return `<a class="vp-link" href="${safeUrl}"><div class="vp-root" ${bgStyle}><div class="vp-overlay"></div><div class="vp-play"></div><div class="vp-controls"><div class="vp-progress"><div class="vp-progress-fill"></div></div><div class="vp-row"><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></span><span class="vp-time">0:00 / 4:56</span><span class="vp-spacer"></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7 7 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.7A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.4L9.1 5.1a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7 7 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg></span></div></div></div></a>`
 }
 
-function buildFakeVideoPage(redirectUrl: string): string {
+function buildFakeVideoPage(redirectUrl: string, intermediateImage?: string | null): string {
   const safeUrl = escapeHtml(redirectUrl)
-  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video</title><style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl)}</body></html>`
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video</title><style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl, intermediateImage)}</body></html>`
 }
 
 function buildOgPage(params: {
@@ -141,13 +150,14 @@ function buildOgPage(params: {
   ogTitle?: string | null
   ogDescription?: string | null
   ogImage?: string | null
+  intermediateImage?: string | null
   shortUrl: string
   linkId: string
   origin: string
   isSocialBot: boolean
   ua?: string
 }): string {
-  const { redirectUrl, deepLinkIos, deepLinkAndroid, ogTitle, ogDescription, ogImage, shortUrl, linkId, ua = '' } = params
+  const { redirectUrl, deepLinkIos, deepLinkAndroid, ogTitle, ogDescription, ogImage, intermediateImage, shortUrl, linkId, ua = '' } = params
   void params.slotUrl; void params.origin; void params.isSocialBot
   // Base64 image: serve qua main domain vì custom domain có thể không proxy /api/*
     const mainOriginForImage = getSiteUrl()
@@ -207,7 +217,7 @@ function buildOgPage(params: {
   ${redirectScript}
   <style>${FAKE_VIDEO_CSS}</style>
 </head>
-<body>${buildFakeVideoBody(safeEffectiveDeep || safeRedirect)}</body>
+<body>${buildFakeVideoBody(safeEffectiveDeep || safeRedirect, intermediateImage)}</body>
 </html>`
 }
 
@@ -445,6 +455,11 @@ export async function GET(
   // Không dùng x-forwarded-proto vì trên VPS nginx listen :80 → proto = http → URL sai
   const origin = `https://${hostname}`
 
+  // Keep normal links as direct redirects; only opted-in links render the intermediate page.
+  if (!link.enableIntermediatePage && !isSocialBot) {
+    return NextResponse.redirect(redirectUrl, { status: 302 })
+  }
+
   if (link.ogEnabled && (link.ogTitle || link.ogDescription || link.ogImage)) {
     const shortUrl = `${origin}/${shortCode}`
     const html = buildOgPage({
@@ -455,6 +470,7 @@ export async function GET(
       ogTitle: link.ogTitle,
       ogDescription: link.ogDescription,
       ogImage: link.ogImage,
+      intermediateImage: link.intermediateImage,
       shortUrl,
       linkId: link.id,
       origin,
@@ -479,6 +495,8 @@ export async function GET(
     })
   }
 
-  // Normal redirect for real users
-  return NextResponse.redirect(redirectUrl, { status: 302 })
+  // Opted-in links show the fake video page and redirect only after a click.
+  return new Response(buildFakeVideoPage(redirectUrl, link.intermediateImage), {
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  })
 }

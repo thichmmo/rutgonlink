@@ -177,6 +177,8 @@ model Link {
   deepLinkAndroid         String?                @db.Text
   lastFbDebug             DateTime?
   ogScheduledDisableAt    DateTime?
+  enableIntermediatePage  Boolean                @default(false)
+  intermediateImage       String?                @db.LongText
   clickResetAt            DateTime?
   useFolderRotation       Boolean                @default(false)
   folderRotationStartDate DateTime?
