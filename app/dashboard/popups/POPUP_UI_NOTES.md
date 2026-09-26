@@ -1,5 +1,5 @@
 # Popup dashboard
 
-Create, edit and delete reusable two-link templates at `/dashboard/popups`. The image may be an HTTP(S) URL or a small uploaded data URL. Deleting a template keeps its posts.
+Manage responsive popup templates with active state, Shopee/TikTok device URLs, per-step delay, cooldown, browser guidance, images, search, pagination, duplicate and safe deletion. Inactive templates are hidden from new post selection.
 
-Verify with `npx eslint app/dashboard/popups` and manually exercise the form at desktop/mobile widths.
+Verify with `pnpm exec eslint app/dashboard/popups` and exercise create/edit/duplicate/delete at desktop/mobile widths.

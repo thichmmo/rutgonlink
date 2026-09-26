@@ -1,156 +1,82 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Copy, ExternalLink, FileText, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 
-type Popup = { id: string; name: string }
-type Post = {
-  id: string
-  title: string
-  slug: string
-  excerpt: string | null
-  content: string
-  popupId: string | null
-  popup: Popup | null
-  isPublished: boolean
-  updatedAt: string
-}
-const emptyForm = { title: '', slug: '', excerpt: '', content: '', popupId: '', isPublished: false }
+type Popup = { id: string; name: string; isActive?: boolean }
+type DomainOption = { id: string | null; domain: string; kind: 'primary' | 'shared' | 'custom' }
+type Post = { id: string; title: string; slug: string; excerpt: string | null; content: string; contentFormat: string; popupId: string | null; popup: Popup | null; domainId: string | null; sharedDomain: string | null; previewImage: string | null; publicUrl: string; publicDomain: string; isPublished: boolean; updatedAt: string }
+type Block = { id: string; title: string; content: string; contentFormat: string; placement: 'before' | 'after'; sortOrder: number; isActive: boolean }
 
-function slugify(value: string) {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-}
+const emptyForm = { title: '', slug: '', excerpt: '', content: '', contentFormat: 'plain', popupIds: [] as string[], domainKey: 'primary', previewImage: '', isPublished: false }
+
+function slugify(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 
 export default function PostManager() {
   const [posts, setPosts] = useState<Post[]>([])
   const [popups, setPopups] = useState<Popup[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [domains, setDomains] = useState<DomainOption[]>([])
+  const [blocks, setBlocks] = useState<Block[]>([])
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [showBlocks, setShowBlocks] = useState(false)
+  const [blockForm, setBlockForm] = useState({ title: '', content: '', contentFormat: 'rich', placement: 'after' })
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    const [postsResponse, popupsResponse] = await Promise.all([
-      fetch('/api/posts', { cache: 'no-store' }), fetch('/api/popups', { cache: 'no-store' }),
-    ])
-    if (postsResponse.ok && popupsResponse.ok) {
-      setPosts(await postsResponse.json())
-      setPopups(await popupsResponse.json())
-    } else setError('Không tải được danh sách bài viết')
-  }, [])
+    const [postsResponse, optionsResponse] = await Promise.all([fetch(`/api/posts?query=${encodeURIComponent(query)}&status=${status}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }), fetch('/api/posts/options', { cache: 'no-store' })])
+    const postsData = await postsResponse.json(); const optionsData = await optionsResponse.json()
+    if (!postsResponse.ok || !optionsResponse.ok) throw new Error(postsData.error || optionsData.error || 'Không tải được dữ liệu')
+    setPosts(postsData.items || []); setTotal(postsData.total || 0); setPopups(optionsData.popups || []); setDomains(optionsData.domains || [])
+  }, [page, pageSize, query, status])
+
+  const loadBlocks = useCallback(async () => { const response = await fetch('/api/content-blocks', { cache: 'no-store' }); if (response.ok) setBlocks(await response.json()) }, [])
   useEffect(() => {
-    const controller = new AbortController()
-    void Promise.all([
-      fetch('/api/posts', { cache: 'no-store', signal: controller.signal }),
-      fetch('/api/popups', { cache: 'no-store', signal: controller.signal }),
-    ]).then(async ([postsResponse, popupsResponse]) => {
-      if (!postsResponse.ok || !popupsResponse.ok) throw new Error('Không tải được danh sách bài viết')
-      return Promise.all([postsResponse.json(), popupsResponse.json()])
-    }).then(([postData, popupData]) => { setPosts(postData); setPopups(popupData) })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause.message) })
-    return () => controller.abort()
-  }, [])
+    const timer = window.setTimeout(() => { void Promise.all([load(), loadBlocks()]).catch(cause => setError(cause instanceof Error ? cause.message : 'Không tải được dữ liệu')) }, 0)
+    return () => window.clearTimeout(timer)
+  }, [load, loadBlocks])
 
-  function reset() {
-    setEditingId(null)
-    setForm(emptyForm)
-    setShowForm(false)
-    setError('')
-  }
+  function startCreate() { setEditingId(null); setForm(emptyForm); setShowForm(true); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function edit(post: Post) { setEditingId(post.id); setForm({ title: post.title, slug: post.slug, excerpt: post.excerpt || '', content: post.content, contentFormat: post.contentFormat || 'plain', popupIds: post.popupId ? [post.popupId] : [], domainKey: post.domainId || (post.sharedDomain ? `shared:${post.sharedDomain}` : 'primary'), previewImage: post.previewImage || '', isPublished: post.isPublished }); setShowForm(true); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function reset() { setEditingId(null); setForm(emptyForm); setShowForm(false) }
 
-  function edit(post: Post) {
-    setEditingId(post.id)
-    setForm({ title: post.title, slug: post.slug, excerpt: post.excerpt || '', content: post.content, popupId: post.popupId || '', isPublished: post.isPublished })
-    setShowForm(true)
-    setError('')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  function targetPayload() { const custom = domains.find(item => item.id === form.domainKey); if (custom?.kind === 'custom') return { domainId: custom.id, sharedDomain: null }; if (form.domainKey.startsWith('shared:')) return { domainId: null, sharedDomain: form.domainKey.slice(7) }; return { domainId: null, sharedDomain: null } }
 
   async function save(event: React.FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    setError('')
+    event.preventDefault(); setBusy(true); setError('')
     try {
-      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', {
-        method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, popupId: form.popupId || null, excerpt: form.excerpt || null }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Lưu bài viết thất bại')
-      reset()
-      await load()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Lưu bài viết thất bại')
-    } finally { setBusy(false) }
+      const target = targetPayload(); const payload = { title: form.title, slug: form.slug || slugify(form.title), excerpt: form.excerpt || null, content: form.content, contentFormat: form.contentFormat, previewImage: form.previewImage || null, isPublished: form.isPublished, ...target, ...(editingId ? { popupId: form.popupIds[0] || null } : { popupIds: form.popupIds }) }
+      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Lưu bài viết thất bại')
+      reset(); await load()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Lưu bài viết thất bại') } finally { setBusy(false) }
   }
 
-  async function remove(post: Post) {
-    if (!window.confirm(`Xóa bài viết "${post.title}"?`)) return
-    setBusy(true)
-    setError('')
-    try {
-      const response = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' })
-      if (!response.ok) throw new Error('Xóa bài viết thất bại')
-      await load()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Xóa bài viết thất bại')
-    } finally { setBusy(false) }
-  }
+  async function remove(post: Post) { if (!window.confirm(`Xóa bài viết "${post.title}"?`)) return; setBusy(true); try { const response = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Xóa bài viết thất bại'); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Xóa bài viết thất bại') } finally { setBusy(false) } }
+  async function duplicate(post: Post) { setBusy(true); try { const response = await fetch(`/api/posts/${post.id}/duplicate`, { method: 'POST' }); if (!response.ok) throw new Error('Nhân bản bài viết thất bại'); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Nhân bản bài viết thất bại') } finally { setBusy(false) } }
+  async function copyLink(post: Post) { await navigator.clipboard.writeText(post.publicUrl); setError(`Đã sao chép ${post.publicUrl}`) }
 
-  return <div className="mx-auto max-w-6xl space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p>
-        <h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1>
-        <p className="mt-2 text-sm text-gray-600">Bài viết hiển thị trên Rutgonlink. Chọn mẫu popup để đặt lớp video trung gian lên bài viết.</p>
-      </div>
-      <button onClick={() => { reset(); setShowForm(true) }} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài viết</button>
-    </div>
+  async function saveBlock(event: React.FormEvent) { event.preventDefault(); setBusy(true); try { const response = await fetch('/api/content-blocks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(blockForm) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Lưu nội dung cố định thất bại'); setBlocks(current => [...current, data]); setBlockForm({ title: '', content: '', contentFormat: 'rich', placement: 'after' }) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Lưu nội dung cố định thất bại') } finally { setBusy(false) } }
+  async function removeBlock(block: Block) { if (!window.confirm(`Xóa "${block.title}"?`)) return; const response = await fetch(`/api/content-blocks/${block.id}`, { method: 'DELETE' }); if (response.ok) setBlocks(current => current.filter(item => item.id !== block.id)) }
+  async function moveBlock(block: Block, direction: -1 | 1) { const group = blocks.filter(item => item.placement === block.placement); const index = group.findIndex(item => item.id === block.id); const target = group[index + direction]; if (!target) return; const ids = group.map(item => item.id); [ids[index], ids[index + direction]] = [ids[index + direction], ids[index]]; await fetch('/api/content-blocks/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }); await loadBlocks() }
 
-    {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const selectedCount = form.popupIds.length
+  const domainLabel = (domain: DomainOption) => `${domain.domain}${domain.kind === 'custom' ? ' · custom' : domain.kind === 'shared' ? ' · shared' : ' · chính'}`
 
-    {showForm && <form onSubmit={save} className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
-      <h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-medium text-gray-700">Tiêu đề
-          <input required maxLength={200} value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value, slug: editingId || current.slug !== slugify(current.title) ? current.slug : slugify(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2.5 outline-sky-500" />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium text-gray-700">Đường dẫn /posts/...
-          <input required maxLength={190} pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} onChange={event => setForm({ ...form, slug: slugify(event.target.value) })} className="rounded-lg border border-gray-300 px-3 py-2.5 outline-sky-500" />
-        </label>
-      </div>
-      <label className="grid gap-1.5 text-sm font-medium text-gray-700">Mô tả ngắn
-        <textarea rows={2} maxLength={1000} value={form.excerpt} onChange={event => setForm({ ...form, excerpt: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5 outline-sky-500" />
-      </label>
-      <label className="grid gap-1.5 text-sm font-medium text-gray-700">Nội dung
-        <textarea required rows={14} value={form.content} onChange={event => setForm({ ...form, content: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5 outline-sky-500" placeholder="Viết bài ở đây. Xuống dòng để tách đoạn; bắt đầu dòng bằng # hoặc ## để tạo tiêu đề." />
-      </label>
-      <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
-        <label className="grid gap-1.5 text-sm font-medium text-gray-700">Mẫu popup
-          <select value={form.popupId} onChange={event => setForm({ ...form, popupId: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5 outline-sky-500"><option value="">Không dùng popup</option>{popups.map(popup => <option key={popup.id} value={popup.id}>{popup.name}</option>)}</select>
-        </label>
-        <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-medium text-gray-700"><input type="checkbox" checked={form.isPublished} onChange={event => setForm({ ...form, isPublished: event.target.checked })} className="h-4 w-4 accent-sky-600" /> Xuất bản bài viết</label>
-      </div>
-      <div className="flex gap-2"><button disabled={busy} className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : 'Lưu bài viết'}</button><button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700">Hủy</button></div>
-    </form>}
-
-    <div className="space-y-3">
-      {posts.map(post => <article key={post.id} className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span></div>
-          <p className="truncate text-xs text-gray-500">/posts/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>
-          {post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-1">
-          {post.isPublished && <><a href={`/posts/${post.slug}`} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Xem bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void navigator.clipboard.writeText(`${location.origin}/posts/${post.slug}`)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}
-          <button onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button>
-          <button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button>
-        </div>
-      </article>)}
-      {!posts.length && <div className="flex items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết. Tạo bài đầu tiên để chia sẻ.</div>}
-    </div>
+  return <div className="mx-auto max-w-7xl space-y-7">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p></div><div className="flex gap-2"><button onClick={() => setShowBlocks(value => !value)} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button onClick={startCreate} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài viết</button></div></div>
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="Tìm tiêu đề, slug..." className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-sky-500" /></div><select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="all">Tất cả trạng thái</option><option value="published">Đã xuất bản</option><option value="draft">Bản nháp</option></select><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="6">6 / trang</option><option value="10">10 / trang</option><option value="20">20 / trang</option><option value="25">25 / trang</option></select></div>
+    {error && <p role="alert" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">{error}</p>}
+    {showBlocks && <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><div><h2 className="font-semibold text-gray-950">Nội dung cố định</h2><p className="text-sm text-gray-500">Chèn tự động ở đầu hoặc cuối mọi bài viết của tài khoản.</p></div><form onSubmit={saveBlock} className="grid gap-3 md:grid-cols-4"><input required value={blockForm.title} onChange={event => setBlockForm({ ...blockForm, title: event.target.value })} placeholder="Tên block" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" /><select value={blockForm.placement} onChange={event => setBlockForm({ ...blockForm, placement: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="before">Đầu bài</option><option value="after">Cuối bài</option></select><select value={blockForm.contentFormat} onChange={event => setBlockForm({ ...blockForm, contentFormat: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="rich">Rich text</option><option value="plain">Plain text</option><option value="raw-html">Raw HTML (admin)</option></select><button disabled={busy} className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white">Thêm block</button><textarea required value={blockForm.content} onChange={event => setBlockForm({ ...blockForm, content: event.target.value })} rows={3} placeholder="Nội dung block" className="md:col-span-4 rounded-lg border border-gray-300 px-3 py-2 text-sm" /></form><div className="divide-y divide-gray-100">{blocks.map(block => <div key={block.id} className="flex flex-wrap items-center gap-3 py-3 text-sm"><span className="font-medium text-gray-800">{block.title}</span><span className="text-gray-500">{block.placement === 'before' ? 'Đầu' : 'Cuối'}</span><span className="text-gray-500">{block.contentFormat}</span><div className="ml-auto flex gap-1"><button onClick={() => void moveBlock(block, -1)} className="rounded px-2 py-1 hover:bg-gray-100">↑</button><button onClick={() => void moveBlock(block, 1)} className="rounded px-2 py-1 hover:bg-gray-100">↓</button><button onClick={() => void removeBlock(block)} className="rounded px-2 py-1 text-red-600 hover:bg-red-50">Xóa</button></div></div>)}</div></section>}
+    {showForm && <form onSubmit={save} className="space-y-5 rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-7"><h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2><div className="grid gap-4 md:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Tiêu đề<input required maxLength={200} value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value, slug: editingId ? current.slug : slugify(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><label className="grid gap-1.5 text-sm font-medium text-gray-700">Slug<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} onChange={event => setForm({ ...form, slug: slugify(event.target.value) })} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label></div><div className="grid gap-4 md:grid-cols-3"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Domain<select value={form.domainKey} onChange={event => setForm({ ...form, domainKey: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5">{domains.map(domain => <option key={`${domain.kind}:${domain.id || domain.domain}`} value={domain.kind === 'custom' ? domain.id || '' : domain.kind === 'shared' ? `shared:${domain.domain}` : 'primary'}>{domainLabel(domain)}</option>)}</select></label><label className="grid gap-1.5 text-sm font-medium text-gray-700">Ảnh preview Facebook<input value={form.previewImage} onChange={event => setForm({ ...form, previewImage: event.target.value })} placeholder="https://... hoặc data URL" className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><label className="flex items-center gap-2 self-end rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-medium"><input type="checkbox" checked={form.isPublished} onChange={event => setForm({ ...form, isPublished: event.target.checked })} className="h-4 w-4 accent-sky-600" /> Xuất bản</label></div><label className="grid gap-1.5 text-sm font-medium text-gray-700">Mô tả ngắn<textarea rows={2} maxLength={1000} value={form.excerpt} onChange={event => setForm({ ...form, excerpt: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><div className="grid gap-4 md:grid-cols-[1fr_220px]"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Nội dung<textarea required rows={14} value={form.content} onChange={event => setForm({ ...form, content: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm" placeholder="Rich text/HTML hoặc plain text..." /></label><div className="space-y-4"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Định dạng<select value={form.contentFormat} onChange={event => setForm({ ...form, contentFormat: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5"><option value="plain">Plain text</option><option value="rich">Rich text / HTML đã lọc</option><option value="raw-html">Raw HTML / Script (admin)</option></select></label><fieldset className="rounded-xl border border-gray-200 p-3"><legend className="px-1 text-xs font-semibold text-gray-700">Popup {selectedCount ? `(${selectedCount})` : ''}</legend><div className="max-h-56 space-y-2 overflow-y-auto">{popups.map(popup => <label key={popup.id} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.popupIds.includes(popup.id)} onChange={event => setForm(current => ({ ...current, popupIds: event.target.checked ? [...current.popupIds, popup.id] : current.popupIds.filter(id => id !== popup.id) }))} className="mt-1 h-4 w-4 accent-sky-600" /><span>{popup.name}</span></label>)}{!popups.length && <p className="text-xs text-gray-500">Chưa có popup bật.</p>}</div></fieldset></div></div><div className="flex gap-2"><button disabled={busy} className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : editingId ? 'Cập nhật bài' : form.popupIds.length > 1 ? `Tạo ${form.popupIds.length} bài` : 'Lưu bài viết'}</button><button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700">Hủy</button></div></form>}
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="divide-y divide-gray-100">{posts.map(post => <article key={post.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 space-y-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span></div><p className="truncate text-xs text-gray-500">{post.publicDomain}/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>{post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}</div><div className="flex shrink-0 flex-wrap gap-1">{post.isPublished && <><a href={post.publicUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Mở bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void copyLink(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}<button onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button><button disabled={busy} onClick={() => void duplicate(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Nhân bản"><Copy className="h-4 w-4" /></button><button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button></div></article>)}{!posts.length && <div className="flex items-center gap-3 p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết.</div>}</div><div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 text-sm text-gray-600"><span>Trang {page}/{pages}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Trước</button><button disabled={page >= pages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sau</button></div></div></div>
   </div>
 }

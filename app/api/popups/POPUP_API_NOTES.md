@@ -1,5 +1,5 @@
 # Popup API
 
-List/create and owner-scoped update/delete endpoints manage reusable two-destination templates. Deletion sets assigned posts' popup ID to null through the database relation.
+Owner-scoped popup endpoints support search, status filtering, pagination, normalized Shopee/TikTok settings, full-link inspection, duplicate, update and delete. Popup deletion leaves assigned posts intact with a null relation; inactive templates cannot be selected for new posts.
 
-Verify with `npx eslint app/api/popups` and an authenticated create/update/delete smoke test.
+Verify with `pnpm exec eslint app/api/popups` and authenticated create/update/duplicate/delete smoke tests.
