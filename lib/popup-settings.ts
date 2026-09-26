@@ -93,14 +93,24 @@ export function isAndroidUserAgent(userAgent: string) {
   return /android/i.test(userAgent)
 }
 
+export function popupAppliesToDevice(settings: PopupSettings, userAgent: string) {
+  const platforms = [settings.shopee, settings.tiktok]
+  return platforms.every(platform => platform.enabled && (
+    isIosUserAgent(userAgent) ? platform.iosEnabled :
+      isAndroidUserAgent(userAgent) ? platform.androidEnabled : true
+  ))
+}
+
 export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: string) {
+  const forceBrowser = isAndroidUserAgent(userAgent) && settings.forceChromeAndroid ? 'Chrome'
+    : isIosUserAgent(userAgent) && settings.forceSafariIos ? 'Safari' : null
   if (step === 0) {
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
       imageUrl: settings.shopee.imageUrl,
       delaySeconds: settings.shopee.delaySeconds,
-      forceBrowser: isAndroidUserAgent(userAgent) ? settings.forceChromeAndroid : isIosUserAgent(userAgent) ? settings.forceSafariIos : false,
+      forceBrowser,
     }
   }
 
@@ -109,6 +119,6 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
     url: isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl,
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,
-    forceBrowser: isAndroidUserAgent(userAgent) ? settings.forceChromeAndroid : isIosUserAgent(userAgent) ? settings.forceSafariIos : false,
+    forceBrowser,
   }
 }

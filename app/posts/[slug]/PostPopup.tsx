@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Play, X } from 'lucide-react'
-import { getPopupStep, type PopupSettings } from '@/lib/popup-settings'
+import { getPopupStep, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 
 type Popup = {
   imageUrl: string | null
@@ -13,23 +13,17 @@ type Popup = {
   settings: PopupSettings
 }
 
-export default function PostPopup({ postId, popup }: { postId: string; popup: Popup }) {
+export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
   const steps = useMemo(() => {
-    const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
-    const result = [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)]
-    return result.filter((item, index) => {
-      const platform = index === 0 ? popup.settings.shopee : popup.settings.tiktok
-      const isIos = /iphone|ipad|ipod/i.test(userAgent)
-      const isAndroid = /android/i.test(userAgent)
-      return platform.enabled && (isIos ? platform.iosEnabled : isAndroid ? platform.androidEnabled : true) && Boolean(item.url)
-    })
-  }, [popup.settings])
+    return [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)]
+  }, [popup.settings, userAgent])
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
   const [remaining, setRemaining] = useState(0)
   const [error, setError] = useState('')
   const stepRef = useRef(0)
+  const readyAtRef = useRef(0)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -37,11 +31,12 @@ export default function PostPopup({ postId, popup }: { postId: string; popup: Po
       try { stored = Number(window.sessionStorage.getItem(storageKey) || 0) } catch { /* Private browsing may disable storage. */ }
       const current = Number.isInteger(stored) && stored >= 0 && stored <= steps.length ? stored : 0
       stepRef.current = current
+      readyAtRef.current = Date.now() + (steps[current]?.delaySeconds || 0) * 1000
       setStep(current)
       setReady(true)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [storageKey, steps.length])
+  }, [storageKey, steps])
 
   useEffect(() => {
     if (!ready || step >= steps.length) return
@@ -53,25 +48,28 @@ export default function PostPopup({ postId, popup }: { postId: string; popup: Po
   }, [ready, step, steps])
 
   function advance() {
-    if (!ready || remaining > 0 || stepRef.current >= steps.length) return
+    if (!ready || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
     const current = steps[stepRef.current]
     if (!current?.url) return
-    const opened = window.open(current.url, '_blank', 'noopener,noreferrer')
+    const opened = window.open(current.url, '_blank')
     if (!opened) {
       setError('Trình duyệt đã chặn tab mới. Hãy cho phép popup rồi thử lại.')
       return
     }
+    try { opened.opener = null } catch { /* The new tab may have navigated. */ }
     const nextStep = stepRef.current + 1
     stepRef.current = nextStep
+    readyAtRef.current = Date.now() + (steps[nextStep]?.delaySeconds || 0) * 1000
+    setRemaining(steps[nextStep]?.delaySeconds || 0)
     try { window.sessionStorage.setItem(storageKey, String(nextStep)) } catch { /* Continue in memory if storage is unavailable. */ }
     setStep(nextStep)
     setError('')
   }
 
-  if (!popup.isActive || steps.length === 0 || step >= steps.length) return null
+  if (!popup.isActive || !popupAppliesToDevice(popup.settings, userAgent) || step >= steps.length) return null
   if (!ready) return <div className="fixed inset-0 z-[100] bg-black" aria-label="Đang tải màn hình trung gian" />
   const current = steps[step]
-  const forceMessage = current.forceBrowser ? 'Nếu chưa mở, hãy tiếp tục bằng trình duyệt được cấu hình.' : ''
+  const forceMessage = current.forceBrowser ? `Nếu trình duyệt trong ứng dụng chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
 
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Màn hình trung gian">
     <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-[#111827] text-white shadow-2xl">

@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getManagedContentUserId, getPublicationTargets } from '@/lib/content-management'
+import { getManagedContentActor, getPublicationTargets } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
 
 export async function GET() {
-  const userId = await getManagedContentUserId()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const actor = await getManagedContentActor()
+  if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const [popups, domains] = await Promise.all([
-    prisma.popupTemplate.findMany({ where: { userId, isActive: true }, select: { id: true, name: true, imageUrl: true }, orderBy: { name: 'asc' } }),
-    getPublicationTargets(userId),
+    prisma.popupTemplate.findMany({ where: { userId: actor.id, isActive: true }, select: { id: true, name: true, imageUrl: true }, orderBy: { name: 'asc' } }),
+    getPublicationTargets(actor.id),
   ])
-  return NextResponse.json({ popups, domains })
+  return NextResponse.json({ popups, domains, canUseRawHtml: actor.isAdmin })
 }

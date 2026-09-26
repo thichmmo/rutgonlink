@@ -49,9 +49,14 @@ export default function RichEditor({ value, onChange }: Props) {
   }
 
   function promptVideo() {
-    const url = window.prompt('URL video/embed (YouTube, TikTok...):', '')?.trim()
-    if (!url) return
-    const html = `<div class="video-embed"><iframe src="${url.replace(/"/g, '&quot;')}" title="Video" loading="lazy" allowfullscreen></iframe></div><p><br></p>`
+    const input = window.prompt('URL video/embed (YouTube, TikTok...):', '')?.trim()
+    if (!input) return
+    let url: URL
+    try { url = new URL(input) } catch { return }
+    if (url.protocol !== 'https:') return
+    if (url.hostname === 'youtu.be') url = new URL(`https://www.youtube.com/embed/${url.pathname.slice(1)}`)
+    if (url.hostname.endsWith('youtube.com') && url.pathname === '/watch') url = new URL(`https://www.youtube.com/embed/${url.searchParams.get('v') || ''}`)
+    const html = `<div class="video-embed"><iframe src="${url.href.replace(/"/g, '&quot;')}" title="Video" loading="lazy" allowfullscreen></iframe></div><p><br></p>`
     editorRef.current?.focus()
     document.execCommand('insertHTML', false, html)
     emit()

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
+import { headers } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { BookOpen, CalendarDays } from 'lucide-react'
@@ -6,9 +8,9 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
-import { sanitizeRichHtml } from '@/lib/content-management'
-import { normalizePopupSettings } from '@/lib/popup-settings'
+import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import PostPopup from './PostPopup'
+import RawHtml from './RawHtml'
 
 type Context = { params: Promise<{ slug: string }> }
 
@@ -42,7 +44,8 @@ export async function generateMetadata({ params }: Context): Promise<Metadata> {
 }
 
 function RenderContent({ content, format }: { content: string; format: string }) {
-  if (format === 'rich' || format === 'raw-html') return <div className="prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: format === 'rich' ? sanitizeRichHtml(content) : content }} />
+  if (format === 'raw-html') return <RawHtml html={content} />
+  if (format === 'rich') return <div className="prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content) }} />
   const blocks = content.split(/\n\s*\n/).map(block => block.trim()).filter(Boolean)
   return <>{blocks.map((block, index) => block.startsWith('## ')
     ? <h2 key={index} className="pt-4 text-2xl font-bold leading-snug text-gray-950">{block.slice(3)}</h2>
@@ -58,7 +61,8 @@ export default async function ManagedPostPage({ params }: Context) {
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
-  const settings = post.popup ? normalizePopupSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const settings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const userAgent = (await headers()).get('user-agent') || ''
 
   return <div className="min-h-screen bg-[#f8fafc] text-gray-900">
     <Navbar />
@@ -67,7 +71,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <article className="rounded-3xl border border-gray-200 bg-white px-5 py-9 shadow-sm sm:px-10 sm:py-12">
         <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-950 sm:text-5xl">{post.title}</h1>
         <div className="mt-5 flex items-center gap-2 text-sm text-gray-500"><CalendarDays className="h-4 w-4" /> {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'long' }).format(post.createdAt)}</div>
-        {post.previewImage && <img src={post.previewImage} alt="" className="mt-8 max-h-96 w-full rounded-2xl object-cover" />}
+        {post.previewImage && <Image src={post.previewImage} alt="" width={1200} height={630} unoptimized className="mt-8 max-h-96 w-full rounded-2xl object-cover" />}
         {post.excerpt && <p className="mt-8 border-l-4 border-sky-500 pl-5 text-lg leading-relaxed text-gray-600">{post.excerpt}</p>}
         {before.map(block => <div key={block.id} className="mt-8 border-y border-gray-100 py-5"><RenderContent content={block.content} format={block.contentFormat} /></div>)}
         <div className="mt-10 space-y-5 border-t border-gray-100 pt-9 text-base leading-8 text-gray-800"><RenderContent content={post.content} format={post.contentFormat} /></div>
@@ -76,6 +80,6 @@ export default async function ManagedPostPage({ params }: Context) {
       <Link href="/" className="mt-8 inline-block text-sm font-medium text-sky-700 hover:underline">Về trang chủ</Link>
     </main>
     <Footer />
-    {post.popup && settings && <PostPopup postId={post.id} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
+    {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div>
 }

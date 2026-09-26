@@ -21,8 +21,10 @@ function metadata(html: string) {
 
 export async function POST(req: NextRequest) {
   if (!(await getManagedContentUserId())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let originalUrl: string | null = null
   try {
     const { url } = schema.parse(await req.json())
+    originalUrl = url
     const input = new URL(url)
     if (!['http:', 'https:'].includes(input.protocol) || !allowed(input.hostname)) return NextResponse.json({ url }, { status: 200 })
     if (input.hostname.toLowerCase().endsWith('tiktok.com')) {
@@ -48,6 +50,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: current, originalUrl: url })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: error.issues[0]?.message }, { status: 400 })
-    return NextResponse.json({ url: null, warning: 'Không thể lấy metadata, giữ URL gốc' }, { status: 200 })
+    return NextResponse.json({ url: originalUrl, originalUrl, warning: 'Không thể lấy metadata, giữ URL gốc' }, { status: 200 })
   }
 }

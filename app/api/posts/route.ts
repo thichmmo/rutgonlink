@@ -45,7 +45,9 @@ export async function GET(req: NextRequest) {
     ...(status === 'published' ? { isPublished: true } : status === 'draft' ? { isPublished: false } : {}),
     ...(query || domain ? { AND: [
       ...(query ? [{ OR: [{ title: { contains: query } }, { slug: { contains: query } }, { excerpt: { contains: query } }] }] : []),
-      ...(domain ? [{ OR: [{ sharedDomain: domain }, { domain: { domain } }] }] : []),
+      ...(domain ? [domain === getSiteHostname()
+        ? { domainId: null, sharedDomain: null }
+        : { OR: [{ sharedDomain: domain }, { domain: { domain } }] }] : []),
     ] } : {}),
   }
   const [total, posts] = await prisma.$transaction([
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
         const candidate = index === 0 ? baseSlug : `${baseSlug}-popup-${index + 1}`
         let slug = candidate
         let suffix = 2
-        while (await tx.managedPost.findUnique({ where: { slug }, select: { id: true } })) {
+        while (index > 0 && await tx.managedPost.findUnique({ where: { slug }, select: { id: true } })) {
           slug = `${candidate}-${suffix}`
           suffix += 1
         }

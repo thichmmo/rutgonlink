@@ -8,8 +8,8 @@ import { getActiveFolderUrls } from '@/lib/folder-rotation'
 import { getSiteUrl, isMainAppHostname } from '@/lib/site-config'
 import { isValidIntermediateImage } from '@/lib/intermediate-image'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
-import { sanitizeRichHtml } from '@/lib/content-management'
-import { normalizePopupSettings } from '@/lib/popup-settings'
+import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
+import { popupAppliesToDevice } from '@/lib/popup-settings'
 
 interface LinkResult {
   id: string
@@ -242,7 +242,7 @@ function escapeInlineJson(value: unknown) {
 }
 
 async function findManagedPostForHost(slug: string, hostname: string) {
-  const normalized = hostname.toLowerCase().replace(/\\.$/, '')
+  const normalized = hostname.toLowerCase().replace(/\.$/, '')
   const isPrimary = isMainAppHostname(normalized)
   const isShared = SHARED_DOMAINS.includes(normalized)
   const domain = !isPrimary && !isShared
@@ -265,55 +265,57 @@ async function findManagedPostForHost(slug: string, hostname: string) {
 
 // Route handlers return a standalone HTML document so custom domains keep the public slug.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildManagedPostPage(post: any, hostname: string) {
+function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const image = post.previewImage && isValidIntermediateImage(post.previewImage) ? post.previewImage : null
   const plainText = String(post.content).replace(/<[^>]+>/g, '').slice(0, 160)
   const content = post.contentFormat === 'rich' || post.contentFormat === 'raw-html'
     ? (post.contentFormat === 'rich' ? sanitizeRichHtml(post.content) : post.content)
-    : String(post.content).split(/\\n\\s*\\n/).filter(Boolean).map((part: string) => `<p>${escapeHtml(part).replace(/\\n/g, '<br>')}</p>`).join('')
+    : String(post.content).split(/\n\s*\n/).filter(Boolean).map((part: string) => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`).join('')
   const blocks = post.user.managedContentBlocks || []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const before = blocks.filter((block: any) => block.placement === 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const after = blocks.filter((block: any) => block.placement !== 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
-  const popup = post.popup
-    ? { isActive: post.popup.isActive, imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: normalizePopupSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) }
+  const popupSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const popup = post.popup && popupSettings
+    ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
     : null
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
-  const safeTitle = escapeHtml(post.title)
-  const safeDescription = escapeHtml(post.excerpt || plainText)
+  const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
+  const safeDescription = escapeHtml(post.excerpt || plainText).replace(/\r?\n/g, ' ')
   const canonical = `https://${hostname}/${encodeURIComponent(post.slug)}`
-  const popupScript = popup ? `<script>
+  const popupScript = popup && popup.applies ? `<script>
 (() => {
   const popup = ${popupJson};
-  if (!popup || !popup.isActive) return;
+  if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
   let step = 0; try { step = Math.max(0, Math.min(2, Number(sessionStorage.getItem(key) || 0))); } catch (_) {}
-  if (step >= 2) return;
+  if (step >= 2) { document.body.classList.remove('managed-locked'); return; }
   const ua = navigator.userAgent || '';
   const ios = /iphone|ipad|ipod/i.test(ua); const android = /android/i.test(ua);
+  const browserHint = android && popup.settings.forceChromeAndroid ? ' Nếu bị chặn, hãy mở bằng Chrome.' : ios && popup.settings.forceSafariIos ? ' Nếu bị chặn, hãy mở bằng Safari.' : '';
   const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
-  const enabled = platform && platform.enabled !== false && (ios ? platform.iosEnabled !== false : android ? platform.androidEnabled !== false : true);
-  if (!enabled) { try { sessionStorage.setItem(key, '2'); } catch (_) {} return; }
   const url = step === 0 ? popup.settings.shopee.url : (ios ? popup.settings.tiktok.iosUrl : popup.settings.tiktok.androidUrl);
-  if (!url) return;
   const delay = Math.max(0, Number(platform.delaySeconds || 0));
   const image = platform.imageUrl || popup.imageUrl || '';
   const overlay = document.createElement('div'); overlay.className = 'managed-popup';
   overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><b>Mở ' + (step === 0 ? 'Shopee' : 'TikTok') + ' (' + (step + 1) + '/2)</b><span>Hoàn tất hai lượt để xem bài viết</span></div><button class="managed-popup-video" type="button"><i>▶</i></button><div class="managed-popup-foot"><span class="managed-popup-message"></span><button class="managed-popup-open" type="button">Mở liên kết</button></div></div>';
   document.body.appendChild(overlay);
   if (image) overlay.querySelector('.managed-popup-video').style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
-  const message = overlay.querySelector('.managed-popup-message'); const open = () => {
-    const tab = window.open(url, '_blank', 'noopener,noreferrer');
+  const message = overlay.querySelector('.managed-popup-message'); let left = delay;
+  const open = () => {
+    if (left > 0 || !url) return;
+    const tab = window.open(url, '_blank');
     if (!tab) { message.textContent = 'Hãy cho phép tab mới rồi thử lại.'; return; }
+    try { tab.opener = null; } catch (_) {}
     step += 1; try { sessionStorage.setItem(key, String(step)); } catch (_) {}
-    overlay.remove(); if (step < 2) location.reload();
+    overlay.remove(); if (step < 2) location.reload(); else document.body.classList.remove('managed-locked');
   };
   overlay.querySelectorAll('button').forEach(button => button.addEventListener('click', open));
-  let left = delay; const tick = () => { if (left > 0) { message.textContent = 'Vui lòng chờ ' + left + ' giây...'; left -= 1; setTimeout(tick, 1000); } else { message.textContent = 'Sẵn sàng mở liên kết.'; } }; tick();
+  const tick = () => { if (left > 0) { message.textContent = 'Vui lòng chờ ' + left + ' giây...' + browserHint; setTimeout(() => { left -= 1; tick(); }, 1000); } else { message.textContent = 'Sẵn sàng mở liên kết.' + browserHint; } }; tick();
 })();
 </script>` : ''
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}">${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content iframe{max-width:100%;width:100%;min-height:320px}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78);backdrop-filter:blur(7px)}.managed-popup-card{width:min(760px,100%);background:#111827;color:#fff;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}.managed-popup-head{display:flex;justify-content:space-between;gap:14px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1)}.managed-popup-head span{color:#9ca3af;font-size:13px}.managed-popup-video{width:100%;aspect-ratio:16/9;border:0;background:#000 center/cover;display:grid;place-items:center;color:#fff;font-size:56px;cursor:pointer}.managed-popup-video i{font-style:normal;width:84px;height:84px;display:grid;place-items:center;border-radius:50%;background:#ef4444;font-size:32px}.managed-popup-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px}.managed-popup-message{font-size:14px;color:#cbd5e1}.managed-popup-open{border:0;border-radius:9px;background:#0ea5e9;color:#fff;padding:11px 15px;font-weight:700;cursor:pointer}</style></head><body><main class="wrap"><article class="card"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content">${content}</div>${after}</article></main>${popupScript}</body></html>`
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}">${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content iframe{max-width:100%;width:100%;min-height:320px}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78);backdrop-filter:blur(7px)}.managed-popup-card{width:min(760px,100%);background:#111827;color:#fff;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}.managed-popup-head{display:flex;justify-content:space-between;gap:14px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1)}.managed-popup-head span{color:#9ca3af;font-size:13px}.managed-popup-video{width:100%;aspect-ratio:16/9;border:0;background:#000 center/cover;display:grid;place-items:center;color:#fff;font-size:56px;cursor:pointer}.managed-popup-video i{font-style:normal;width:84px;height:84px;display:grid;place-items:center;border-radius:50%;background:#ef4444;font-size:32px}.managed-popup-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px}.managed-popup-message{font-size:14px;color:#cbd5e1}.managed-popup-open{border:0;border-radius:9px;background:#0ea5e9;color:#fff;padding:11px 15px;font-weight:700;cursor:pointer}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><main class="wrap"><article class="card"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content">${content}</div>${after}</article></main>${popupScript}</body></html>`
 }
 
 export async function GET(
@@ -332,7 +334,7 @@ export async function GET(
   // Managed posts take precedence over short links on the selected public domain.
   const managedPost = await findManagedPostForHost(shortCode, hostname)
   if (managedPost) {
-    return new Response(buildManagedPostPage(managedPost, hostname.toLowerCase()), {
+    return new Response(buildManagedPostPage(managedPost, hostname.toLowerCase(), req.headers.get('user-agent') || ''), {
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     })
   }

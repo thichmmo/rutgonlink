@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { z } from 'zod'
+import sanitizeHtml from 'sanitize-html'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { isValidIntermediateImage, MAX_INTERMEDIATE_IMAGE_LENGTH } from '@/lib/intermediate-image'
@@ -34,7 +35,8 @@ export const postSchema = z.object({
   popupIds: z.array(z.string()).max(20).optional(),
   domainId: z.string().nullable().optional(),
   sharedDomain: z.string().nullable().optional(),
-  previewImage: z.string().max(MAX_INTERMEDIATE_IMAGE_LENGTH).nullable().optional(),
+  previewImage: z.string().max(MAX_INTERMEDIATE_IMAGE_LENGTH)
+    .refine(isValidIntermediateImage, 'Ảnh phải là URL HTTP(S) hoặc ảnh tải lên').nullable().optional(),
   isPublished: z.boolean().optional().default(false),
 })
 
@@ -65,7 +67,7 @@ export async function getManagedContentActor(): Promise<ManagedContentActor | nu
   return {
     id: user.id,
     email: user.email,
-    isAdmin: user.email.toLowerCase() === process.env.ADMIN_EMAIL?.trim().toLowerCase() || Boolean(user.adminRole),
+    isAdmin: user.email.toLowerCase() === process.env.ADMIN_EMAIL?.trim().toLowerCase() || user.adminRole === 'owner' || user.adminRole === 'ops',
   }
 }
 
@@ -95,7 +97,7 @@ export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl
   const safe = (value: string, fallback: string) => {
     try {
       const url = new URL(value)
-      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : fallback
+      return value.length <= 2048 && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : fallback
     } catch {
       return fallback
     }
@@ -104,14 +106,25 @@ export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl
   normalized.tiktok.url = safe(normalized.tiktok.url, secondUrl)
   normalized.tiktok.androidUrl = safe(normalized.tiktok.androidUrl, secondUrl)
   normalized.tiktok.iosUrl = safe(normalized.tiktok.iosUrl, secondUrl)
+  const safeImage = (value: string | null) => value && value.length <= MAX_INTERMEDIATE_IMAGE_LENGTH && isValidIntermediateImage(value) ? value : null
+  normalized.shopee.imageUrl = safeImage(normalized.shopee.imageUrl)
+  normalized.tiktok.imageUrl = safeImage(normalized.tiktok.imageUrl)
   return normalized
 }
 
 export function sanitizeRichHtml(value: string) {
-  return value
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript\s*:/gi, '')
+  return sanitizeHtml(value, {
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'iframe', 'h1', 'h2'],
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'width', 'height'],
+      iframe: ['src', 'title', 'width', 'height', 'allow', 'allowfullscreen', 'loading'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedSchemesByTag: { img: ['http', 'https', 'data'], iframe: ['https'] },
+    allowedIframeHostnames: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com', 'tiktok.com', 'www.tiktok.com'],
+  })
 }
 
 export function normalizeContent(content: string, contentFormat: 'plain' | 'rich' | 'raw-html', isAdmin: boolean) {

@@ -49,10 +49,10 @@ jobs:
       - name: Lint
         run: >-
           pnpm exec eslint
-          app/api/popups app/api/posts
+          app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
-          'app/posts/[slug]'
-          lib/content-management.ts
+          'app/posts/[slug]' 'app/[shortCode]/route.ts'
+          lib/content-management.ts lib/popup-settings.ts
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs
 
@@ -112,3 +112,15 @@ jobs:
           curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/ >/dev/null
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
+          dashboard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
+          test "$dashboard_status" = 302 || test "$dashboard_status" = 307
+          if [ -n "${SMOKE_POST_URL:-}" ]; then
+            test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$SMOKE_POST_URL")" = 200
+          fi
+          if [ -n "${SMOKE_SHORT_URL:-}" ]; then
+            short_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$SMOKE_SHORT_URL")"
+            test "$short_status" = 200 || test "$short_status" = 302
+          fi
+        env:
+          SMOKE_POST_URL: ${{ secrets.SMOKE_POST_URL }}
+          SMOKE_SHORT_URL: ${{ secrets.SMOKE_SHORT_URL }}
