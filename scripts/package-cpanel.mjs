@@ -17,7 +17,7 @@ mkdirSync(packageDir, { recursive: true })
 
 // Dereference standalone symlinks so cPanel does not depend on local pnpm paths.
 const packagedStandalone = resolve(packageDir, '.next/standalone')
-cpSync(standalone, packagedStandalone, { recursive: true, dereference: false })
+cpSync(standalone, packagedStandalone, { recursive: true, dereference: true })
 materializeSymlinks(standalone, packagedStandalone)
 
 // Next traces Prisma's external package below `.next/node_modules`; mirror the
@@ -42,6 +42,7 @@ for (const required of [
   '.next/standalone/.next/BUILD_ID',
   '.next/standalone/.next/static',
   '.next/standalone/.next/node_modules/.prisma/client/default.js',
+  '.next/standalone/node_modules/nanoid/non-secure/index.js',
   '.next/standalone/public',
   'prisma/migrations',
 ]) {
@@ -80,7 +81,7 @@ function materializeSymlinks(sourceRoot, destinationRoot) {
         changed = true
         continue
       }
-      cpSync(sourceTarget, destinationLink, { recursive: true, dereference: false })
+      cpSync(sourceTarget, destinationLink, { recursive: true, dereference: true })
       changed = true
     }
     if (!changed) return
