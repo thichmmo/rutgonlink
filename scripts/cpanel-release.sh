@@ -58,6 +58,7 @@ test -d "$release/unpacked/prisma/migrations"
 ln -s "$app/.env" "$stage/.env"
 
 cd "$stage"
+export NODE_PATH="$stage/node_modules/.pnpm/node_modules"
 "$node" -e "for (const p of ['next', '@swc/helpers/_/_interop_require_default', '@prisma/client']) require.resolve(p)"
 echo runtime_resolution_ok
 

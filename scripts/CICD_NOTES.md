@@ -4,6 +4,8 @@ The `cpanel-deploy.yml` workflow runs Prisma validation, TypeScript, ESLint and 
 
 The lint job scopes the changed content and deployment files. A full-repository ESLint run currently reports legacy errors outside this feature; those are not introduced by this pipeline.
 
+The cPanel runtime keeps pnpm's dependency tree under `.next/standalone/node_modules/.pnpm/node_modules`; the release script exports that directory as `NODE_PATH` during preflight so `@swc/helpers` and other hoisted packages resolve on the host.
+
 Required GitHub Actions secrets:
 
 - `CPANEL_URL`: cPanel origin including port, for example `https://host.example:2083`.
