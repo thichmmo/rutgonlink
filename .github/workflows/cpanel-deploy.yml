@@ -40,6 +40,9 @@ jobs:
         env:
           DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
 
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
       - name: Typecheck
         run: pnpm exec tsc --noEmit --pretty false
 
