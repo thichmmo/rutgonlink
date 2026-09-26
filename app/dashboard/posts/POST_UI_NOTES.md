@@ -1,5 +1,5 @@
 # Posts dashboard
 
-Manage drafts/published posts, slugs, plain-text content and assigned popup at `/dashboard/posts`. Public links are `/posts/{slug}`; this leaves existing short-code routing untouched.
+Manage published/draft posts with domain filtering/selection, preview image, plain/rich/raw content modes, multi-popup bulk creation, duplicate, copy/open/edit/delete and pagination. The built-in rich editor supports formatting, image paste/upload and video embeds; raw source remains a separate admin-gated mode. The fixed-content modal supports create/edit/delete, active toggle and before/after ordering.
 
-Verify with `npx eslint app/dashboard/posts`, then create/edit/publish a post in the dashboard.
+Verify with `pnpm exec eslint app/dashboard/posts` and create one no-popup post plus a multi-popup batch.

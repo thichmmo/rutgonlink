@@ -48,6 +48,7 @@ model User {
   fbDebugJobs                FbDebugJob[]
   popupTemplates             PopupTemplate[]
   managedPosts               ManagedPost[]
+  managedContentBlocks       ManagedContentBlock[]
 
   @@index([status])
   @@index([adminRole])
@@ -148,6 +149,7 @@ model Domain {
   createdAt      DateTime  @default(now())
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   links          Link[]
+  managedPosts   ManagedPost[]
 
   @@index([userId], map: "Domain_userId_fkey")
 }
@@ -207,9 +209,11 @@ model PopupTemplate {
   id        String        @id @default(cuid())
   userId    String
   name      String        @db.VarChar(120)
+  isActive  Boolean       @default(true)
   imageUrl  String?       @db.LongText
   firstUrl  String        @db.Text
   secondUrl String        @db.Text
+  settings  Json?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -219,21 +223,44 @@ model PopupTemplate {
 }
 
 model ManagedPost {
-  id          String         @id @default(cuid())
-  userId      String
-  popupId     String?
-  title       String         @db.VarChar(200)
-  slug        String         @unique @db.VarChar(190)
-  excerpt     String?        @db.Text
-  content     String         @db.LongText
-  isPublished Boolean        @default(false)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  popup       PopupTemplate? @relation(fields: [popupId], references: [id], onDelete: SetNull)
+  id            String         @id @default(cuid())
+  userId        String
+  popupId       String?
+  domainId      String?
+  sharedDomain  String?        @db.VarChar(255)
+  title         String         @db.VarChar(200)
+  slug          String         @unique @db.VarChar(190)
+  excerpt       String?        @db.Text
+  content       String         @db.LongText
+  contentFormat String         @default("plain") @db.VarChar(20)
+  previewImage  String?        @db.LongText
+  isPublished   Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  popup         PopupTemplate? @relation(fields: [popupId], references: [id], onDelete: SetNull)
+  domain        Domain?        @relation(fields: [domainId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([isPublished, createdAt])
+  @@index([domainId])
+  @@index([sharedDomain])
+}
+
+model ManagedContentBlock {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String   @db.VarChar(120)
+  content       String   @db.LongText
+  contentFormat String   @default("rich") @db.VarChar(20)
+  placement     String   @default("after") @db.VarChar(10)
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, placement, sortOrder])
 }
 
 model FolderGroup {

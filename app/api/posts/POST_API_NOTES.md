@@ -1,5 +1,5 @@
 # Post API
 
-Posts are private to their owner in the management API. Creation validates slug uniqueness and verifies the selected popup belongs to the same account.
+Owner-scoped post endpoints support search/status/domain filters, 6/10/20/25 pagination, domain validation, one-or-many popup creation in a transaction, slug suffixes, rich/raw content permissions, duplicate and delete. `/api/posts/options` exposes only active popups and verified publication domains.
 
-Verify with `npx eslint app/api/posts` and a duplicate-slug request.
+Verify with `pnpm exec eslint app/api/posts` and authenticated no-popup, bulk-popup, duplicate-slug and invalid-domain requests.
