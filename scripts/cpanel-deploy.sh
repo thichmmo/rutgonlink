@@ -24,7 +24,7 @@ api_upload() {
     -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" \
     -F "dir=$remote_tmp" -F "file-1=@$path" \
     "$CPANEL_URL/execute/Fileman/upload_files")"
-  python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["status"] == 1 and d["data"]["succeeded"] == 1, d' <<<"$response"
+  python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == 1, d; data=d.get("data") or {}; uploads=data.get("uploads", data) if isinstance(data, dict) else data; assert isinstance(uploads, list) and uploads and all(item.get("status") == 1 for item in uploads), d' <<<"$response"
 }
 
 echo "Uploading release $release_id"
