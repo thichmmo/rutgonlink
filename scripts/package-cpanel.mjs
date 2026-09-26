@@ -66,7 +66,8 @@ function copyTreeMaterialized(source, destination, seen = new Set()) {
     const sourcePath = resolve(source, entry.name)
     const destinationPath = resolve(destination, entry.name)
     if (entry.isDirectory() || entry.isSymbolicLink()) {
-      const target = realpathSync(sourcePath)
+      let target
+      try { target = realpathSync(sourcePath) } catch { continue }
       if (existsSync(target)) copyTreeMaterialized(target, destinationPath, seen)
       continue
     }
