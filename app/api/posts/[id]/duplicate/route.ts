@@ -28,6 +28,7 @@ export async function POST(_req: Request, { params }: Context) {
       content: source.content,
       contentFormat: source.contentFormat,
       previewImage: source.previewImage,
+      isFakeVideo: source.isFakeVideo,
       isPublished: false,
     },
     include: { popup: { select: { id: true, name: true, isActive: true } }, domain: { select: { id: true, domain: true } } },

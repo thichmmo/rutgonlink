@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
             content,
             contentFormat: format,
             previewImage: data.previewImage || null,
+            isFakeVideo: data.isFakeVideo,
             isPublished: data.isPublished,
           },
           include: { popup: { select: { id: true, name: true, isActive: true } }, domain: { select: { id: true, domain: true } } },

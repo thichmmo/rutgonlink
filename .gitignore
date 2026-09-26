@@ -20,6 +20,7 @@
 # production
 /build
 *.zip
+/uploads/
 
 # local tooling and obsolete source copies
 /.claude/

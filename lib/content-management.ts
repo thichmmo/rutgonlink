@@ -37,6 +37,7 @@ export const postSchema = z.object({
   sharedDomain: z.string().nullable().optional(),
   previewImage: z.string().max(MAX_INTERMEDIATE_IMAGE_LENGTH)
     .refine(isValidIntermediateImage, 'Ảnh phải là URL HTTP(S) hoặc ảnh tải lên').nullable().optional(),
+  isFakeVideo: z.boolean().optional().default(false),
   isPublished: z.boolean().optional().default(false),
 })
 
@@ -114,15 +115,17 @@ export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl
 
 export function sanitizeRichHtml(value: string) {
   return sanitizeHtml(value, {
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'iframe', 'h1', 'h2'],
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'iframe', 'video', 'source', 'figure', 'figcaption', 'h1', 'h2'],
     allowedAttributes: {
       ...sanitizeHtml.defaults.allowedAttributes,
       a: ['href', 'name', 'target', 'rel'],
       img: ['src', 'alt', 'width', 'height'],
       iframe: ['src', 'title', 'width', 'height', 'allow', 'allowfullscreen', 'loading'],
+      video: ['src', 'poster', 'controls', 'width', 'height', 'preload', 'playsinline'],
+      source: ['src', 'type'],
     },
     allowedSchemes: ['http', 'https', 'mailto'],
-    allowedSchemesByTag: { img: ['http', 'https', 'data'], iframe: ['https'] },
+    allowedSchemesByTag: { img: ['http', 'https', 'data'], iframe: ['https'], video: ['http', 'https', 'data'], source: ['http', 'https', 'data'] },
     allowedIframeHostnames: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com', 'tiktok.com', 'www.tiktok.com'],
   })
 }
