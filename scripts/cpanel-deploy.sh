@@ -46,7 +46,7 @@ cron_response="$(api_get -G \
   --data-urlencode 'minute=*' --data-urlencode 'hour=*' \
   --data-urlencode 'day=*' --data-urlencode 'month=*' --data-urlencode 'weekday=*' \
   "$CPANEL_URL/json-api/cpanel")"
-line_key="$(python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["cpanelresult"]["event"]["result"] == 1, d; print(d["cpanelresult"]["data"]["linekey"])' <<<"$cron_response")"
+line_key="$(python3 -c 'import json,sys; d=json.load(sys.stdin); result=d["cpanelresult"]; assert result["event"]["result"] == 1, d; data=result["data"]; item=data[0] if isinstance(data,list) else data; print(item["linekey"])' <<<"$cron_response")"
 echo "Waiting for cPanel deploy job $line_key"
 
 status_dir="$CPANEL_APP_DIR/.deploy/$release_id"
