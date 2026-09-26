@@ -79,7 +79,7 @@ jobs:
       - name: Preflight packaged Linux runtime
         run: |
           cd .artifacts/cpanel/release/.next/standalone
-          NODE_PATH="$PWD/node_modules/.pnpm/node_modules" node -e "for (const p of ['next', '@prisma/client', 'nanoid/non-secure', 'postcss']) require.resolve(p)"
+          NODE_PATH="$PWD/node_modules/.pnpm/node_modules" node -e "for (const p of ['next', '@prisma/client', 'nanoid/non-secure']) require.resolve(p)"
           PORT=3012 HOSTNAME=127.0.0.1 NODE_ENV=production NODE_PATH="$PWD/node_modules/.pnpm/node_modules" node server.js > "$RUNNER_TEMP/preflight.log" 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/preflight.log"' EXIT

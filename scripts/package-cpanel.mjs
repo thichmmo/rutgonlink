@@ -19,6 +19,16 @@ mkdirSync(packageDir, { recursive: true })
 const packagedStandalone = resolve(packageDir, '.next/standalone')
 copyTreeMaterialized(standalone, packagedStandalone)
 
+// Turbopack can leave a dangling pnpm link for nanoid even though the app
+// imports it indirectly through the production PostCSS runtime. Copy the
+// workspace package explicitly so Linux preflight and cPanel resolve it.
+const packagedNanoid = resolve(packagedStandalone, 'node_modules/nanoid')
+const workspaceNanoid = findWorkspacePackage('nanoid')
+if (workspaceNanoid) {
+  rmSync(packagedNanoid, { recursive: true, force: true })
+  copyTreeMaterialized(workspaceNanoid, packagedNanoid)
+}
+
 // Next traces Prisma's external package below `.next/node_modules`; mirror the
 // generated client there because its `default.js` resolves `.prisma/client` from
 // that directory rather than from the standalone root.
@@ -55,6 +65,19 @@ console.log(`Migration files: ${countMigrationFiles(resolve(packageDir, 'prisma/
 function countMigrationFiles(path) {
   return readdirSync(path, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && existsSync(resolve(path, entry.name, 'migration.sql'))).length
+}
+
+function findWorkspacePackage(name) {
+  const direct = resolve(root, 'node_modules', name)
+  if (existsSync(direct)) return direct
+  const store = resolve(root, 'node_modules/.pnpm')
+  if (!existsSync(store)) return null
+  for (const entry of readdirSync(store, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith(`${name}@`)) continue
+    const candidate = resolve(store, entry.name, 'node_modules', name)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
 }
 
 function copyTreeMaterialized(source, destination, seen = new Set()) {
