@@ -80,20 +80,24 @@ function findWorkspacePackage(name) {
   return null
 }
 
-function copyTreeMaterialized(source, destination, seen = new Set()) {
+function copyTreeMaterialized(source, destination, stack = new Set()) {
   const realSource = realpathSync(source)
-  if (seen.has(realSource)) return
-  seen.add(realSource)
+  if (stack.has(realSource)) return
+  stack.add(realSource)
   mkdirSync(destination, { recursive: true })
-  for (const entry of readdirSync(source, { withFileTypes: true })) {
-    const sourcePath = resolve(source, entry.name)
-    const destinationPath = resolve(destination, entry.name)
-    if (entry.isDirectory() || entry.isSymbolicLink()) {
-      let target
-      try { target = realpathSync(sourcePath) } catch { continue }
-      if (existsSync(target)) copyTreeMaterialized(target, destinationPath, seen)
-      continue
+  try {
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      const sourcePath = resolve(source, entry.name)
+      const destinationPath = resolve(destination, entry.name)
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        let target
+        try { target = realpathSync(sourcePath) } catch { continue }
+        if (existsSync(target)) copyTreeMaterialized(target, destinationPath, stack)
+        continue
+      }
+      cpSync(sourcePath, destinationPath, { dereference: true })
     }
-    cpSync(sourcePath, destinationPath, { dereference: true })
+  } finally {
+    stack.delete(realSource)
   }
 }
