@@ -86,6 +86,14 @@ for migration_sql in "$release/unpacked/prisma/migrations"/*/migration.sql; do
   applied="$(db_sql -N -B -e "SELECT COUNT(*) FROM RutgonlinkMigration WHERE migrationName='$escaped_name'")"
   if [ "$applied" = 1 ]; then continue; fi
   migration_sha="$(sha256sum "$migration_sql" | cut -d' ' -f1)"
+  if [ "$migration_name" = "20260926000000_add_managed_posts_popups" ]; then
+    existing_tables="$(db_sql -N -B -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('PopupTemplate','ManagedPost')")"
+    if [ "$existing_tables" = 2 ]; then
+      db_sql -e "INSERT INTO RutgonlinkMigration (migrationName, checksum) VALUES ('$escaped_name', '$migration_sha')"
+      echo "migration_baseline_adopted=$migration_name"
+      continue
+    fi
+  fi
   db_sql < "$migration_sql"
   db_sql -e "INSERT INTO RutgonlinkMigration (migrationName, checksum) VALUES ('$escaped_name', '$migration_sha')"
   echo "migration_applied=$migration_name"
