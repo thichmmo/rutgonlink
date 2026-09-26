@@ -28,6 +28,12 @@ if (workspaceNanoid) {
   rmSync(packagedNanoid, { recursive: true, force: true })
   copyTreeMaterialized(workspaceNanoid, packagedNanoid)
 }
+const postcssNanoid = findWorkspacePackage('nanoid', '3.')
+const packagedPostcssNanoid = resolve(packagedStandalone, '.next/node_modules/nanoid')
+if (postcssNanoid) {
+  rmSync(packagedPostcssNanoid, { recursive: true, force: true })
+  copyTreeMaterialized(postcssNanoid, packagedPostcssNanoid)
+}
 
 // Next traces Prisma's external package below `.next/node_modules`; mirror the
 // generated client there because its `default.js` resolves `.prisma/client` from
@@ -51,6 +57,7 @@ for (const required of [
   '.next/standalone/.next/BUILD_ID',
   '.next/standalone/.next/static',
   '.next/standalone/.next/node_modules/.prisma/client/default.js',
+  '.next/standalone/.next/node_modules/nanoid/non-secure/index.js',
   '.next/standalone/node_modules/nanoid/non-secure/index.js',
   '.next/standalone/public',
   'prisma/migrations',
@@ -67,13 +74,13 @@ function countMigrationFiles(path) {
     .filter(entry => entry.isDirectory() && existsSync(resolve(path, entry.name, 'migration.sql'))).length
 }
 
-function findWorkspacePackage(name) {
+function findWorkspacePackage(name, versionPrefix = '') {
   const direct = resolve(root, 'node_modules', name)
-  if (existsSync(direct)) return direct
+  if (!versionPrefix && existsSync(direct)) return direct
   const store = resolve(root, 'node_modules/.pnpm')
   if (!existsSync(store)) return null
   for (const entry of readdirSync(store, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith(`${name}@`)) continue
+    if (!entry.isDirectory() || !entry.name.startsWith(`${name}@${versionPrefix}`)) continue
     const candidate = resolve(store, entry.name, 'node_modules', name)
     if (existsSync(candidate)) return candidate
   }
