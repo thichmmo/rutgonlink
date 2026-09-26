@@ -1,24 +1,28 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Copy, ExternalLink, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { Copy, ExternalLink, FileText, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react'
 import RichEditor from './RichEditor'
 import FixedContentManager from './FixedContentManager'
 
 type Popup = { id: string; name: string; isActive?: boolean }
 type DomainOption = { id: string | null; domain: string; kind: 'primary' | 'shared' | 'custom' }
-type Post = { id: string; title: string; slug: string; excerpt: string | null; content: string; contentFormat: string; popupId: string | null; popup: Popup | null; domainId: string | null; sharedDomain: string | null; previewImage: string | null; publicUrl: string; publicDomain: string; isPublished: boolean; updatedAt: string }
+type Post = { id: string; title: string; slug: string; excerpt: string | null; content: string; contentFormat: string; popupId: string | null; popup: Popup | null; domainId: string | null; sharedDomain: string | null; previewImage: string | null; isFakeVideo: boolean; publicUrl: string; publicDomain: string; isPublished: boolean; updatedAt: string }
+type Form = { title: string; slug: string; excerpt: string; content: string; contentFormat: string; popupIds: string[]; domainKey: string; previewImage: string; isFakeVideo: boolean; isPublished: boolean }
 
-const emptyForm = { title: '', slug: '', excerpt: '', content: '', contentFormat: 'plain', popupIds: [] as string[], domainKey: 'primary', previewImage: '', isPublished: false }
+const emptyForm: Form = { title: '', slug: '', excerpt: '', content: '', contentFormat: 'rich', popupIds: [], domainKey: 'primary', previewImage: '', isFakeVideo: false, isPublished: false }
 
-function slugify(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+function slugify(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
 
 export default function PostManager() {
   const [posts, setPosts] = useState<Post[]>([])
   const [popups, setPopups] = useState<Popup[]>([])
   const [domains, setDomains] = useState<DomainOption[]>([])
   const [canUseRawHtml, setCanUseRawHtml] = useState(false)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<Form>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [showBlocks, setShowBlocks] = useState(false)
@@ -30,12 +34,21 @@ export default function PostManager() {
   const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const previewImageRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
-    const [postsResponse, optionsResponse] = await Promise.all([fetch(`/api/posts?query=${encodeURIComponent(query)}&status=${status}&domain=${encodeURIComponent(domainFilter)}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }), fetch('/api/posts/options', { cache: 'no-store' })])
-    const postsData = await postsResponse.json(); const optionsData = await optionsResponse.json()
+    const [postsResponse, optionsResponse] = await Promise.all([
+      fetch(`/api/posts?query=${encodeURIComponent(query)}&status=${status}&domain=${encodeURIComponent(domainFilter)}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }),
+      fetch('/api/posts/options', { cache: 'no-store' }),
+    ])
+    const postsData = await postsResponse.json()
+    const optionsData = await optionsResponse.json()
     if (!postsResponse.ok || !optionsResponse.ok) throw new Error(postsData.error || optionsData.error || 'Không tải được dữ liệu')
-    setPosts(postsData.items || []); setTotal(postsData.total || 0); setPopups(optionsData.popups || []); setDomains(optionsData.domains || []); setCanUseRawHtml(Boolean(optionsData.canUseRawHtml))
+    setPosts(postsData.items || [])
+    setTotal(postsData.total || 0)
+    setPopups(optionsData.popups || [])
+    setDomains(optionsData.domains || [])
+    setCanUseRawHtml(Boolean(optionsData.canUseRawHtml))
   }, [domainFilter, page, pageSize, query, status])
 
   useEffect(() => {
@@ -43,25 +56,95 @@ export default function PostManager() {
     return () => window.clearTimeout(timer)
   }, [load])
 
-  function startCreate() { setEditingId(null); setForm(emptyForm); setShowForm(true); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  function edit(post: Post) { setEditingId(post.id); setForm({ title: post.title, slug: post.slug, excerpt: post.excerpt || '', content: post.content, contentFormat: post.contentFormat || 'plain', popupIds: post.popupId ? [post.popupId] : [], domainKey: post.domainId || (post.sharedDomain ? `shared:${post.sharedDomain}` : 'primary'), previewImage: post.previewImage || '', isPublished: post.isPublished }); setShowForm(true); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  function reset() { setEditingId(null); setForm(emptyForm); setShowForm(false) }
-
-  function targetPayload() { const custom = domains.find(item => item.id === form.domainKey); if (custom?.kind === 'custom') return { domainId: custom.id, sharedDomain: null }; if (form.domainKey.startsWith('shared:')) return { domainId: null, sharedDomain: form.domainKey.slice(7) }; return { domainId: null, sharedDomain: null } }
-
-  async function save(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setError('')
-    try {
-      const target = targetPayload(); const payload = { title: form.title, slug: form.slug || slugify(form.title), excerpt: form.excerpt || null, content: form.content, contentFormat: form.contentFormat, previewImage: form.previewImage || null, isPublished: form.isPublished, ...target, ...(editingId ? { popupId: form.popupIds[0] || null } : { popupIds: form.popupIds }) }
-      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Lưu bài viết thất bại')
-      reset(); await load()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Lưu bài viết thất bại') } finally { setBusy(false) }
+  function startCreate() {
+    setEditingId(null)
+    setForm(emptyForm)
+    setShowForm(true)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  async function remove(post: Post) { if (!window.confirm(`Xóa bài viết "${post.title}"?`)) return; setBusy(true); try { const response = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Xóa bài viết thất bại'); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Xóa bài viết thất bại') } finally { setBusy(false) } }
-  async function duplicate(post: Post) { setBusy(true); try { const response = await fetch(`/api/posts/${post.id}/duplicate`, { method: 'POST' }); if (!response.ok) throw new Error('Nhân bản bài viết thất bại'); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Nhân bản bài viết thất bại') } finally { setBusy(false) } }
-  async function copyLink(post: Post) { await navigator.clipboard.writeText(post.publicUrl); setError(`Đã sao chép ${post.publicUrl}`) }
+  function edit(post: Post) {
+    setEditingId(post.id)
+    setForm({ title: post.title, slug: post.slug, excerpt: post.excerpt || '', content: post.content, contentFormat: post.contentFormat || 'plain', popupIds: post.popupId ? [post.popupId] : [], domainKey: post.domainId || (post.sharedDomain ? `shared:${post.sharedDomain}` : 'primary'), previewImage: post.previewImage || '', isFakeVideo: post.isFakeVideo, isPublished: post.isPublished })
+    setShowForm(true)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function reset() {
+    setEditingId(null)
+    setForm(emptyForm)
+    setShowForm(false)
+  }
+
+  function targetPayload() {
+    const custom = domains.find(item => item.id === form.domainKey)
+    if (custom?.kind === 'custom') return { domainId: custom.id, sharedDomain: null }
+    if (form.domainKey.startsWith('shared:')) return { domainId: null, sharedDomain: form.domainKey.slice(7) }
+    return { domainId: null, sharedDomain: null }
+  }
+
+  const uploadFile = useCallback(async (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    const response = await fetch('/api/content/upload', { method: 'POST', body })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Không thể tải tệp lên')
+    return String(data.url)
+  }, [])
+
+  async function uploadPreview(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const url = await uploadFile(file)
+      setForm(current => ({ ...current, previewImage: url }))
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Không thể tải ảnh preview')
+    }
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const target = targetPayload()
+      const payload = { title: form.title, slug: form.slug || slugify(form.title), excerpt: form.excerpt || null, content: form.content, contentFormat: form.contentFormat, previewImage: form.previewImage || null, isFakeVideo: form.isFakeVideo, isPublished: form.isPublished, ...target, ...(editingId ? { popupId: form.popupIds[0] || null } : { popupIds: form.popupIds }) }
+      const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Lưu bài viết thất bại')
+      reset()
+      await load()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Lưu bài viết thất bại')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(post: Post) {
+    if (!window.confirm(`Xóa bài viết "${post.title}"?`)) return
+    setBusy(true)
+    try { const response = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Xóa bài viết thất bại'); await load() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Xóa bài viết thất bại') }
+    finally { setBusy(false) }
+  }
+
+  async function duplicate(post: Post) {
+    setBusy(true)
+    try { const response = await fetch(`/api/posts/${post.id}/duplicate`, { method: 'POST' }); if (!response.ok) throw new Error('Nhân bản bài viết thất bại'); await load() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Nhân bản bài viết thất bại') }
+    finally { setBusy(false) }
+  }
+
+  async function copyLink(post: Post) {
+    await navigator.clipboard.writeText(post.publicUrl)
+    setError(`Đã sao chép ${post.publicUrl}`)
+  }
 
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const selectedCount = form.popupIds.length
@@ -72,7 +155,15 @@ export default function PostManager() {
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="Tìm tiêu đề, slug..." className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-sky-500" /></div><select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="all">Tất cả trạng thái</option><option value="published">Đã xuất bản</option><option value="draft">Bản nháp</option></select><select value={domainFilter} onChange={event => { setDomainFilter(event.target.value); setPage(1) }} className="max-w-48 rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Tất cả domain</option>{domains.map(domain => <option key={`filter:${domain.kind}:${domain.id || domain.domain}`} value={domain.domain}>{domain.domain}</option>)}</select><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="6">6 / trang</option><option value="10">10 / trang</option><option value="20">20 / trang</option><option value="25">25 / trang</option></select></div>
     {error && <p role="alert" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">{error}</p>}
     {showBlocks && <FixedContentManager canUseRawHtml={canUseRawHtml} onClose={() => setShowBlocks(false)} />}
-    {showForm && <form onSubmit={save} className="space-y-5 rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-7"><h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2><div className="grid gap-4 md:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Tiêu đề<input required maxLength={200} value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value, slug: editingId ? current.slug : slugify(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><label className="grid gap-1.5 text-sm font-medium text-gray-700">Slug<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} onChange={event => setForm({ ...form, slug: slugify(event.target.value) })} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label></div><div className="grid gap-4 md:grid-cols-3"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Domain<select value={form.domainKey} onChange={event => setForm({ ...form, domainKey: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5">{domains.map(domain => <option key={`${domain.kind}:${domain.id || domain.domain}`} value={domain.kind === 'custom' ? domain.id || '' : domain.kind === 'shared' ? `shared:${domain.domain}` : 'primary'}>{domainLabel(domain)}</option>)}</select></label><label className="grid gap-1.5 text-sm font-medium text-gray-700">Ảnh preview Facebook<input value={form.previewImage} onChange={event => setForm({ ...form, previewImage: event.target.value })} placeholder="https://... hoặc data URL" className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><label className="flex items-center gap-2 self-end rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-medium"><input type="checkbox" checked={form.isPublished} onChange={event => setForm({ ...form, isPublished: event.target.checked })} className="h-4 w-4 accent-sky-600" /> Xuất bản</label></div><label className="grid gap-1.5 text-sm font-medium text-gray-700">Mô tả ngắn<textarea rows={2} maxLength={1000} value={form.excerpt} onChange={event => setForm({ ...form, excerpt: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><div className="grid gap-4 md:grid-cols-[1fr_220px]"><div className="grid gap-1.5 text-sm font-medium text-gray-700"><span>Nội dung</span>{form.contentFormat === 'rich' ? <RichEditor value={form.content} onChange={content => setForm(current => ({ ...current, content }))} /> : <textarea required rows={14} value={form.content} onChange={event => setForm({ ...form, content: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm" placeholder={form.contentFormat === 'raw-html' ? '<p>HTML/Script...</p>' : 'Viết nội dung dạng văn bản...'} />}</div><div className="space-y-4"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Định dạng<select value={form.contentFormat} onChange={event => setForm({ ...form, contentFormat: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2.5"><option value="plain">Plain text</option><option value="rich">Rich text / HTML đã lọc</option>{canUseRawHtml && <option value="raw-html">Raw HTML / Script (admin)</option>}</select></label><fieldset className="rounded-xl border border-gray-200 p-3"><legend className="px-1 text-xs font-semibold text-gray-700">Popup {selectedCount ? `(${selectedCount})` : ''}</legend><div className="max-h-56 space-y-2 overflow-y-auto">{popups.map(popup => <label key={popup.id} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.popupIds.includes(popup.id)} onChange={event => setForm(current => ({ ...current, popupIds: event.target.checked ? [...current.popupIds, popup.id] : current.popupIds.filter(id => id !== popup.id) }))} className="mt-1 h-4 w-4 accent-sky-600" /><span>{popup.name}</span></label>)}{!popups.length && <p className="text-xs text-gray-500">Chưa có popup bật.</p>}</div></fieldset></div></div><div className="flex gap-2"><button disabled={busy} className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : editingId ? 'Cập nhật bài' : form.popupIds.length > 1 ? `Tạo ${form.popupIds.length} bài` : 'Lưu bài viết'}</button><button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700">Hủy</button></div></form>}
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="divide-y divide-gray-100">{posts.map(post => <article key={post.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 space-y-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span></div><p className="truncate text-xs text-gray-500">{post.publicDomain}/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>{post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}</div><div className="flex shrink-0 flex-wrap gap-1">{post.isPublished && <><a href={post.publicUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Mở bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void copyLink(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}<button onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button><button disabled={busy} onClick={() => void duplicate(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Nhân bản"><Copy className="h-4 w-4" /></button><button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button></div></article>)}{!posts.length && <div className="flex items-center gap-3 p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết.</div>}</div><div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 text-sm text-gray-600"><span>Trang {page}/{pages}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Trước</button><button disabled={page >= pages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sau</button></div></div></div>
+    {showForm && <form onSubmit={save} className="space-y-5 rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-7">
+      <h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2>
+      <div className="grid gap-4 md:grid-cols-2"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Tiêu đề<input required maxLength={200} value={form.title} onChange={event => setForm(current => ({ ...current, title: event.target.value, slug: editingId ? current.slug : slugify(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label><label className="grid gap-1.5 text-sm font-medium text-gray-700">Slug<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} onChange={event => setForm(current => ({ ...current, slug: slugify(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label></div>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-slate-50 px-4 py-3"><span><span className="block text-sm font-semibold text-gray-800">Ảnh giả video</span><span className="block text-xs font-normal text-gray-500">Thêm nút Play ở giữa ảnh preview khi chia sẻ link.</span></span><input type="checkbox" checked={form.isFakeVideo} onChange={event => setForm(current => ({ ...current, isFakeVideo: event.target.checked }))} className="h-5 w-5 accent-sky-600" /></label>
+      <div className="grid gap-4 md:grid-cols-[1fr_1.25fr]"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Domain<select value={form.domainKey} onChange={event => setForm(current => ({ ...current, domainKey: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5">{domains.map(domain => <option key={`${domain.kind}:${domain.id || domain.domain}`} value={domain.kind === 'custom' ? domain.id || '' : domain.kind === 'shared' ? `shared:${domain.domain}` : 'primary'}>{domainLabel(domain)}</option>)}</select></label><div className="grid gap-1.5 text-sm font-medium text-gray-700"><span>Ảnh preview Facebook</span><div className="flex gap-2"><input value={form.previewImage} onChange={event => setForm(current => ({ ...current, previewImage: event.target.value }))} placeholder="https://... hoặc URL đã upload" className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2.5" /><input ref={previewImageRef} type="file" accept="image/*" onChange={uploadPreview} className="hidden" /><button type="button" disabled={busy} onClick={() => previewImageRef.current?.click()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-sky-200 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"><Upload className="h-4 w-4" /> Upload ảnh</button></div>{form.previewImage && <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gray-950"><Image src={form.previewImage} alt="Preview" width={1200} height={630} unoptimized className="h-28 w-full object-cover" /> <button type="button" onClick={() => setForm(current => ({ ...current, previewImage: '' }))} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80" aria-label="Xóa ảnh preview"><X className="h-4 w-4" /></button></div>}</div></div>
+      <label className="grid gap-1.5 text-sm font-medium text-gray-700">Mô tả ngắn<textarea rows={2} maxLength={1000} value={form.excerpt} onChange={event => setForm(current => ({ ...current, excerpt: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5" /></label>
+      <div className="grid gap-4 lg:grid-cols-[1fr_240px]"><div className="grid gap-1.5 text-sm font-medium text-gray-700"><span>Nội dung bài viết</span>{form.contentFormat === 'rich' ? <RichEditor value={form.content} onChange={content => setForm(current => ({ ...current, content }))} onUpload={uploadFile} canUseRawHtml={canUseRawHtml} /> : <textarea required rows={16} value={form.content} onChange={event => setForm(current => ({ ...current, content: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm" placeholder={form.contentFormat === 'raw-html' ? '<p>HTML/Script...</p>' : 'Viết nội dung dạng văn bản...'} />}</div><div className="space-y-4"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Định dạng<select value={form.contentFormat} onChange={event => setForm(current => ({ ...current, contentFormat: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5"><option value="plain">Plain text</option><option value="rich">Rich text / HTML đã lọc</option>{canUseRawHtml && <option value="raw-html">Raw HTML / Script (admin)</option>}</select></label><fieldset className="rounded-xl border border-gray-200 p-3"><legend className="px-1 text-xs font-semibold text-gray-700">Popup {selectedCount ? `(${selectedCount})` : ''}</legend><div className="max-h-56 space-y-2 overflow-y-auto">{popups.map(popup => <label key={popup.id} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.popupIds.includes(popup.id)} onChange={event => setForm(current => ({ ...current, popupIds: event.target.checked ? [...current.popupIds, popup.id] : current.popupIds.filter(id => id !== popup.id) }))} className="mt-1 h-4 w-4 accent-sky-600" /><span>{popup.name}</span></label>)}{!popups.length && <p className="text-xs text-gray-500">Chưa có popup bật.</p>}</div></fieldset><label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium"><input type="checkbox" checked={form.isPublished} onChange={event => setForm(current => ({ ...current, isPublished: event.target.checked }))} className="h-4 w-4 accent-sky-600" /> Xuất bản ngay</label></div></div>
+      <div className="flex gap-2"><button disabled={busy} className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : editingId ? 'Cập nhật bài' : form.popupIds.length > 1 ? `Tạo ${form.popupIds.length} bài` : 'Lưu bài viết'}</button><button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700">Hủy</button></div>
+    </form>}
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="divide-y divide-gray-100">{posts.map(post => <article key={post.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 space-y-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span>{post.isFakeVideo && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">Fake video</span>}</div><p className="truncate text-xs text-gray-500">{post.publicDomain}/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>{post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}</div><div className="flex shrink-0 flex-wrap gap-1">{post.isPublished && <><a href={post.publicUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Mở bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void copyLink(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}<button onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button><button disabled={busy} onClick={() => void duplicate(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Nhân bản"><Copy className="h-4 w-4" /></button><button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button></div></article>)}{!posts.length && <div className="flex items-center gap-3 p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết.</div>}</div><div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 text-sm text-gray-600"><span>Trang {page}/{pages}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Trước</button><button disabled={page >= pages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sau</button></div></div></div>
   </div>
 }

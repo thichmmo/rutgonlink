@@ -52,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: Context) {
         content,
         contentFormat: format,
         previewImage: data.previewImage || null,
+        isFakeVideo: data.isFakeVideo,
         isPublished: data.isPublished,
       },
     })

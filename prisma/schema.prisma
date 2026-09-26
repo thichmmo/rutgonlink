@@ -234,6 +234,7 @@ model ManagedPost {
   content       String         @db.LongText
   contentFormat String         @default("plain") @db.VarChar(20)
   previewImage  String?        @db.LongText
+  isFakeVideo   Boolean        @default(false)
   isPublished   Boolean        @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

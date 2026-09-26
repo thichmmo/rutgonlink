@@ -55,6 +55,8 @@ test -f "$stage/.next/BUILD_ID"
 test -d "$stage/.next/static"
 test -d "$stage/public"
 test -d "$release/unpacked/prisma/migrations"
+# Keep uploaded post media outside the atomically swapped standalone release.
+mkdir -p "$app/uploads/content"
 ln -s "$app/.env" "$stage/.env"
 
 cd "$stage"

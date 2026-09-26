@@ -1,20 +1,61 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { Bold, ImagePlus, Italic, Link2, List, PlaySquare, Quote, Underline } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { Bold, Code2, FileCode2, ImagePlus, Italic, Link2, List, PlaySquare, Quote, Underline, Video } from 'lucide-react'
 
-type Props = { value: string; onChange: (value: string) => void }
+type Props = {
+  value: string
+  onChange: (value: string) => void
+  onUpload?: (file: File) => Promise<string>
+  canUseRawHtml?: boolean
+}
 
-export default function RichEditor({ value, onChange }: Props) {
+const IMAGE_FALLBACK_LIMIT = 1_400_000
+
+function escapeAttribute(value: string) {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Không đọc được tệp'))
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.readAsDataURL(file)
+  })
+}
+
+export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = false }: Props) {
   const editorRef = useRef<HTMLDivElement>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const imageFileRef = useRef<HTMLInputElement>(null)
+  const videoFileRef = useRef<HTMLInputElement>(null)
+  const savedRangeRef = useRef<Range | null>(null)
+  const [sourceMode, setSourceMode] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value
-  }, [value])
+    if (!sourceMode && editorRef.current && editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value
+  }, [sourceMode, value])
 
   function emit() {
     onChange(editorRef.current?.innerHTML || '')
+  }
+
+  function saveSelection() {
+    const selection = window.getSelection()
+    if (!selection?.rangeCount || !editorRef.current) return
+    const range = selection.getRangeAt(0)
+    if (editorRef.current.contains(range.commonAncestorContainer)) savedRangeRef.current = range.cloneRange()
+  }
+
+  function restoreSelection() {
+    const range = savedRangeRef.current
+    if (!range) return
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
   }
 
   function command(name: string, argument?: string) {
@@ -23,56 +64,131 @@ export default function RichEditor({ value, onChange }: Props) {
     emit()
   }
 
+  function insertHtml(html: string) {
+    if (!html) return
+    editorRef.current?.focus()
+    restoreSelection()
+    document.execCommand('insertHTML', false, html)
+    emit()
+  }
+
   function insertImage(url: string) {
-    if (!url) return
-    command('insertImage', url)
+    insertHtml(`<p><img src="${escapeAttribute(url)}" alt="" /></p>`)
   }
 
-  function chooseImage() {
-    fileRef.current?.click()
+  function insertVideo(url: string, mimeType = '') {
+    insertHtml(`<figure class="video-embed"><video controls preload="metadata" playsinline><source src="${escapeAttribute(url)}"${mimeType ? ` type="${escapeAttribute(mimeType)}"` : ''}></video></figure><p><br></p>`)
   }
 
-  function onFile(event: React.ChangeEvent<HTMLInputElement>) {
+  async function uploadFile(file: File, kind: 'image' | 'video') {
+    setMessage('')
+    const accepted = kind === 'image' ? file.type.startsWith('image/') : file.type.startsWith('video/')
+    if (!accepted) {
+      setMessage(kind === 'image' ? 'Vui lòng chọn tệp hình ảnh.' : 'Vui lòng chọn tệp video.')
+      return
+    }
+    if (!onUpload && kind === 'image' && file.size > IMAGE_FALLBACK_LIMIT) {
+      setMessage('Ảnh tải trực tiếp phải nhỏ hơn 1.4MB.')
+      return
+    }
+    if (!onUpload && kind === 'video') {
+      setMessage('Video cần được tải lên máy chủ trước khi chèn.')
+      return
+    }
+    setBusy(true)
+    try {
+      const url = onUpload ? await onUpload(file) : await readAsDataUrl(file)
+      if (kind === 'image') insertImage(url)
+      else insertVideo(url, file.type)
+      setMessage(`${kind === 'image' ? 'Đã tải ảnh' : 'Đã tải video'} lên.`)
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'Không thể tải tệp lên.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleImageFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/') || file.size > 1_400_000) return
-    const reader = new FileReader()
-    reader.onload = () => insertImage(String(reader.result || ''))
-    reader.readAsDataURL(file)
     event.target.value = ''
+    if (file) void uploadFile(file, 'image')
+  }
+
+  function handleVideoFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) void uploadFile(file, 'video')
   }
 
   function promptImage() {
-    const url = window.prompt('URL ảnh (hoặc để trống để tải ảnh từ máy):', '')?.trim()
+    saveSelection()
+    const url = window.prompt('URL ảnh (hoặc bấm Hủy để tải ảnh từ máy):', '')?.trim()
     if (url) insertImage(url)
-    else chooseImage()
+    else imageFileRef.current?.click()
   }
 
   function promptVideo() {
+    saveSelection()
     const input = window.prompt('URL video/embed (YouTube, TikTok...):', '')?.trim()
     if (!input) return
     let url: URL
-    try { url = new URL(input) } catch { return }
-    if (url.protocol !== 'https:') return
+    try { url = new URL(input) } catch { setMessage('URL video không hợp lệ.'); return }
+    if (url.protocol !== 'https:') { setMessage('Chỉ chấp nhận URL HTTPS.'); return }
     if (url.hostname === 'youtu.be') url = new URL(`https://www.youtube.com/embed/${url.pathname.slice(1)}`)
     if (url.hostname.endsWith('youtube.com') && url.pathname === '/watch') url = new URL(`https://www.youtube.com/embed/${url.searchParams.get('v') || ''}`)
-    const html = `<div class="video-embed"><iframe src="${url.href.replace(/"/g, '&quot;')}" title="Video" loading="lazy" allowfullscreen></iframe></div><p><br></p>`
-    editorRef.current?.focus()
-    document.execCommand('insertHTML', false, html)
-    emit()
+    insertHtml(`<div class="video-embed"><iframe src="${escapeAttribute(url.href)}" title="Video" loading="lazy" allowfullscreen></iframe></div><p><br></p>`)
+  }
+
+  function promptHtml() {
+    saveSelection()
+    const html = window.prompt('Dán HTML/Script cần chèn:', '')?.trim()
+    if (html) insertHtml(html)
   }
 
   function paste(event: React.ClipboardEvent<HTMLDivElement>) {
     const image = [...event.clipboardData.files].find(file => file.type.startsWith('image/'))
     if (!image) return
     event.preventDefault()
-    if (image.size > 1_400_000) return
-    const reader = new FileReader()
-    reader.onload = () => insertImage(String(reader.result || ''))
-    reader.readAsDataURL(image)
+    void uploadFile(image, 'image')
   }
 
-  return <div className="overflow-hidden rounded-xl border border-gray-300 bg-white"><div className="flex flex-wrap items-center gap-1 border-b border-gray-200 bg-gray-50 p-2"><button type="button" onClick={() => command('bold')} title="Đậm" className="rounded p-2 hover:bg-gray-200"><Bold className="h-4 w-4" /></button><button type="button" onClick={() => command('italic')} title="Nghiêng" className="rounded p-2 hover:bg-gray-200"><Italic className="h-4 w-4" /></button><button type="button" onClick={() => command('underline')} title="Gạch chân" className="rounded p-2 hover:bg-gray-200"><Underline className="h-4 w-4" /></button><button type="button" onClick={() => command('insertUnorderedList')} title="Danh sách" className="rounded p-2 hover:bg-gray-200"><List className="h-4 w-4" /></button><button type="button" onClick={() => command('formatBlock', 'blockquote')} title="Trích dẫn" className="rounded p-2 hover:bg-gray-200"><Quote className="h-4 w-4" /></button><button type="button" onClick={() => command('createLink', window.prompt('URL liên kết:', 'https://') || '')} title="Liên kết" className="rounded p-2 hover:bg-gray-200"><Link2 className="h-4 w-4" /></button><button type="button" onClick={promptImage} title="Ảnh" className="rounded p-2 hover:bg-gray-200"><ImagePlus className="h-4 w-4" /></button><button type="button" onClick={promptVideo} title="Nhúng video" className="rounded p-2 hover:bg-gray-200"><PlaySquare className="h-4 w-4" /></button><input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" /><span className="ml-auto text-xs text-gray-500">Dán ảnh hoặc dùng nút ảnh để chèn</span></div><div ref={editorRef} contentEditable suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} className="prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Viết nội dung bài viết..." />
-    <style jsx>{`.prose:empty:before{content:attr(data-placeholder);color:#94a3b8;pointer-events:none}.video-embed{margin:1rem 0;aspect-ratio:16/9}.video-embed iframe{width:100%;height:100%;border:0;border-radius:.75rem}`}</style>
+  function toolbarMouseDown(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    saveSelection()
+  }
+
+  const actionClass = 'inline-flex min-w-[72px] flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-medium text-gray-600 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-wait disabled:opacity-50'
+
+  return <div className="overflow-hidden rounded-xl border border-gray-300 bg-white">
+    <div className="border-b border-gray-200 bg-white p-2">
+      <div className="flex flex-wrap items-center gap-1">
+        <select aria-label="Kiểu đoạn" defaultValue="p" onChange={event => command('formatBlock', event.target.value)} className="h-9 rounded-lg border-0 bg-gray-50 px-2 text-xs text-gray-600 outline-none">
+          <option value="p">Normal</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>
+        </select>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('bold')} title="Đậm" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Bold className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('italic')} title="Nghiêng" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Italic className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('underline')} title="Gạch chân" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Underline className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('strikeThrough')} title="Gạch ngang" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><span className="text-base font-semibold line-through">S</span></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('insertUnorderedList')} title="Danh sách" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><List className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('formatBlock', 'blockquote')} title="Trích dẫn" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Quote className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('createLink', window.prompt('URL liên kết:', 'https://') || '')} title="Liên kết" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Link2 className="h-4 w-4" /></button>
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => command('removeFormat')} title="Xóa định dạng" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"><Code2 className="h-4 w-4" /></button>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-gray-100 pt-1">
+        <button type="button" disabled={busy} onMouseDown={toolbarMouseDown} onClick={() => imageFileRef.current?.click()} className={actionClass}><ImagePlus className="h-5 w-5" /><span>Upload ảnh</span></button>
+        <button type="button" disabled={busy} onMouseDown={toolbarMouseDown} onClick={() => videoFileRef.current?.click()} className={actionClass}><Video className="h-5 w-5" /><span>Upload video</span></button>
+        <button type="button" disabled={busy} onMouseDown={toolbarMouseDown} onClick={promptVideo} className={actionClass}><PlaySquare className="h-5 w-5" /><span>Nhúng video</span></button>
+        {canUseRawHtml && <button type="button" disabled={busy} onMouseDown={toolbarMouseDown} onClick={promptHtml} className={actionClass}><FileCode2 className="h-5 w-5" /><span>Nhúng HTML/Script</span></button>}
+        <button type="button" onMouseDown={toolbarMouseDown} onClick={() => { setSourceMode(mode => !mode); setMessage('') }} className={`${actionClass} ${sourceMode ? 'bg-sky-100 text-sky-700' : ''}`}><Code2 className="h-5 w-5" /><span>Mã nguồn</span></button>
+        <button type="button" disabled={busy} onMouseDown={toolbarMouseDown} onClick={promptImage} className="ml-auto rounded-lg px-2 py-2 text-xs text-gray-500 hover:bg-gray-100" title="Chèn ảnh bằng URL">Ảnh URL</button>
+      </div>
+      <input ref={imageFileRef} type="file" accept="image/*" onChange={handleImageFile} className="hidden" />
+      <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/ogg" onChange={handleVideoFile} className="hidden" />
+      {message && <p className="px-2 pt-2 text-xs text-sky-700" role="status">{message}</p>}
+    </div>
+    {sourceMode
+      ? <textarea value={value} onChange={event => onChange(event.target.value)} className="min-h-72 w-full resize-y px-4 py-3 font-mono text-xs leading-6 outline-none" aria-label="Mã nguồn HTML" />
+      : <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} onKeyUp={saveSelection} className="prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Nhập nội dung bài viết..." />}
+    <style jsx>{`.prose:empty:before{content:attr(data-placeholder);color:#94a3b8;pointer-events:none}.video-embed{margin:1rem 0;aspect-ratio:16/9}.video-embed iframe,.video-embed video{width:100%;height:100%;border:0;border-radius:.75rem}.video-embed video{background:#000}`}</style>
   </div>
 }

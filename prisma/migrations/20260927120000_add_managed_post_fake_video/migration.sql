@@ -1,0 +1,2 @@
+ALTER TABLE `ManagedPost`
+  ADD COLUMN `isFakeVideo` BOOLEAN NOT NULL DEFAULT false;

@@ -71,7 +71,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <article className="rounded-3xl border border-gray-200 bg-white px-5 py-9 shadow-sm sm:px-10 sm:py-12">
         <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-950 sm:text-5xl">{post.title}</h1>
         <div className="mt-5 flex items-center gap-2 text-sm text-gray-500"><CalendarDays className="h-4 w-4" /> {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'long' }).format(post.createdAt)}</div>
-        {post.previewImage && <Image src={post.previewImage} alt="" width={1200} height={630} unoptimized className="mt-8 max-h-96 w-full rounded-2xl object-cover" />}
+        {post.previewImage && <div className="relative mt-8 overflow-hidden rounded-2xl"><Image src={post.previewImage} alt="" width={1200} height={630} unoptimized className="max-h-96 w-full object-cover" />{post.isFakeVideo && <span className="pointer-events-none absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-red-600/95 text-2xl text-white shadow-xl" aria-label="Video">▶</span>}</div>}
         {post.excerpt && <p className="mt-8 border-l-4 border-sky-500 pl-5 text-lg leading-relaxed text-gray-600">{post.excerpt}</p>}
         {before.map(block => <div key={block.id} className="mt-8 border-y border-gray-100 py-5"><RenderContent content={block.content} format={block.contentFormat} /></div>)}
         <div className="mt-10 space-y-5 border-t border-gray-100 pt-9 text-base leading-8 text-gray-800"><RenderContent content={post.content} format={post.contentFormat} /></div>
