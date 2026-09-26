@@ -12,6 +12,8 @@ import {
   FolderOpen,
   ShieldCheck,
   Music2,
+  PanelsTopLeft,
+  FileText,
 } from 'lucide-react'
 
 const navItems = [
@@ -22,6 +24,8 @@ const navItems = [
   { href: '/dashboard/notes', label: 'Ghi chú', icon: NotebookPen },
   { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
   { href: '/dashboard/tiktok-link', label: 'TikTok AFF', icon: Music2 },
+  { href: '/dashboard/popups', label: 'Popups', icon: PanelsTopLeft },
+  { href: '/dashboard/posts', label: 'Bài viết', icon: FileText },
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 

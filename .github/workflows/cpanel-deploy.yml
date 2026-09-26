@@ -1,0 +1,111 @@
+name: Test and Deploy cPanel
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpanel-production
+  cancel-in-progress: false
+
+jobs:
+  test-build:
+    name: Test and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate
+        env:
+          DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit --pretty false
+
+      - name: Lint
+        run: >-
+          pnpm exec eslint
+          app/api/popups app/api/posts
+          app/dashboard/popups app/dashboard/posts
+          'app/posts/[slug]'
+          lib/content-management.ts
+          app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
+          scripts/package-cpanel.mjs
+
+      - name: Validate deployment scripts
+        run: |
+          bash -n scripts/cpanel-release.sh
+          bash -n scripts/cpanel-deploy.sh
+
+      - name: Build cPanel standalone
+        run: pnpm build:cpanel
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
+          NEXTAUTH_URL: https://rutgonlink.site
+          SITE_NAME: rutgonlink.site
+          NEXTAUTH_SECRET: ci-build-placeholder
+          ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+
+      - name: Package release
+        run: |
+          node scripts/package-cpanel.mjs
+          tar -C .artifacts/cpanel/release -czf "$RUNNER_TEMP/rutgonlink-cpanel-${GITHUB_SHA}.tar.gz" .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rutgonlink-cpanel-${{ github.sha }}
+          path: ${{ runner.temp }}/rutgonlink-cpanel-${{ github.sha }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Deploy production
+    needs: test-build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout deployment scripts
+        uses: actions/checkout@v4
+
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rutgonlink-cpanel-${{ github.sha }}
+          path: release
+
+      - name: Deploy through cPanel API
+        env:
+          CPANEL_URL: ${{ secrets.CPANEL_URL }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
+        run: bash scripts/cpanel-deploy.sh "release/rutgonlink-cpanel-${GITHUB_SHA}.tar.gz" "${GITHUB_SHA}"
+
+      - name: Verify production routes
+        run: |
+          curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/ >/dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401

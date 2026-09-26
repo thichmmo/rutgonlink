@@ -46,6 +46,8 @@ model User {
   fbTokens                   FbToken[]
   folderGroups               FolderGroup[]
   fbDebugJobs                FbDebugJob[]
+  popupTemplates             PopupTemplate[]
+  managedPosts               ManagedPost[]
 
   @@index([status])
   @@index([adminRole])
@@ -199,6 +201,39 @@ model Link {
   @@index([userId], map: "Link_userId_fkey")
   @@index([categoryId])
   @@index([workspaceId])
+}
+
+model PopupTemplate {
+  id        String        @id @default(cuid())
+  userId    String
+  name      String        @db.VarChar(120)
+  imageUrl  String?       @db.LongText
+  firstUrl  String        @db.Text
+  secondUrl String        @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts     ManagedPost[]
+
+  @@index([userId])
+}
+
+model ManagedPost {
+  id          String         @id @default(cuid())
+  userId      String
+  popupId     String?
+  title       String         @db.VarChar(200)
+  slug        String         @unique @db.VarChar(190)
+  excerpt     String?        @db.Text
+  content     String         @db.LongText
+  isPublished Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  popup       PopupTemplate? @relation(fields: [popupId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([isPublished, createdAt])
 }
 
 model FolderGroup {

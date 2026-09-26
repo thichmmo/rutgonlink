@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
-  Menu, X, Link2, LayoutDashboard, BarChart2, NotebookPen, Settings, LogOut, Share2, ShieldCheck, Music2,
+  Menu, X, Link2, LayoutDashboard, BarChart2, NotebookPen, Settings, LogOut, Share2, ShieldCheck, Music2, PanelsTopLeft, FileText,
 } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 
@@ -16,6 +16,8 @@ const navItems = [
   { href: '/dashboard/notes', label: 'Ghi chú', icon: NotebookPen },
   { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
   { href: '/dashboard/tiktok-link', label: 'TikTok AFF', icon: Music2 },
+  { href: '/dashboard/popups', label: 'Popups', icon: PanelsTopLeft },
+  { href: '/dashboard/posts', label: 'Bài viết', icon: FileText },
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 
