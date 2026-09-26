@@ -6,6 +6,8 @@ The lint job scopes the changed content and deployment files. A full-repository 
 
 The cPanel runtime keeps pnpm's dependency tree under `.next/standalone/node_modules/.pnpm/node_modules`; the release script exports that directory as `NODE_PATH` during preflight so `@swc/helpers` and other hoisted packages resolve on the host.
 
+The release packager also mirrors the generated Prisma client into `.next/node_modules/.prisma`, matching Next's traced Prisma package path so the standalone server can load Prisma before the atomic swap.
+
 If a prior manual deployment already created the popup/post tables, the first CI run adopts that existing schema into `RutgonlinkMigration` instead of replaying the `CREATE TABLE` migration.
 
 Required GitHub Actions secrets:

@@ -19,6 +19,19 @@ mkdirSync(packageDir, { recursive: true })
 const packagedStandalone = resolve(packageDir, '.next/standalone')
 cpSync(standalone, packagedStandalone, { recursive: true, dereference: false })
 materializeSymlinks(standalone, packagedStandalone)
+
+// Next traces Prisma's external package below `.next/node_modules`; mirror the
+// generated client there because its `default.js` resolves `.prisma/client` from
+// that directory rather than from the standalone root.
+const generatedPrisma = resolve(standalone, 'node_modules/.prisma')
+if (!existsSync(resolve(generatedPrisma, 'client/default.js'))) {
+  throw new Error('Missing generated Prisma client; run prisma generate before building')
+}
+const tracedPrisma = resolve(packagedStandalone, '.next/node_modules/.prisma')
+rmSync(tracedPrisma, { recursive: true, force: true })
+mkdirSync(dirname(tracedPrisma), { recursive: true })
+cpSync(generatedPrisma, tracedPrisma, { recursive: true, dereference: false })
+
 cpSync(migrations, resolve(packageDir, 'prisma/migrations'), { recursive: true })
 writeFileSync(resolve(packageDir, 'RELEASE_COMMIT'), process.env.GITHUB_SHA || 'local\n')
 
@@ -26,6 +39,7 @@ for (const required of [
   '.next/standalone/server.js',
   '.next/standalone/.next/BUILD_ID',
   '.next/standalone/.next/static',
+  '.next/standalone/.next/node_modules/.prisma/client/default.js',
   '.next/standalone/public',
   'prisma/migrations',
 ]) {
