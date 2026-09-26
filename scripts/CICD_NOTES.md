@@ -8,6 +8,8 @@ The cPanel runtime keeps pnpm's dependency tree under `.next/standalone/node_mod
 
 The release packager resolves the generated Prisma client beside the real `@prisma/client` package (which lives inside pnpm's virtual store on CI), then copies it into both standalone and Next-traced module paths so the server can load Prisma before the atomic swap.
 
+The packager also dereferences nested pnpm links. The first content release passed the symlink-count check on Windows but its Linux preflight could not load `nanoid/non-secure/index.js` through a nested link; the package now requires that file and a full Linux preflight before production swap.
+
 If a prior manual deployment already created the popup/post tables, the first CI run adopts that existing schema into `RutgonlinkMigration` instead of replaying the `CREATE TABLE` migration.
 
 Required GitHub Actions secrets:

@@ -1,5 +1,5 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 const root = process.cwd()
 const outputDir = resolve(process.env.CPANEL_ARTIFACT_DIR || resolve(root, '.artifacts/cpanel'))
@@ -17,8 +17,17 @@ mkdirSync(packageDir, { recursive: true })
 
 // Dereference standalone symlinks so cPanel does not depend on local pnpm paths.
 const packagedStandalone = resolve(packageDir, '.next/standalone')
-cpSync(standalone, packagedStandalone, { recursive: true, dereference: false })
-materializeSymlinks(standalone, packagedStandalone)
+copyTreeMaterialized(standalone, packagedStandalone)
+
+// Turbopack can leave a dangling pnpm link for nanoid even though the app
+// imports it indirectly through the production PostCSS runtime. Copy the
+// workspace package explicitly so Linux preflight and cPanel resolve it.
+const packagedNanoid = resolve(packagedStandalone, 'node_modules/nanoid')
+const workspaceNanoid = findWorkspacePackage('nanoid')
+if (workspaceNanoid) {
+  rmSync(packagedNanoid, { recursive: true, force: true })
+  copyTreeMaterialized(workspaceNanoid, packagedNanoid)
+}
 
 // Next traces Prisma's external package below `.next/node_modules`; mirror the
 // generated client there because its `default.js` resolves `.prisma/client` from
@@ -42,6 +51,7 @@ for (const required of [
   '.next/standalone/.next/BUILD_ID',
   '.next/standalone/.next/static',
   '.next/standalone/.next/node_modules/.prisma/client/default.js',
+  '.next/standalone/node_modules/nanoid/non-secure/index.js',
   '.next/standalone/public',
   'prisma/migrations',
 ]) {
@@ -57,43 +67,33 @@ function countMigrationFiles(path) {
     .filter(entry => entry.isDirectory() && existsSync(resolve(path, entry.name, 'migration.sql'))).length
 }
 
-function materializeSymlinks(sourceRoot, destinationRoot) {
-  for (let pass = 0; pass < 5; pass += 1) {
-    const links = []
-    for (const entry of walk(destinationRoot)) {
-      if (lstatSync(entry).isSymbolicLink()) links.push(entry)
-    }
-    if (links.length === 0) return
-
-    let changed = false
-    for (const destinationLink of links) {
-      const relativePath = relative(destinationRoot, destinationLink)
-      const sourceLink = resolve(sourceRoot, relativePath)
-      const linkTarget = readlinkSync(destinationLink)
-      const sourceTarget = existsSync(sourceLink)
-        ? resolve(dirname(sourceLink), linkTarget)
-        : resolve(dirname(destinationLink), linkTarget)
-
-      rmSync(destinationLink, { recursive: true, force: true })
-      if (!existsSync(sourceTarget)) {
-        // Some pnpm optional dependencies are intentionally pruned from standalone.
-        changed = true
-        continue
-      }
-      cpSync(sourceTarget, destinationLink, { recursive: true, dereference: false })
-      changed = true
-    }
-    if (!changed) return
+function findWorkspacePackage(name) {
+  const direct = resolve(root, 'node_modules', name)
+  if (existsSync(direct)) return direct
+  const store = resolve(root, 'node_modules/.pnpm')
+  if (!existsSync(store)) return null
+  for (const entry of readdirSync(store, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith(`${name}@`)) continue
+    const candidate = resolve(store, entry.name, 'node_modules', name)
+    if (existsSync(candidate)) return candidate
   }
-
-  const remaining = [...walk(packagedStandalone)].filter(entry => lstatSync(entry).isSymbolicLink())
-  if (remaining.length > 0) throw new Error(`Unresolved standalone symlinks: ${remaining.slice(0, 5).join(', ')}`)
+  return null
 }
 
-function* walk(directory) {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = resolve(directory, entry.name)
-    yield path
-    if (entry.isDirectory()) yield* walk(path)
+function copyTreeMaterialized(source, destination, seen = new Set()) {
+  const realSource = realpathSync(source)
+  if (seen.has(realSource)) return
+  seen.add(realSource)
+  mkdirSync(destination, { recursive: true })
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = resolve(source, entry.name)
+    const destinationPath = resolve(destination, entry.name)
+    if (entry.isDirectory() || entry.isSymbolicLink()) {
+      let target
+      try { target = realpathSync(sourcePath) } catch { continue }
+      if (existsSync(target)) copyTreeMaterialized(target, destinationPath, seen)
+      continue
+    }
+    cpSync(sourcePath, destinationPath, { dereference: true })
   }
 }

@@ -76,6 +76,29 @@ jobs:
           node scripts/package-cpanel.mjs
           tar -C .artifacts/cpanel/release -czf "$RUNNER_TEMP/rutgonlink-cpanel-${GITHUB_SHA}.tar.gz" .
 
+      - name: Preflight packaged Linux runtime
+        run: |
+          cd .artifacts/cpanel/release/.next/standalone
+          NODE_PATH="$PWD/node_modules/.pnpm/node_modules" node -e "for (const p of ['next', '@prisma/client', 'nanoid/non-secure']) require.resolve(p)"
+          PORT=3012 HOSTNAME=127.0.0.1 NODE_ENV=production NODE_PATH="$PWD/node_modules/.pnpm/node_modules" node server.js > "$RUNNER_TEMP/preflight.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/preflight.log"' EXIT
+          for attempt in $(seq 1 30); do
+            root_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 -H 'Host: rutgonlink.site' http://127.0.0.1:3012/ || true)"
+            popups_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/popups || true)"
+            posts_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/posts || true)"
+            if [ "$root_status" = 200 ] && [ "$popups_status" = 401 ] && [ "$posts_status" = 401 ]; then exit 0; fi
+            sleep 2
+          done
+          echo "Preflight failed: root=$root_status popups=$popups_status posts=$posts_status" >&2
+          exit 1
+        env:
+          DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
+          NEXTAUTH_URL: https://rutgonlink.site
+          SITE_NAME: rutgonlink.site
+          NEXTAUTH_SECRET: ci-build-placeholder
+          ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
