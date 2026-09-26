@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
 const root = process.cwd()
@@ -23,14 +23,16 @@ materializeSymlinks(standalone, packagedStandalone)
 // Next traces Prisma's external package below `.next/node_modules`; mirror the
 // generated client there because its `default.js` resolves `.prisma/client` from
 // that directory rather than from the standalone root.
-const generatedPrisma = resolve(standalone, 'node_modules/.prisma')
+const generatedPrisma = resolve(realpathSync(resolve(root, 'node_modules/@prisma/client')), '../../.prisma')
 if (!existsSync(resolve(generatedPrisma, 'client/default.js'))) {
   throw new Error('Missing generated Prisma client; run prisma generate before building')
 }
-const tracedPrisma = resolve(packagedStandalone, '.next/node_modules/.prisma')
-rmSync(tracedPrisma, { recursive: true, force: true })
-mkdirSync(dirname(tracedPrisma), { recursive: true })
-cpSync(generatedPrisma, tracedPrisma, { recursive: true, dereference: false })
+for (const runtimePath of ['node_modules/.prisma', '.next/node_modules/.prisma']) {
+  const runtimePrisma = resolve(packagedStandalone, runtimePath)
+  rmSync(runtimePrisma, { recursive: true, force: true })
+  mkdirSync(dirname(runtimePrisma), { recursive: true })
+  cpSync(generatedPrisma, runtimePrisma, { recursive: true, dereference: false })
+}
 
 cpSync(migrations, resolve(packageDir, 'prisma/migrations'), { recursive: true })
 writeFileSync(resolve(packageDir, 'RELEASE_COMMIT'), process.env.GITHUB_SHA || 'local\n')
