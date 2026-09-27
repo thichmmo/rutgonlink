@@ -23,7 +23,7 @@ api_upload() {
   local path="$1"
   local remote_name="${2:-$(basename "$path")}"
   local response
-  response="$(curl --fail --silent --show-error --max-time 180 \
+  response="$(curl --http1.1 -H 'Expect:' --fail --silent --show-error --max-time 180 \
     -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" \
     -F "dir=$remote_tmp" -F "file-1=@$path;filename=$remote_name" \
     "$CPANEL_URL/execute/Fileman/upload_files")"
