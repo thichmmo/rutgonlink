@@ -128,9 +128,10 @@ wait "$preflight_pid" 2>/dev/null || true
 preflight_pid=""
 echo preflight_ok
 
+# Enter the swap window before moving live so a failed second move restores it.
+swapped=1
 mv "$live" "$backup"
 mv "$stage" "$live"
-swapped=1
 touch "$app/tmp/restart.txt"
 for attempt in $(seq 1 30); do
   root_http="$(curl -k -sS --max-time 6 --resolve rutgonlink.site:443:103.57.221.79 -o /dev/null -w '%{http_code}' https://rutgonlink.site/ || true)"
