@@ -11,6 +11,8 @@ release_id="${2:?Pass the release id}"
 archive_name="$release_id.tar.gz"
 checksum="$(sha256sum "$artifact" | cut -d' ' -f1)"
 remote_tmp="/home/$CPANEL_USER/tmp"
+upload_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cpanel-upload.XXXXXX")"
+trap 'rm -rf "$upload_dir"' EXIT
 
 api_get() {
   curl --fail --silent --show-error --max-time 60 \
@@ -29,15 +31,21 @@ api_upload() {
 
 echo "Uploading release $release_id"
 cpanel_script="$(dirname "$0")/cpanel-release.sh"
-cp "$artifact" "$RUNNER_TEMP/$archive_name"
-printf '%s\n' "$checksum" > "$RUNNER_TEMP/$release_id.sha256"
-api_upload "$RUNNER_TEMP/$archive_name"
-api_upload "$RUNNER_TEMP/$release_id.sha256"
+# A single multipart request can exceed the host's PHP upload limit and arrive
+# at Fileman with no files. Upload bounded parts and verify the whole archive
+# after reassembly on the host.
+split -b 16m -d -a 3 "$artifact" "$upload_dir/$archive_name.part-"
+parts=("$upload_dir/$archive_name.part-"*)
+test -f "${parts[0]}"
+for part in "${parts[@]}"; do api_upload "$part"; done
+part_count="${#parts[@]}"
+printf '%s\n' "$checksum" > "$upload_dir/$release_id.sha256"
+api_upload "$upload_dir/$release_id.sha256"
 
 remote_script_name="cpanel-release-$release_id.sh"
-cp "$cpanel_script" "$RUNNER_TEMP/$remote_script_name"
-api_upload "$RUNNER_TEMP/$remote_script_name"
-command="/bin/bash $remote_tmp/$remote_script_name $release_id $archive_name $checksum"
+cp "$cpanel_script" "$upload_dir/$remote_script_name"
+api_upload "$upload_dir/$remote_script_name"
+command="/bin/bash $remote_tmp/$remote_script_name $release_id $archive_name $checksum $part_count"
 cron_response="$(api_get -G \
   --data-urlencode 'cpanel_jsonapi_module=Cron' \
   --data-urlencode 'cpanel_jsonapi_func=add_line' \
