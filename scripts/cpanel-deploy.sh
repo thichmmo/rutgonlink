@@ -34,7 +34,7 @@ cpanel_script="$(dirname "$0")/cpanel-release.sh"
 # A single multipart request can exceed the host's PHP upload limit and arrive
 # at Fileman with no files. Upload bounded parts and verify the whole archive
 # after reassembly on the host.
-split -b 16m -d -a 3 "$artifact" "$upload_dir/$archive_name.part-"
+split -b 4m -d -a 3 "$artifact" "$upload_dir/$archive_name.part-"
 parts=("$upload_dir/$archive_name.part-"*)
 test -f "${parts[0]}"
 for part in "${parts[@]}"; do api_upload "$part"; done
