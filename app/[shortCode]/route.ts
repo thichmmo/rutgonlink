@@ -291,32 +291,48 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
   let step = 0; try { step = Math.max(0, Math.min(2, Number(sessionStorage.getItem(key) || 0))); } catch (_) {}
-  if (step >= 2) { document.body.classList.remove('managed-locked'); return; }
   const ua = navigator.userAgent || '';
-  const ios = /iphone|ipad|ipod/i.test(ua); const android = /android/i.test(ua);
-  const browserHint = android && popup.settings.forceChromeAndroid ? ' Nếu bị chặn, hãy mở bằng Chrome.' : ios && popup.settings.forceSafariIos ? ' Nếu bị chặn, hãy mở bằng Safari.' : '';
-  const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
-  const url = step === 0 ? popup.settings.shopee.url : (ios ? popup.settings.tiktok.iosUrl : popup.settings.tiktok.androidUrl);
-  const delay = Math.max(0, Number(platform.delaySeconds || 0));
-  const image = platform.imageUrl || popup.imageUrl || '';
-  const overlay = document.createElement('div'); overlay.className = 'managed-popup';
-  overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><b>Mở ' + (step === 0 ? 'Shopee' : 'TikTok') + ' (' + (step + 1) + '/2)</b><span>Hoàn tất hai lượt để xem bài viết</span></div><button class="managed-popup-video" type="button"><i>▶</i></button><div class="managed-popup-foot"><span class="managed-popup-message"></span><button class="managed-popup-open" type="button">Mở liên kết</button></div></div>';
-  document.body.appendChild(overlay);
-  if (image) overlay.querySelector('.managed-popup-video').style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
-  const message = overlay.querySelector('.managed-popup-message'); let left = delay;
-  const open = () => {
-    if (left > 0 || !url) return;
-    const tab = window.open(url, '_blank');
-    if (!tab) { message.textContent = 'Hãy cho phép tab mới rồi thử lại.'; return; }
-    try { tab.opener = null; } catch (_) {}
-    step += 1; try { sessionStorage.setItem(key, String(step)); } catch (_) {}
-    overlay.remove(); if (step < 2) location.reload(); else document.body.classList.remove('managed-locked');
+  const ios = /iphone|ipad|ipod/i.test(ua);
+  const android = /android/i.test(ua);
+  const browserHint = android && popup.settings.forceChromeAndroid ? 'Nếu Facebook chặn tab mới, hãy mở bằng Chrome.' : ios && popup.settings.forceSafariIos ? 'Nếu Facebook chặn tab mới, hãy mở bằng Safari.' : '';
+  const overlay = document.createElement('div'); overlay.className = 'managed-popup'; document.body.appendChild(overlay);
+  let readyAt = 0;
+  let timer = 0;
+  const render = () => {
+    if (step >= 2) { window.clearInterval(timer); overlay.remove(); document.body.classList.remove('managed-locked'); return; }
+    const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
+    const name = step === 0 ? 'Shopee' : 'TikTok';
+    const url = step === 0 ? popup.settings.shopee.url : ((ios ? popup.settings.tiktok.iosUrl : popup.settings.tiktok.androidUrl) || popup.settings.tiktok.url || popup.secondUrl);
+    const delay = Math.max(0, Number(platform.delaySeconds || 0));
+    const image = platform.imageUrl || popup.imageUrl || '';
+    readyAt = Date.now() + delay * 1000;
+    overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><div><small>MỞ LIÊN KẾT</small><b>' + name + ' · lượt ' + (step + 1) + '/2</b></div><span>' + (delay ? 'Sau ' + delay + ' giây' : 'Sẵn sàng') + '</span></div><div class="managed-popup-media"></div><button class="managed-popup-open" type="button">Đóng để xem</button><p class="managed-popup-progress">Bạn cần đóng ' + (step + 1) + '/2 popup để xem được nội dung</p><p class="managed-popup-message"></p></div>';
+    const media = overlay.querySelector('.managed-popup-media');
+    if (image && media) media.style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
+    const button = overlay.querySelector('.managed-popup-open');
+    const message = overlay.querySelector('.managed-popup-message');
+    const update = () => {
+      const left = Math.max(0, Math.ceil((readyAt - Date.now()) / 1000));
+      if (button) { button.disabled = left > 0; button.textContent = left > 0 ? 'Chờ ' + left + 's' : 'Đóng để xem'; }
+      if (message) message.textContent = left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
+      if (!left) window.clearInterval(timer);
+    };
+    const open = () => {
+      if (Date.now() < readyAt || !url) { if (message) message.textContent = 'Chưa có link ' + name + ' hợp lệ.'; return; }
+      const tab = window.open(url, '_blank');
+      if (!tab) { if (message) message.textContent = 'Hãy cho phép tab mới rồi thử lại.'; return; }
+      try { tab.opener = null; } catch (_) {}
+      step += 1; try { sessionStorage.setItem(key, String(step)); } catch (_) {}
+      render();
+    };
+    if (button) button.addEventListener('click', open);
+    timer = window.setInterval(update, 250); update();
   };
-  overlay.querySelectorAll('button').forEach(button => button.addEventListener('click', open));
-  const tick = () => { if (left > 0) { message.textContent = 'Vui lòng chờ ' + left + ' giây...' + browserHint; setTimeout(() => { left -= 1; tick(); }, 1000); } else { message.textContent = 'Sẵn sàng mở liên kết.' + browserHint; } }; tick();
+  if (step >= 2) { document.body.classList.remove('managed-locked'); overlay.remove(); return; }
+  render();
 })();
 </script>` : ''
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}">${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.preview-image{position:relative;margin:28px 0;overflow:hidden;border-radius:16px}.preview-image img{display:block;width:100%;max-height:420px;object-fit:cover}.preview-play{position:absolute;left:50%;top:50%;display:grid;width:64px;height:64px;place-items:center;transform:translate(-50%,-50%);border-radius:50%;background:#dc2626ed;color:#fff;font-size:26px;box-shadow:0 12px 24px #0006}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content iframe{max-width:100%;width:100%;min-height:320px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.78);backdrop-filter:blur(7px)}.managed-popup-card{width:min(760px,100%);background:#111827;color:#fff;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}.managed-popup-head{display:flex;justify-content:space-between;gap:14px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.1)}.managed-popup-head span{color:#9ca3af;font-size:13px}.managed-popup-video{width:100%;aspect-ratio:16/9;border:0;background:#000 center/cover;display:grid;place-items:center;color:#fff;font-size:56px;cursor:pointer}.managed-popup-video i{font-style:normal;width:84px;height:84px;display:grid;place-items:center;border-radius:50%;background:#ef4444;font-size:32px}.managed-popup-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px}.managed-popup-message{font-size:14px;color:#cbd5e1}.managed-popup-open{border:0;border-radius:9px;background:#0ea5e9;color:#fff;padding:11px 15px;font-weight:700;cursor:pointer}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><main class="wrap"><article class="card"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${preview}${before}<div class="content">${content}</div>${after}</article></main>${popupScript}</body></html>`
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}">${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.preview-image{position:relative;margin:28px 0;overflow:hidden;border-radius:16px}.preview-image img{display:block;width:100%;max-height:420px;object-fit:cover}.preview-play{position:absolute;left:50%;top:50%;display:grid;width:64px;height:64px;place-items:center;transform:translate(-50%,-50%);border-radius:50%;background:#dc2626ed;color:#fff;font-size:26px;box-shadow:0 12px 24px #0006}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content iframe{max-width:100%;width:100%;min-height:320px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-open{width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;margin-top:18px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><main class="wrap"><article class="card"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${preview}${before}<div class="content">${content}</div>${after}</article></main>${popupScript}</body></html>`
 }
 
 export async function GET(
