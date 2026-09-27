@@ -21,10 +21,11 @@ api_get() {
 
 api_upload() {
   local path="$1"
+  local remote_name="${2:-$(basename "$path")}"
   local response
   response="$(curl --fail --silent --show-error --max-time 180 \
     -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" \
-    -F "dir=$remote_tmp" -F "file-1=@$path" \
+    -F "dir=$remote_tmp" -F "file-1=@$path;filename=$remote_name" \
     "$CPANEL_URL/execute/Fileman/upload_files")"
   python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == 1, d; data=d.get("data") or {}; uploads=data.get("uploads", data) if isinstance(data, dict) else data; assert isinstance(uploads, list) and uploads and all(item.get("status") == 1 for item in uploads), d' <<<"$response"
 }
@@ -37,15 +38,19 @@ cpanel_script="$(dirname "$0")/cpanel-release.sh"
 split -b 3m -d -a 3 "$artifact" "$upload_dir/$archive_name.part-"
 parts=("$upload_dir/$archive_name.part-"*)
 test -f "${parts[0]}"
-for part in "${parts[@]}"; do api_upload "$part"; done
+remote_prefix="r-${release_id:0:12}"
+part_index=0
+for part in "${parts[@]}"; do
+  printf -v part_suffix '%03d' "$part_index"
+  api_upload "$part" "$remote_prefix-$part_suffix.bin"
+  part_index=$((part_index + 1))
+done
 part_count="${#parts[@]}"
-printf '%s\n' "$checksum" > "$upload_dir/$release_id.sha256"
-api_upload "$upload_dir/$release_id.sha256"
 
-remote_script_name="cpanel-release-$release_id.sh"
+remote_script_name="$remote_prefix.sh"
 cp "$cpanel_script" "$upload_dir/$remote_script_name"
 api_upload "$upload_dir/$remote_script_name"
-command="/bin/bash $remote_tmp/$remote_script_name $release_id $archive_name $checksum $part_count"
+command="/bin/bash $remote_tmp/$remote_script_name $release_id $archive_name $checksum $part_count $remote_prefix"
 cron_response="$(api_get -G \
   --data-urlencode 'cpanel_jsonapi_module=Cron' \
   --data-urlencode 'cpanel_jsonapi_func=add_line' \
