@@ -49,7 +49,7 @@ test -x "$node"
 test -d "$live"
 test ! -e "$backup"
 # GitHub release downloads can briefly reset on shared hosting; retry before marking the release failed.
-curl --fail --silent --show-error --location --max-time 300 --retry 3 --retry-delay 5 --retry-all-errors "$artifact_url" -o "$archive"
+curl --fail --silent --show-error --location --max-time 300 --retry 3 --retry-delay 5 "$artifact_url" -o "$archive"
 actual_sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 test "$actual_sha" = "$(printf '%s' "$expected_sha" | tr -d '\r\n')"
 tar -xzf "$archive" -C "$release/unpacked"
