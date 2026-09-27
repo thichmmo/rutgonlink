@@ -2,6 +2,8 @@
 
 The `cpanel-deploy.yml` workflow runs Prisma validation, TypeScript, ESLint and the production cPanel build on every push to `main`. Only a passing `main` build deploys. The runner uploads a standalone archive through the cPanel API, starts a one-shot cPanel cron command, waits for the atomic swap and health checks, then removes the cron entry.
 
+The runner splits the release archive into 16 MiB parts before calling `Fileman/upload_files`. A full-size multipart upload can be silently discarded by the host's upload limit, yielding `You must specify at least one file to upload`. The remote release script concatenates all numbered parts and verifies the original SHA-256 before migration or swap. A missing or corrupt part stops before touching the live release.
+
 The lint job scopes the changed content and deployment files. A full-repository ESLint run currently reports legacy errors outside this feature; those are not introduced by this pipeline.
 
 The cPanel runtime keeps pnpm's dependency tree under `.next/standalone/node_modules/.pnpm/node_modules`; the release script exports that directory as `NODE_PATH` during preflight so `@swc/helpers` and other hoisted packages resolve on the host.

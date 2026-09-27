@@ -5,6 +5,8 @@ umask 077
 release_id="${1:?release id is required}"
 archive_name="${2:?archive name is required}"
 expected_sha="${3:?archive checksum is required}"
+part_count="${4:?archive part count is required}"
+[[ "$part_count" =~ ^[1-9][0-9]*$ ]] && [ "$part_count" -le 1000 ]
 app="/home/$(id -un)/public_html/rutgonlink.site"
 release="$app/.deploy/$release_id"
 archive="$release/release.tar.gz"
@@ -46,9 +48,18 @@ test -f "$app/.env"
 test -x "$node"
 test -d "$live"
 test ! -e "$backup"
-mv "/home/$(id -un)/tmp/$archive_name" "$archive"
+for ((part_index=0; part_index<part_count; part_index++)); do
+  printf -v part_suffix '%03d' "$part_index"
+  part_path="/home/$(id -un)/tmp/$archive_name.part-$part_suffix"
+  test -f "$part_path"
+  cat "$part_path" >> "$archive"
+done
 actual_sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 test "$actual_sha" = "$(printf '%s' "$expected_sha" | tr -d '\r\n')"
+for ((part_index=0; part_index<part_count; part_index++)); do
+  printf -v part_suffix '%03d' "$part_index"
+  rm -f "/home/$(id -un)/tmp/$archive_name.part-$part_suffix"
+done
 tar -xzf "$archive" -C "$release/unpacked"
 test -f "$stage/server.js"
 test -f "$stage/.next/BUILD_ID"
