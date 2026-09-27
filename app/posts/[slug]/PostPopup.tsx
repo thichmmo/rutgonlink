@@ -16,6 +16,7 @@ type Popup = {
 export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
+  const cookieKey = `post_popup_${postId}_${popup.updatedAt}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
   const [remaining, setRemaining] = useState(0)
@@ -26,13 +27,23 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const pendingOpenRef = useRef<{ fromStep: number; nextStep: number; leftPage: boolean } | null>(null)
 
   const readStoredStep = useCallback(() => {
-    try {
-      const stored = Number(window.sessionStorage.getItem(storageKey) || 0)
-      return Number.isInteger(stored) && stored >= 0 && stored <= steps.length ? stored : 0
-    } catch {
-      return 0
+    const values: number[] = []
+    const addValue = (value: string | null | undefined) => {
+      const parsed = Number(value || '')
+      if (Number.isInteger(parsed) && parsed >= 0 && parsed <= steps.length) values.push(parsed)
     }
-  }, [storageKey, steps.length])
+    try {
+      addValue(window.sessionStorage.getItem(storageKey))
+    } catch { /* Some in-app browsers disable session storage. */ }
+    try {
+      addValue(window.localStorage.getItem(storageKey))
+    } catch { /* Local storage is only a handoff fallback. */ }
+    try {
+      const cookie = window.document.cookie.split('; ').find(value => value.startsWith(`${cookieKey}=`))
+      addValue(cookie?.slice(cookieKey.length + 1))
+    } catch { /* Cookie access can be disabled in private webviews. */ }
+    return values.length ? Math.max(...values) : 0
+  }, [cookieKey, storageKey, steps.length])
 
   const commitStep = useCallback((nextStep: number, resetDelay = true) => {
     const boundedStep = Math.max(0, Math.min(steps.length, nextStep))
@@ -41,7 +52,16 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     setStep(boundedStep)
     setRemaining(steps[boundedStep]?.delaySeconds || 0)
     try { window.sessionStorage.setItem(storageKey, String(boundedStep)) } catch { /* Continue in memory if storage is unavailable. */ }
-  }, [steps, storageKey])
+    try {
+      if (boundedStep > 0 && boundedStep < steps.length) {
+        window.localStorage.setItem(storageKey, String(boundedStep))
+        window.document.cookie = `${cookieKey}=${boundedStep}; Path=/; SameSite=Lax`
+      } else {
+        window.localStorage.removeItem(storageKey)
+        window.document.cookie = `${cookieKey}=; Max-Age=0; Path=/; SameSite=Lax`
+      }
+    } catch { /* Fallback storage is best-effort for restricted webviews. */ }
+  }, [cookieKey, steps, storageKey])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
