@@ -282,6 +282,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
     ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
     : null
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
+  const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
   const safeDescription = escapeHtml(post.excerpt || plainText).replace(/\r?\n/g, ' ')
   const canonical = `https://${hostname}/${encodeURIComponent(post.slug)}`
@@ -290,7 +291,8 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const popup = ${popupJson};
   if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
-  let step = 0; try { step = Math.max(0, Math.min(2, Number(sessionStorage.getItem(key) || 0))); } catch (_) {}
+  const cookieKey = ${escapeInlineJson(popupCookieKey)};
+  let step = 0;
   const ua = navigator.userAgent || '';
   const ios = /iphone|ipad|ipod/i.test(ua);
   const android = /android/i.test(ua);
@@ -300,12 +302,29 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   let timer = 0;
   let opening = false;
   let pendingOpen = null;
-  const readStoredStep = () => { try { const value = Number(sessionStorage.getItem(key) || 0); return Number.isInteger(value) && value >= 0 && value <= 2 ? value : 0; } catch (_) { return 0; } };
+  const readStoredStep = () => {
+    const values = [];
+    const addValue = (raw) => { const value = Number(raw || ''); if (Number.isInteger(value) && value >= 0 && value <= 2) values.push(value); };
+    try { addValue(sessionStorage.getItem(key)); } catch (_) {}
+    try { addValue(localStorage.getItem(key)); } catch (_) {}
+    try { const cookie = document.cookie.split('; ').find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1)); } catch (_) {}
+    return values.length ? Math.max.apply(null, values) : 0;
+  };
   const commitStep = (nextStep) => {
     step = Math.max(0, Math.min(2, nextStep));
     readyAt = Date.now() + Math.max(0, Number((step === 0 ? popup.settings.shopee : popup.settings.tiktok).delaySeconds || 0)) * 1000;
     try { sessionStorage.setItem(key, String(step)); } catch (_) {}
+    try {
+      if (step > 0 && step < 2) {
+        localStorage.setItem(key, String(step));
+        document.cookie = cookieKey + '=' + step + '; Path=/; SameSite=Lax';
+      } else {
+        localStorage.removeItem(key);
+        document.cookie = cookieKey + '=; Max-Age=0; Path=/; SameSite=Lax';
+      }
+    } catch (_) {}
   };
+  step = readStoredStep();
   const syncAfterReturn = () => {
     if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
     if (document.visibilityState !== 'visible') return;
