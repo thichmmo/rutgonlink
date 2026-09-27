@@ -21,6 +21,11 @@ export type PopupSettings = {
   forceSafariIos: boolean
 }
 
+// Keep the default creative in one place so new templates and legacy records
+// render the same compact Boclink-style popup without requiring an upload.
+export const DEFAULT_SHOPEE_IMAGE_URL = 'https://pub-efb18fd93e8d4d56a30635057bd6f5c4.r2.dev/defaults/shopee-default.webp'
+export const DEFAULT_TIKTOK_IMAGE_URL = 'https://pub-efb18fd93e8d4d56a30635057bd6f5c4.r2.dev/defaults/tiktok-default.webp'
+
 export const defaultPopupSettings = (firstUrl = '', secondUrl = ''): PopupSettings => ({
   shopee: {
     enabled: true,
@@ -28,7 +33,7 @@ export const defaultPopupSettings = (firstUrl = '', secondUrl = ''): PopupSettin
     iosEnabled: true,
     url: firstUrl,
     delaySeconds: 1,
-    imageUrl: null,
+    imageUrl: DEFAULT_SHOPEE_IMAGE_URL,
   },
   tiktok: {
     enabled: true,
@@ -38,7 +43,7 @@ export const defaultPopupSettings = (firstUrl = '', secondUrl = ''): PopupSettin
     androidUrl: secondUrl,
     iosUrl: secondUrl,
     delaySeconds: 10,
-    imageUrl: null,
+    imageUrl: DEFAULT_TIKTOK_IMAGE_URL,
     iosMode: 'desktop',
   },
   cooldownMinutes: 30,
@@ -73,8 +78,8 @@ export function normalizePopupSettings(value: unknown, firstUrl = '', secondUrl 
     shopee: platformSettings(input.shopee, fallback.shopee),
     tiktok: {
       ...tiktokBase,
-      androidUrl: typeof tiktokInput.androidUrl === 'string' ? tiktokInput.androidUrl : tiktokBase.url,
-      iosUrl: typeof tiktokInput.iosUrl === 'string' ? tiktokInput.iosUrl : tiktokBase.url,
+      androidUrl: typeof tiktokInput.androidUrl === 'string' && tiktokInput.androidUrl.trim() ? tiktokInput.androidUrl : tiktokBase.url,
+      iosUrl: typeof tiktokInput.iosUrl === 'string' && tiktokInput.iosUrl.trim() ? tiktokInput.iosUrl : tiktokBase.url,
       iosMode: input.tiktok && typeof input.tiktok === 'object' && (input.tiktok as Record<string, unknown>).iosMode === 'onelink'
         ? 'onelink'
         : 'desktop',
@@ -116,7 +121,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
 
   return {
     platform: 'TikTok',
-    url: isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl,
+    url: (isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl) || settings.tiktok.url,
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,
     forceBrowser,

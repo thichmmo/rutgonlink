@@ -1,6 +1,6 @@
 # Public managed post
 
-Published posts render at `/posts/{slug}`. Their text is escaped by React; a selected popup covers the article until two separate user clicks open its destinations in new tabs. A blocked tab does not advance. Progress persists in the current browser session and resets when the popup template changes.
+Published posts render at `/posts/{slug}`. Their text is escaped by React; a selected popup covers the article with a compact white-card creative until two separate user clicks open Shopee then TikTok in new tabs. A blocked tab does not advance, and the second step updates in place without a reload (important for Facebook/in-app browsers). Progress persists in the current browser session and resets when the popup template changes.
 
 Raw admin source executes script elements after hydration; rich HTML/video embeds are allowlist-sanitized. A post with `isFakeVideo` overlays a play button on its preview image. The primary `/domain/slug` route uses its own server-rendered document and keeps the article hidden until the session completes both clicks.
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ExternalLink, Play, X } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { getPopupStep, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 
 type Popup = {
@@ -14,9 +14,7 @@ type Popup = {
 }
 
 export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
-  const steps = useMemo(() => {
-    return [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)]
-  }, [popup.settings, userAgent])
+  const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
@@ -33,6 +31,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       stepRef.current = current
       readyAtRef.current = Date.now() + (steps[current]?.delaySeconds || 0) * 1000
       setStep(current)
+      setRemaining(steps[current]?.delaySeconds || 0)
       setReady(true)
     }, 0)
     return () => window.clearTimeout(timer)
@@ -50,13 +49,20 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   function advance() {
     if (!ready || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
     const current = steps[stepRef.current]
-    if (!current?.url) return
+    if (!current?.url) {
+      setError(`Chưa cấu hình link ${current?.platform || 'popup'}.`)
+      return
+    }
+
+    // Only count a step when the browser actually returns a new tab. This keeps
+    // Facebook/in-app browsers retryable when their popup blocker intervenes.
     const opened = window.open(current.url, '_blank')
     if (!opened) {
       setError('Trình duyệt đã chặn tab mới. Hãy cho phép popup rồi thử lại.')
       return
     }
     try { opened.opener = null } catch { /* The new tab may have navigated. */ }
+
     const nextStep = stepRef.current + 1
     stepRef.current = nextStep
     readyAtRef.current = Date.now() + (steps[nextStep]?.delaySeconds || 0) * 1000
@@ -68,22 +74,21 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
 
   if (!popup.isActive || !popupAppliesToDevice(popup.settings, userAgent) || step >= steps.length) return null
   if (!ready) return <div className="fixed inset-0 z-[100] bg-black" aria-label="Đang tải màn hình trung gian" />
-  const current = steps[step]
-  const forceMessage = current.forceBrowser ? `Nếu trình duyệt trong ứng dụng chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
 
-  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Màn hình trung gian">
-    <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-[#111827] text-white shadow-2xl">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
-        <div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-300">Màn hình trung gian</p><p className="mt-1 text-sm text-white/70">Mở {current.platform} ở lượt {step + 1}/{steps.length} để xem bài viết</p></div>
-        <button onClick={advance} disabled={remaining > 0} className="rounded-full border border-white/20 p-2 text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40" aria-label={`Mở liên kết ${step + 1}`}><X className="h-5 w-5" /></button>
-      </div>
-      <button onClick={advance} disabled={remaining > 0} className="group relative flex aspect-video w-full items-center justify-center bg-black bg-cover bg-center disabled:cursor-wait" style={current.imageUrl || popup.imageUrl ? { backgroundImage: `url("${(current.imageUrl || popup.imageUrl || '').replaceAll('"', '%22')}")` } : undefined} aria-label={`Mở ${current.platform} trong tab mới`}>
-        <span className="absolute inset-0 bg-black/25" />
-        <span className="relative grid h-20 w-20 place-items-center rounded-full bg-red-600 shadow-2xl transition-transform group-hover:scale-110"><Play className="ml-1 h-9 w-9 fill-white" /></span>
-        <span className="absolute bottom-0 left-0 right-0 flex items-center gap-3 bg-gradient-to-t from-black/90 to-transparent px-5 pb-5 pt-10 text-left text-xs text-white/80"><Play className="h-4 w-4 fill-white" /><span>0:00 / 4:56</span><span className="ml-auto">● ━━━━</span></span>
-      </button>
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><p className="text-sm text-white/70">{remaining > 0 ? `Vui lòng chờ ${remaining} giây...` : `Lượt ${step + 1}: mở liên kết ${current.platform}.`}{forceMessage && <span className="mt-1 block text-xs text-amber-300">{forceMessage}</span>}</p><button disabled={remaining > 0} onClick={advance} className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:cursor-wait disabled:opacity-50"><ExternalLink className="h-4 w-4" /> {remaining > 0 ? `Chờ ${remaining}s` : `Mở ${current.platform}`}</button></div>
-      {error && <p role="alert" className="px-5 pb-4 text-sm text-amber-300">{error}</p>}
+  const current = steps[step]
+  const image = current.imageUrl || popup.imageUrl || ''
+  const forceMessage = current.forceBrowser ? `Nếu Facebook chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
+  const progress = `Bạn cần đóng ${step + 1}/${steps.length} popup để xem được nội dung`
+  const buttonLabel = remaining > 0 ? `Chờ ${remaining}s` : 'Đóng để xem'
+
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Màn hình trung gian">
+    <div className="w-full max-w-[760px] rounded-[28px] bg-white p-4 text-gray-950 shadow-2xl sm:p-7">
+      <div className="mb-3 flex items-center justify-between gap-3 px-1"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-gray-400">Mở liên kết</p><p className="mt-1 text-sm font-medium text-gray-700">{current.platform} · lượt {step + 1}/{steps.length}</p></div><span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">{remaining > 0 ? `Sau ${remaining}s` : 'Sẵn sàng'}</span></div>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-gray-50"><div className="aspect-[1.68] w-full bg-gray-100 bg-contain bg-center bg-no-repeat" style={image ? { backgroundImage: `url("${image.replaceAll('"', '%22')}")` } : undefined} aria-label={`Ảnh ${current.platform}`} /></div>
+      <button type="button" onClick={advance} disabled={remaining > 0} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>
+      <p className="mt-4 text-center text-base font-medium text-[#9ba3b3] sm:text-lg">{progress}</p>
+      {forceMessage && <p className="mt-2 text-center text-xs text-amber-600">{forceMessage}</p>}
+      {error && <button type="button" onClick={advance} className="mx-auto mt-3 flex items-center gap-1 text-xs font-semibold text-[#d61f51] hover:underline"><ExternalLink className="h-3.5 w-3.5" /> Thử lại</button>}
     </div>
   </div>
 }
