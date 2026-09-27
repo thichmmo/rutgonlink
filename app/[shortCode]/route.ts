@@ -298,6 +298,24 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const overlay = document.createElement('div'); overlay.className = 'managed-popup'; document.body.appendChild(overlay);
   let readyAt = 0;
   let timer = 0;
+  let opening = false;
+  let pendingOpen = null;
+  const readStoredStep = () => { try { const value = Number(sessionStorage.getItem(key) || 0); return Number.isInteger(value) && value >= 0 && value <= 2 ? value : 0; } catch (_) { return 0; } };
+  const commitStep = (nextStep) => {
+    step = Math.max(0, Math.min(2, nextStep));
+    readyAt = Date.now() + Math.max(0, Number((step === 0 ? popup.settings.shopee : popup.settings.tiktok).delaySeconds || 0)) * 1000;
+    try { sessionStorage.setItem(key, String(step)); } catch (_) {}
+  };
+  const syncAfterReturn = () => {
+    if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
+    if (document.visibilityState !== 'visible') return;
+    const stored = readStoredStep();
+    if (stored !== step) { commitStep(stored); render(); }
+    if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; }
+  };
+  document.addEventListener('visibilitychange', syncAfterReturn);
+  window.addEventListener('pagehide', () => { if (pendingOpen) pendingOpen.leftPage = true; });
+  window.addEventListener('pageshow', syncAfterReturn);
   const render = () => {
     if (step >= 2) { window.clearInterval(timer); overlay.remove(); document.body.classList.remove('managed-locked'); return; }
     const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
@@ -318,12 +336,32 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
       if (!left) window.clearInterval(timer);
     };
     const open = () => {
+      if (opening) return;
       if (Date.now() < readyAt || !url) { if (message) message.textContent = 'Chưa có link ' + name + ' hợp lệ.'; return; }
-      const tab = window.open(url, '_blank');
-      if (!tab) { if (message) message.textContent = 'Hãy cho phép tab mới rồi thử lại.'; return; }
-      try { tab.opener = null; } catch (_) {}
-      step += 1; try { sessionStorage.setItem(key, String(step)); } catch (_) {}
+      const fromStep = step;
+      const nextStep = fromStep + 1;
+      pendingOpen = { fromStep, nextStep, leftPage: false };
+      opening = true;
+      // Persist before window.open so mobile same-tab navigation resumes at the next popup.
+      commitStep(nextStep);
       render();
+      let tab = null;
+      try { tab = window.open(url, '_blank'); } catch (_) { tab = null; }
+      if (tab) {
+        pendingOpen = null;
+        opening = false;
+        try { tab.opener = null; } catch (_) {}
+        return;
+      }
+      window.setTimeout(() => {
+        if (!pendingOpen || pendingOpen.leftPage || document.visibilityState === 'hidden') return;
+        pendingOpen = null;
+        opening = false;
+        commitStep(fromStep);
+        render();
+        const retryMessage = overlay.querySelector('.managed-popup-message');
+        if (retryMessage) retryMessage.textContent = 'Hãy cho phép tab mới rồi thử lại.';
+      }, 900);
     };
     if (button) button.addEventListener('click', open);
     timer = window.setInterval(update, 250); update();
