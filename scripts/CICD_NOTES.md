@@ -4,6 +4,8 @@ The `cpanel-deploy.yml` workflow runs Prisma validation, TypeScript, ESLint and 
 
 The cPanel host discards `Fileman/upload_files` multipart requests from GitHub runners with `You must specify at least one file to upload`, even after bounded parts, short names, and HTTP/1.1. The workflow now publishes the standalone archive as a temporary GitHub release asset. cPanel receives only a Cron API command; the host downloads the release script from the commit's raw GitHub URL and the public archive directly, verifies the SHA-256, then performs the same migration, preflight, atomic swap, and health checks. The temporary release is deleted after production verification succeeds. The rollback trap covers both moves in the live-to-backup and stage-to-live swap window.
 
+The release fetch retries transient GitHub asset failures three times before writing FAILED_PRE_SWAP, which avoids treating a temporary shared-host connection reset as a bad application release.
+
 The lint job scopes the changed content and deployment files. A full-repository ESLint run currently reports legacy errors outside this feature; those are not introduced by this pipeline.
 
 The cPanel runtime keeps pnpm's dependency tree under `.next/standalone/node_modules/.pnpm/node_modules`; the release script exports that directory as `NODE_PATH` during preflight so `@swc/helpers` and other hoisted packages resolve on the host.
@@ -23,3 +25,4 @@ Required GitHub Actions secrets:
 - `CPANEL_API_TOKEN`: cPanel API token from the hosting account.
 
 The workflow does not read or commit `host.txt`, `.env`, or any production secret. Existing cPanel databases are baselined from `database.sql`; deploy migrations with names at or after `20260926000000` are tracked in `RutgonlinkMigration` so the first CI deploy does not replay the old baseline migrations.
+
