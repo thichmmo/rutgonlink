@@ -5,10 +5,8 @@ umask 077
 release_id="${1:?release id is required}"
 archive_name="${2:?archive name is required}"
 expected_sha="${3:?archive checksum is required}"
-part_count="${4:?archive part count is required}"
-part_prefix="${5:-$release_id}"
-[[ "$part_count" =~ ^[1-9][0-9]*$ ]] && [ "$part_count" -le 1000 ]
-[[ "$part_prefix" =~ ^[A-Za-z0-9._-]+$ ]]
+artifact_url="${4:?public release asset URL is required}"
+[[ "$artifact_url" =~ ^https://[^[:space:]]+$ ]]
 app="/home/$(id -un)/public_html/rutgonlink.site"
 release="$app/.deploy/$release_id"
 archive="$release/release.tar.gz"
@@ -50,18 +48,9 @@ test -f "$app/.env"
 test -x "$node"
 test -d "$live"
 test ! -e "$backup"
-for ((part_index=0; part_index<part_count; part_index++)); do
-  printf -v part_suffix '%03d' "$part_index"
-  part_path="/home/$(id -un)/tmp/$part_prefix-$part_suffix.bin"
-  test -f "$part_path"
-  cat "$part_path" >> "$archive"
-done
+curl --fail --silent --show-error --location --max-time 300 "$artifact_url" -o "$archive"
 actual_sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 test "$actual_sha" = "$(printf '%s' "$expected_sha" | tr -d '\r\n')"
-for ((part_index=0; part_index<part_count; part_index++)); do
-  printf -v part_suffix '%03d' "$part_index"
-  rm -f "/home/$(id -un)/tmp/$part_prefix-$part_suffix.bin"
-done
 tar -xzf "$archive" -C "$release/unpacked"
 test -f "$stage/server.js"
 test -f "$stage/.next/BUILD_ID"

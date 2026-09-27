@@ -8,49 +8,20 @@ set -Eeuo pipefail
 
 artifact="${1:?Pass the release archive path}"
 release_id="${2:?Pass the release id}"
+artifact_url="${3:?Pass the public release asset URL}"
+release_script_url="${4:?Pass the public release script URL}"
 archive_name="$release_id.tar.gz"
 checksum="$(sha256sum "$artifact" | cut -d' ' -f1)"
-remote_tmp="/home/$CPANEL_USER/tmp"
-upload_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/cpanel-upload.XXXXXX")"
-trap 'rm -rf "$upload_dir"' EXIT
 
 api_get() {
   curl --fail --silent --show-error --max-time 60 \
     -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" "$@"
 }
 
-api_upload() {
-  local path="$1"
-  local remote_name="${2:-$(basename "$path")}"
-  local response
-  response="$(curl --http1.1 -H 'Expect:' --fail --silent --show-error --max-time 180 \
-    -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" \
-    -F "dir=$remote_tmp" -F "file-1=@$path;filename=$remote_name" \
-    "$CPANEL_URL/execute/Fileman/upload_files")"
-  python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == 1, d; data=d.get("data") or {}; uploads=data.get("uploads", data) if isinstance(data, dict) else data; assert isinstance(uploads, list) and uploads and all(item.get("status") == 1 for item in uploads), d' <<<"$response"
-}
-
-echo "Uploading release $release_id"
-cpanel_script="$(dirname "$0")/cpanel-release.sh"
-# A single multipart request can exceed the host's PHP upload limit and arrive
-# at Fileman with no files. Upload bounded parts and verify the whole archive
-# after reassembly on the host.
-split -b 3m -d -a 3 "$artifact" "$upload_dir/$archive_name.part-"
-parts=("$upload_dir/$archive_name.part-"*)
-test -f "${parts[0]}"
-remote_prefix="r-${release_id:0:12}"
-part_index=0
-for part in "${parts[@]}"; do
-  printf -v part_suffix '%03d' "$part_index"
-  api_upload "$part" "$remote_prefix-$part_suffix.bin"
-  part_index=$((part_index + 1))
-done
-part_count="${#parts[@]}"
-
-remote_script_name="$remote_prefix.sh"
-cp "$cpanel_script" "$upload_dir/$remote_script_name"
-api_upload "$upload_dir/$remote_script_name"
-command="/bin/bash $remote_tmp/$remote_script_name $release_id $archive_name $checksum $part_count $remote_prefix"
+echo "Starting cPanel release fetch $release_id"
+# Fileman multipart uploads are discarded by this host from GitHub runners.
+# Let the host fetch the public, checksum-verified release asset directly.
+command="/bin/bash -c 'set -o pipefail; curl --fail --silent --show-error --location --max-time 120 \"$release_script_url\" | /bin/bash -s -- \"$release_id\" \"$archive_name\" \"$checksum\" \"$artifact_url\"'"
 cron_response="$(api_get -G \
   --data-urlencode 'cpanel_jsonapi_module=Cron' \
   --data-urlencode 'cpanel_jsonapi_func=add_line' \
