@@ -15,6 +15,7 @@ type Popup = {
 
 export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
+  const isMobile = /android|iphone|ipad|ipod/i.test(userAgent)
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const cookieKey = `post_popup_${postId}_${popup.updatedAt}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   const handoffTtlMs = 30 * 60 * 1000
@@ -102,10 +103,15 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     document.addEventListener('visibilitychange', syncAfterReturn)
     window.addEventListener('pagehide', markPageHidden)
     window.addEventListener('pageshow', markPageVisible)
+    // Some mobile webviews keep visibilityState=visible while a new tab is foregrounded.
+    window.addEventListener('blur', markPageHidden)
+    window.addEventListener('focus', markPageVisible)
     return () => {
       document.removeEventListener('visibilitychange', syncAfterReturn)
       window.removeEventListener('pagehide', markPageHidden)
       window.removeEventListener('pageshow', markPageVisible)
+      window.removeEventListener('blur', markPageHidden)
+      window.removeEventListener('focus', markPageVisible)
     }
   }, [commitStep, readStoredStep, ready])
 
@@ -151,6 +157,9 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       if (pendingOpenRef.current !== pending || pending.leftPage || document.visibilityState === 'hidden') return
       pendingOpenRef.current = null
       setOpening(false)
+      // Mobile browsers can return null even after successfully opening a tab.
+      // Keep the committed step instead of replaying Shopee on return.
+      if (isMobile) return
       commitStep(fromStep)
       setError('Trình duyệt đã chặn tab mới. Hãy cho phép popup rồi thử lại.')
     }, 900)

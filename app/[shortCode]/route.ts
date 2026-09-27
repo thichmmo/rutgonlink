@@ -297,6 +297,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const ua = navigator.userAgent || '';
   const ios = /iphone|ipad|ipod/i.test(ua);
   const android = /android/i.test(ua);
+  const mobile = ios || android;
   const browserHint = android && popup.settings.forceChromeAndroid ? 'Nếu Facebook chặn tab mới, hãy mở bằng Chrome.' : ios && popup.settings.forceSafariIos ? 'Nếu Facebook chặn tab mới, hãy mở bằng Safari.' : '';
   const overlay = document.createElement('div'); overlay.className = 'managed-popup'; document.body.appendChild(overlay);
   let readyAt = 0;
@@ -340,8 +341,13 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
     if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; }
   };
   document.addEventListener('visibilitychange', syncAfterReturn);
-  window.addEventListener('pagehide', () => { if (pendingOpen) pendingOpen.leftPage = true; });
+  const markPageHidden = () => { if (pendingOpen) pendingOpen.leftPage = true; };
+  const markPageVisible = () => syncAfterReturn();
+  window.addEventListener('pagehide', markPageHidden);
   window.addEventListener('pageshow', syncAfterReturn);
+  // Mobile webviews may not update visibilityState when a new tab takes focus.
+  window.addEventListener('blur', markPageHidden);
+  window.addEventListener('focus', markPageVisible);
   const render = () => {
     if (step >= 2) { window.clearInterval(timer); overlay.remove(); document.body.classList.remove('managed-locked'); return; }
     const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
@@ -383,6 +389,9 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
         if (!pendingOpen || pendingOpen.leftPage || document.visibilityState === 'hidden') return;
         pendingOpen = null;
         opening = false;
+        // A mobile webview may return null even though the external tab opened.
+        // Keep the persisted next step so returning users see TikTok, not Shopee.
+        if (mobile) return;
         commitStep(fromStep);
         render();
         const retryMessage = overlay.querySelector('.managed-popup-message');
