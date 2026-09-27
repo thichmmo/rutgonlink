@@ -292,6 +292,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
   const cookieKey = ${escapeInlineJson(popupCookieKey)};
+  const handoffTtlMs = 30 * 60 * 1000;
   let step = 0;
   const ua = navigator.userAgent || '';
   const ios = /iphone|ipad|ipod/i.test(ua);
@@ -304,10 +305,16 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   let pendingOpen = null;
   const readStoredStep = () => {
     const values = [];
-    const addValue = (raw) => { const value = Number(raw || ''); if (Number.isInteger(value) && value >= 0 && value <= 2) values.push(value); };
-    try { addValue(sessionStorage.getItem(key)); } catch (_) {}
-    try { addValue(localStorage.getItem(key)); } catch (_) {}
-    try { const cookie = document.cookie.split('; ').find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1)); } catch (_) {}
+    const addValue = (raw, source) => {
+      const parts = source === 'local' ? String(raw || '').split('|') : [raw];
+      const value = Number(parts[0] || '');
+      const expiry = source === 'local' ? Number(parts[1] || 0) : 0;
+      if (source === 'local' && (!expiry || expiry < Date.now())) return;
+      if (Number.isInteger(value) && value >= 0 && value <= 2) values.push(value);
+    };
+    try { addValue(sessionStorage.getItem(key), 'session'); } catch (_) {}
+    try { addValue(localStorage.getItem(key), 'local'); } catch (_) {}
+    try { const cookie = document.cookie.split('; ').find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1), 'cookie'); } catch (_) {}
     return values.length ? Math.max.apply(null, values) : 0;
   };
   const commitStep = (nextStep) => {
@@ -316,7 +323,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
     try { sessionStorage.setItem(key, String(step)); } catch (_) {}
     try {
       if (step > 0 && step < 2) {
-        localStorage.setItem(key, String(step));
+        localStorage.setItem(key, String(step) + '|' + (Date.now() + handoffTtlMs));
         document.cookie = cookieKey + '=' + step + '; Path=/; SameSite=Lax';
       } else {
         localStorage.removeItem(key);

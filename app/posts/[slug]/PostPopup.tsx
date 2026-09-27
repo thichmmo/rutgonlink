@@ -17,6 +17,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const cookieKey = `post_popup_${postId}_${popup.updatedAt}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+  const handoffTtlMs = 30 * 60 * 1000
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
   const [remaining, setRemaining] = useState(0)
@@ -28,19 +29,22 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
 
   const readStoredStep = useCallback(() => {
     const values: number[] = []
-    const addValue = (value: string | null | undefined) => {
-      const parsed = Number(value || '')
+    const addValue = (value: string | null | undefined, source: 'session' | 'local' | 'cookie') => {
+      const raw = source === 'local' ? value?.split('|')[0] : value
+      const expiry = source === 'local' ? Number(value?.split('|')[1] || 0) : 0
+      if (source === 'local' && (!expiry || expiry < Date.now())) return
+      const parsed = Number(raw || '')
       if (Number.isInteger(parsed) && parsed >= 0 && parsed <= steps.length) values.push(parsed)
     }
     try {
-      addValue(window.sessionStorage.getItem(storageKey))
+      addValue(window.sessionStorage.getItem(storageKey), 'session')
     } catch { /* Some in-app browsers disable session storage. */ }
     try {
-      addValue(window.localStorage.getItem(storageKey))
+      addValue(window.localStorage.getItem(storageKey), 'local')
     } catch { /* Local storage is only a handoff fallback. */ }
     try {
       const cookie = window.document.cookie.split('; ').find(value => value.startsWith(`${cookieKey}=`))
-      addValue(cookie?.slice(cookieKey.length + 1))
+      addValue(cookie?.slice(cookieKey.length + 1), 'cookie')
     } catch { /* Cookie access can be disabled in private webviews. */ }
     return values.length ? Math.max(...values) : 0
   }, [cookieKey, storageKey, steps.length])
@@ -54,14 +58,14 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     try { window.sessionStorage.setItem(storageKey, String(boundedStep)) } catch { /* Continue in memory if storage is unavailable. */ }
     try {
       if (boundedStep > 0 && boundedStep < steps.length) {
-        window.localStorage.setItem(storageKey, String(boundedStep))
+        window.localStorage.setItem(storageKey, `${boundedStep}|${Date.now() + handoffTtlMs}`)
         window.document.cookie = `${cookieKey}=${boundedStep}; Path=/; SameSite=Lax`
       } else {
         window.localStorage.removeItem(storageKey)
         window.document.cookie = `${cookieKey}=; Max-Age=0; Path=/; SameSite=Lax`
       }
     } catch { /* Fallback storage is best-effort for restricted webviews. */ }
-  }, [cookieKey, steps, storageKey])
+  }, [cookieKey, handoffTtlMs, steps, storageKey])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
