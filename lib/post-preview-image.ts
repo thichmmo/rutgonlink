@@ -47,7 +47,7 @@ async function fetchImage(url: URL, signal: AbortSignal, redirects = 0): Promise
   })
 }
 
-async function readPreviewImage(source: string) {
+export async function readPreviewImage(source: string) {
   if (!source || !isValidIntermediateImage(source)) throw new Error('Invalid image')
   if (source.startsWith('/uploads/content/')) {
     const file = resolveContentUploadPath(source.slice('/uploads/content/'.length))

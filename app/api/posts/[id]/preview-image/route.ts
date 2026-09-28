@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
-import { renderPostPreviewImage } from '@/lib/post-preview-image'
+import { contentMimeType } from '@/lib/content-upload'
+import { readPreviewImage, renderPostPreviewImage } from '@/lib/post-preview-image'
 
 export const runtime = 'nodejs'
 type Context = { params: Promise<{ id: string }> }
@@ -29,6 +30,19 @@ export async function GET(_request: Request, { params }: Context) {
     } })
   } catch {
     cache.delete(key)
-    return new Response('Preview image unavailable', { status: 502, headers: { 'Cache-Control': 'no-store' } })
+    // Keep social previews available if the optional transformer is unavailable on hosting.
+    try {
+      const original = await readPreviewImage(post.previewImage)
+      const source = post.previewImage.startsWith('/uploads/content/')
+        ? post.previewImage.slice('/uploads/content/'.length)
+        : ''
+      const type = source ? contentMimeType(source) : 'image/jpeg'
+      return new Response(new Uint8Array(original), { headers: {
+        'Content-Type': type, 'Content-Length': String(original.length),
+        'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff',
+      } })
+    } catch {
+      return new Response('Preview image unavailable', { status: 502, headers: { 'Cache-Control': 'no-store' } })
+    }
   }
 }
