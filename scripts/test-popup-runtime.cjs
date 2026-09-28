@@ -11,6 +11,7 @@ const { createRoot } = require('react-dom/client')
 
 const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
 const baseline = process.argv.includes('--baseline')
+const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -24,7 +25,7 @@ function load(file) {
   } }).outputText
   const localRequire = id => {
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'content-management', 'intermediate-image'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -40,8 +41,12 @@ const android = 'Mozilla/5.0 (Linux; Android 14) Chrome/140 [FBAN/FB4A]'
 const desktop = 'Mozilla/5.0 (Windows NT 10.0) Chrome/140'
 const product = 'https://www.tiktok.com/view/product/1729605979383696179?checksum=keep%2Fraw&encode_params=A+B%3D%3D&trackParams=%7B%22affiliate%22%3A%22original%22%7D'
 const shopee = 'https://shopee.vn/product/123/456?affiliate=original'
+const shortTikTok = 'https://vt.tiktok.com/ZS9rPANpNhyeP-JpTZz/'
 const { defaultPopupSettings, getPopupStep, updateTikTokPopupUrl } = load('lib/popup-settings.ts')
 const { normalizeSettings } = load('lib/content-management.ts')
+const prepareSettings = fs.existsSync(path.join(sourceRoot, 'lib/popup-settings-server.ts'))
+  ? load('lib/popup-settings-server.ts').preparePopupSettingsForRequest
+  : async settings => settings
 const buildPage = load('app/[shortCode]/route.ts').buildManagedPostPage
 const PostPopup = load('app/posts/[slug]/PostPopup.tsx').default
 global.IS_REACT_ACT_ENVIRONMENT = true
@@ -138,7 +143,7 @@ async function mount(kind, options = {}) {
     })
   }
   if (kind === 'route') {
-    const html = buildPage({ id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain',
+    const html = await buildPage({ id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain',
       user: { managedContentBlocks: [] }, popup: { ...popup, updatedAt: new Date(popup.updatedAt) } }, 'fixture.example', ua)
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
     if (script) {
@@ -146,6 +151,7 @@ async function mount(kind, options = {}) {
         sessionStorage: overrides.sessionStorage, localStorage: overrides.localStorage, Date, URL })
     }
   } else {
+    if (popup.isActive) popup.settings = await prepareSettings(settings, ua)
     root = createRoot(doc.querySelector('#root'))
     await React.act(async () => root.render(React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua })))
     await tick()
@@ -175,7 +181,27 @@ async function using(kind, options, fn) {
   try { return await fn(h) } finally { await h.close() }
 }
 
+async function withFetch(handler, fn) {
+  const original = global.fetch
+  const calls = []
+  global.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return handler(url, options)
+  }
+  try { return await fn(calls) } finally { global.fetch = original }
+}
+
 async function main() {
+  if (shortLinkBaseline) {
+    for (const kind of ['route', 'react']) await using(kind, { iosUrl: shortTikTok }, async h => {
+      await h.click(); await h.tick(1000); await h.click()
+      assert.equal(h.calls[1].mode, 'new-tab')
+      assert.equal(h.calls[1].url, shortTikTok)
+      console.log('BASELINE ' + kind + ' TikTok=vt.tiktok.com mode=new-tab')
+    })
+    console.log('RESULT=BASELINE_CONFIRMED')
+    return
+  }
   if (baseline) {
     for (const kind of ['route', 'react']) {
       await using(kind, { handle: 'null' }, async h => {
@@ -202,6 +228,11 @@ async function main() {
     for (const value of ['https://vt.tiktok.com/short', 'https://tiktok.com.evil.test/view/product/1729605979383696179', 'javascript:alert(1)', 'https://www.tiktok.com/@creator/video/1729605979383696179', 'https://user:pass@www.tiktok.com/view/product/1729605979383696179']) assert.equal(helper.buildTikTokOneLinkUrl(value), value)
     assert.equal(helper.isTikTokOneLinkUrl('https://onelink.me.evil.test/'), false)
     assert.equal(helper.isTikTokOneLinkUrl('http://snssdk1180.onelink.me/BAuo'), false)
+    assert.equal(helper.isTikTokShortUrl(shortTikTok), true)
+    for (const url of ['https://vt.tiktok.com.evil.test/a', 'https://user:pass@vt.tiktok.com/a', 'https://vt.tiktok.com:444/a', 'http://vt.tiktok.com/a']) {
+      assert.equal(helper.isTikTokShortUrl(url), false)
+      assert.equal(helper.getPopupLinkOpenMode(url, 'TIKTOK', { userAgent: facebookIos }), 'new-tab')
+    }
   })
   await scenario('Long OneLink validation and custom iOS URL preservation', async () => {
     const oneLink = 'https://snssdk1180.onelink.me/BAuo?af_dp=' + 'x'.repeat(3000)
@@ -213,6 +244,103 @@ async function main() {
     assert.equal(normalizeSettings(settings, shopee, product).tiktok.iosUrl, product)
     settings.tiktok.iosUrl = oneLink + 'x'.repeat(6000)
     assert.equal(normalizeSettings(settings, shopee, product).tiktok.iosUrl, product)
+  })
+  await scenario('Server short-link resolution stops before product login redirects', async () => {
+    const settings = defaultPopupSettings(shopee, shortTikTok + '?server=product')
+    const saved = JSON.stringify(settings)
+    await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
+      const result = await prepareSettings(settings, facebookIos)
+      assert.equal(requests.length, 1)
+      assert.equal(requests[0].options.redirect, 'manual')
+      assert.ok(requests[0].options.signal instanceof AbortSignal)
+      assert.equal(result.tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+      assert.equal(result.tiktok.androidUrl, settings.tiktok.androidUrl)
+      assert.equal(JSON.stringify(settings), saved, 'Request preparation must not rewrite saved settings')
+    })
+  })
+  await scenario('Server short-link preparation leaves other devices and custom iOS URLs alone', async () => {
+    await withFetch(() => { throw new Error('Unexpected request') }, async requests => {
+      const settings = defaultPopupSettings(shopee, shortTikTok)
+      for (const ua of [safariIos, android, desktop]) assert.equal(await prepareSettings(settings, ua), settings)
+      for (const url of [product, helper.buildTikTokOneLinkUrl(product), 'https://example.com/offer']) {
+        settings.tiktok.iosUrl = url
+        assert.equal(await prepareSettings(settings, facebookIos), settings)
+      }
+      settings.tiktok.iosUrl = shortTikTok
+      settings.tiktok.iosEnabled = false
+      assert.equal(await prepareSettings(settings, facebookIos), settings)
+      assert.equal(requests.length, 0)
+    })
+  })
+  await scenario('Server short-link cache coalesces and expires without losing signed URLs', async () => {
+    const settings = defaultPopupSettings(shopee, shortTikTok + '?server=cache')
+    const realNow = Date.now
+    let now = realNow()
+    Date.now = () => now
+    try {
+      await withFetch(() => new Response(null, { status: 301, headers: { location: product } }), async requests => {
+        const [first, second] = await Promise.all([prepareSettings(settings, facebookIos), prepareSettings(settings, facebookIos)])
+        assert.equal(requests.length, 1)
+        assert.equal(first.tiktok.iosUrl, second.tiktok.iosUrl)
+        await prepareSettings(settings, facebookIos)
+        assert.equal(requests.length, 1)
+        now += 5 * 60_000 + 1
+        await prepareSettings(settings, facebookIos)
+        assert.equal(requests.length, 2)
+      })
+    } finally { Date.now = realNow }
+  })
+  await scenario('Failed or timed-out short lookups retry after a brief cache', async () => {
+    const settings = defaultPopupSettings(shopee, shortTikTok + '?server=retry')
+    const realNow = Date.now
+    let now = realNow()
+    let fail = true
+    Date.now = () => now
+    try {
+      await withFetch(() => {
+        if (fail) throw new DOMException('Timeout', 'TimeoutError')
+        return new Response(null, { status: 301, headers: { location: product } })
+      }, async requests => {
+        assert.equal(await prepareSettings(settings, facebookIos), settings)
+        fail = false
+        assert.equal(await prepareSettings(settings, facebookIos), settings)
+        assert.equal(requests.length, 1)
+        now += 15_001
+        assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+        assert.equal(requests.length, 2)
+      })
+    } finally { Date.now = realNow }
+  })
+  await scenario('Server redirect validation and loop bounds keep original short links', async () => {
+    const redirects = ['https://evil.test/product/123', 'http://www.tiktok.com/view/product/1729605979383696179',
+      'https://user:pass@www.tiktok.com/view/product/1729605979383696179', 'https://www.tiktok.com:444/view/product/1729605979383696179']
+    for (const [index, location] of redirects.entries()) {
+      const settings = defaultPopupSettings(shopee, shortTikTok + '?server=unsafe' + index)
+      await withFetch(() => new Response(null, { status: 301, headers: { location } }), async requests => {
+        assert.equal(await prepareSettings(settings, facebookIos), settings)
+        assert.equal(requests.length, 1)
+      })
+    }
+    const settings = defaultPopupSettings(shopee, shortTikTok + '?server=loop')
+    await withFetch(url => new Response(null, { status: 302, headers: { location: url } }), async requests => {
+      assert.equal(await prepareSettings(settings, facebookIos), settings)
+      assert.equal(requests.length, 11)
+      assert.equal(new Set(requests.map(request => request.options.signal)).size, 1, 'One deadline covers the whole redirect chain')
+    })
+  })
+  await scenario('Server resolves vm and relative redirects and ignores non-product targets', async () => {
+    const settings = defaultPopupSettings(shopee, 'https://vm.tiktok.com/fixture/')
+    let hop = 0
+    await withFetch(() => new Response(null, { status: 302, headers: { location: hop++ ? product : '/next/' } }), async requests => {
+      assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+      assert.equal(requests[1].url, 'https://vm.tiktok.com/next/')
+    })
+    settings.tiktok.iosUrl = shortTikTok + '?server=video'
+    await withFetch(url => url.includes('vt.tiktok.com')
+      ? new Response(null, { status: 302, headers: { location: 'https://www.tiktok.com/@creator/video/1729605979383696179' } })
+      : new Response(null, { status: 200 }), async () => {
+      assert.equal(await prepareSettings(settings, facebookIos), settings)
+    })
   })
   for (const kind of ['route', 'react']) {
     for (const handle of ['handle', 'null']) await scenario(kind + ' storage-denied ' + handle + ' return', async () => {
@@ -254,6 +382,29 @@ async function main() {
         assert.equal(h.calls[1].mode, 'same-tab')
       })
       await using(kind, { active: false }, async h => assert.equal(h.state(), 'ARTICLE'))
+    })
+    await scenario(kind + ' short TikTok resolves to OneLink before clicking', async () => {
+      await withFetch(() => new Response(null, { status: 301, headers: { location: product } }), async requests => {
+        await using(kind, { iosUrl: shortTikTok + '?runtime=' + kind }, async h => {
+          assert.equal(requests.length, 1, 'Resolve on the server before the popup is ready')
+          await h.click(); await h.blur(); await h.focus(); await h.click()
+          assert.equal(requests.length, 1, 'Never await a lookup inside the app-launch click')
+          assert.equal(h.calls[0].mode, 'anchor-new-tab', 'Shopee return fix stays active')
+          assert.equal(h.calls[1].mode, 'same-tab')
+          assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
+          assert.equal(h.calls[1].state, 'ARTICLE')
+        })
+      })
+    })
+    await scenario(kind + ' failed short lookup keeps original same-tab link', async () => {
+      await withFetch(() => { throw new Error('Upstream offline') }, async () => {
+        const url = shortTikTok + '?failed=' + kind
+        await using(kind, { iosUrl: url }, async h => {
+          await h.click(); await h.tick(1000); await h.click()
+          assert.equal(h.calls[1].mode, 'same-tab')
+          assert.equal(h.calls[1].url, url)
+        })
+      })
     })
     await scenario(kind + ' cookie-only reload and completion', async () => {
       const cookie1 = await using(kind, { session: false, local: false }, async h => { await h.click(); return h.cookie() })

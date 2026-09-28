@@ -9,6 +9,7 @@ import Footer from '@/components/Footer'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
+import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
 
@@ -61,8 +62,11 @@ export default async function ManagedPostPage({ params }: Context) {
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
-  const settings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const userAgent = (await headers()).get('user-agent') || ''
+  const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const settings = post.popup?.isActive && normalizedSettings
+    ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
+    : normalizedSettings
 
   return <div className="min-h-screen bg-[#f8fafc] text-gray-900">
     <Navbar />

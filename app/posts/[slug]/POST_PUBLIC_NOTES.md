@@ -4,7 +4,7 @@ Published posts render at `/posts/{slug}`. Their text is escaped by React; a sel
 
 Mobile webviews can return a null `window.open` handle even after opening the external tab. Blur/focus lifecycle signals now preserve the committed next step, and the mobile timeout no longer rolls back to Shopee in that case.
 
-On iOS Facebook, product URLs are converted to the same `snssdk1180.onelink.me` handoff used by Boclink, preserving the signed product URL and its tracking parameters; current-tab navigation then lets TikTok claim the universal link instead of opening a second Facebook tab.
+On iOS Facebook, product URLs are converted to the same `snssdk1180.onelink.me` handoff used by Boclink, preserving the signed product URL and its tracking parameters. The server page also expands TikTok short links before passing settings to PostPopup; the click still navigates synchronously in the current tab. Failed resolution keeps the original short URL in the current tab rather than a new Facebook webview.
 
 Shopee uses a real hidden `_blank` anchor on iPhone/Facebook. This is intended to
 avoid Facebook's empty script-created child page when returning from the Shopee app;
