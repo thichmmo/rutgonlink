@@ -1,3 +1,5 @@
+import { getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
+
 export type PopupPlatformSettings = {
   enabled: boolean
   androidEnabled: boolean
@@ -74,15 +76,15 @@ export function normalizePopupSettings(value: unknown, firstUrl = '', secondUrl 
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const tiktokBase = platformSettings(input.tiktok, fallback.tiktok)
   const tiktokInput = input.tiktok && typeof input.tiktok === 'object' ? input.tiktok as Record<string, unknown> : {}
+  const iosUrl = typeof tiktokInput.iosUrl === 'string' && tiktokInput.iosUrl.trim() ? tiktokInput.iosUrl : tiktokBase.url
+  const usesOneLink = tiktokInput.iosMode === 'onelink' || isTikTokOneLinkUrl(iosUrl)
   return {
     shopee: platformSettings(input.shopee, fallback.shopee),
     tiktok: {
       ...tiktokBase,
       androidUrl: typeof tiktokInput.androidUrl === 'string' && tiktokInput.androidUrl.trim() ? tiktokInput.androidUrl : tiktokBase.url,
-      iosUrl: typeof tiktokInput.iosUrl === 'string' && tiktokInput.iosUrl.trim() ? tiktokInput.iosUrl : tiktokBase.url,
-      iosMode: input.tiktok && typeof input.tiktok === 'object' && (input.tiktok as Record<string, unknown>).iosMode === 'onelink'
-        ? 'onelink'
-        : 'desktop',
+      iosUrl,
+      iosMode: usesOneLink ? 'onelink' : 'desktop',
     },
     cooldownMinutes: positiveInteger(input.cooldownMinutes, fallback.cooldownMinutes, 10080),
     forceChromeAndroid: input.forceChromeAndroid === true,
@@ -113,17 +115,26 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
+      openMode: 'new-tab' as const,
       imageUrl: settings.shopee.imageUrl,
       delaySeconds: settings.shopee.delaySeconds,
       forceBrowser,
     }
   }
 
+  const url = getTikTokIosLaunchUrl((isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl) || settings.tiktok.url, userAgent)
   return {
     platform: 'TikTok',
-    url: (isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl) || settings.tiktok.url,
+    url,
+    openMode: getPopupLinkOpenMode(url, 'TIKTOK', { userAgent }),
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,
     forceBrowser,
   }
+}
+
+export function updateTikTokPopupUrl(settings: PopupTikTokSettings, url: string): PopupTikTokSettings {
+  // Resolving the general/Android URL must not overwrite a separately configured iOS link.
+  const iosUrl = settings.iosUrl && settings.iosUrl !== settings.url ? settings.iosUrl : url
+  return { ...settings, url, androidUrl: url, iosUrl, iosMode: isTikTokOneLinkUrl(iosUrl) ? 'onelink' : settings.iosMode }
 }

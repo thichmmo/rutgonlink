@@ -7,3 +7,7 @@ The build pins `NEXTAUTH_URL=https://rutgonlink.site` and `SITE_NAME=rutgonlink.
 Verification: dispatch the workflow, download `rutgonlink-cpanel-<sha>`, inspect `RELEASE_COMMIT`, then deploy only after a production database backup.
 
 The PR workflow lint now covers popup/post APIs, fixed content, affiliate resolver and public slug routing. Production health checks also require the unauthenticated dashboard redirect; optional `SMOKE_POST_URL` and `SMOKE_SHORT_URL` secrets exercise known published URLs after deployment.
+
+The deploy workflow also runs `node scripts/test-popup-runtime.cjs` before packaging.
+It compiles the generated inline JavaScript and mounts the real React popup with
+storage/navigation mocks to catch iOS/Facebook handoff regressions before release.

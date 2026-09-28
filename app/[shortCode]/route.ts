@@ -9,7 +9,7 @@ import { getSiteUrl, isMainAppHostname } from '@/lib/site-config'
 import { isValidIntermediateImage } from '@/lib/intermediate-image'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
-import { popupAppliesToDevice } from '@/lib/popup-settings'
+import { getPopupStep, popupAppliesToDevice } from '@/lib/popup-settings'
 
 interface LinkResult {
   id: string
@@ -281,6 +281,8 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const popup = post.popup && popupSettings
     ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
     : null
+  // Share URL selection with the React alias; serialize data rather than duplicating regexes inside a script string.
+  const popupSteps = popupSettings ? [getPopupStep(popupSettings, 0, userAgent), getPopupStep(popupSettings, 1, userAgent)] : []
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
   const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
@@ -289,6 +291,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const popupScript = popup && popup.applies ? `<script>
 (() => {
   const popup = ${popupJson};
+  const steps = ${escapeInlineJson(popupSteps)};
   if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
   const cookieKey = ${escapeInlineJson(popupCookieKey)};
@@ -307,38 +310,39 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const readStoredStep = () => {
     const values = [];
     const addValue = (raw, source) => {
-      const parts = source === 'local' ? String(raw || '').split('|') : [raw];
+      if (!raw) return;
+      const parts = source === 'session' ? [raw] : String(raw).split('|');
       const value = Number(parts[0] || '');
-      const expiry = source === 'local' ? Number(parts[1] || 0) : 0;
-      if (source === 'local' && (!expiry || expiry < Date.now())) return;
+      const expiry = source === 'session' ? 0 : Number(parts[1] || 0);
+      if (source !== 'session' && (!expiry || expiry <= Date.now())) return;
       if (Number.isInteger(value) && value >= 0 && value <= 2) values.push(value);
     };
     try { addValue(sessionStorage.getItem(key), 'session'); } catch (_) {}
     try { addValue(localStorage.getItem(key), 'local'); } catch (_) {}
-    try { const cookie = document.cookie.split('; ').find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1), 'cookie'); } catch (_) {}
+    try { const cookie = document.cookie.split(';').map((value) => value.trim()).find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1), 'cookie'); } catch (_) {}
     return values.length ? Math.max.apply(null, values) : 0;
   };
   const commitStep = (nextStep) => {
     step = Math.max(0, Math.min(2, nextStep));
-    readyAt = Date.now() + Math.max(0, Number((step === 0 ? popup.settings.shopee : popup.settings.tiktok).delaySeconds || 0)) * 1000;
+    readyAt = Date.now() + (steps[step]?.delaySeconds || 0) * 1000;
     try { sessionStorage.setItem(key, String(step)); } catch (_) {}
+    const handoff = String(step) + '|' + (Date.now() + handoffTtlMs);
+    // Each fallback is independent, including completion after the TikTok handoff.
     try {
-      if (step > 0 && step < 2) {
-        localStorage.setItem(key, String(step) + '|' + (Date.now() + handoffTtlMs));
-        document.cookie = cookieKey + '=' + step + '; Path=/; SameSite=Lax';
-      } else {
-        localStorage.removeItem(key);
-        document.cookie = cookieKey + '=; Max-Age=0; Path=/; SameSite=Lax';
-      }
+      if (step > 0) localStorage.setItem(key, handoff);
+      else localStorage.removeItem(key);
     } catch (_) {}
+    try { document.cookie = cookieKey + '=' + (step > 0 ? handoff : '') + '; Max-Age=' + (step > 0 ? handoffTtlMs / 1000 : 0) + '; Path=/; SameSite=Lax'; } catch (_) {}
   };
-  step = readStoredStep();
+  commitStep(readStoredStep());
   const syncAfterReturn = () => {
     if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
     if (document.visibilityState !== 'visible') return;
     const stored = readStoredStep();
-    if (stored !== step) { commitStep(stored); render(); }
+    // Missing/expired storage must never rewind progress already committed in this document.
+    if (stored > step) commitStep(stored);
     if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; }
+    render();
   };
   document.addEventListener('visibilitychange', syncAfterReturn);
   const markPageHidden = () => { if (pendingOpen) pendingOpen.leftPage = true; };
@@ -349,13 +353,16 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   window.addEventListener('blur', markPageHidden);
   window.addEventListener('focus', markPageVisible);
   const render = () => {
-    if (step >= 2) { window.clearInterval(timer); overlay.remove(); document.body.classList.remove('managed-locked'); return; }
-    const platform = step === 0 ? popup.settings.shopee : popup.settings.tiktok;
-    const name = step === 0 ? 'Shopee' : 'TikTok';
-    const url = step === 0 ? popup.settings.shopee.url : ((ios ? popup.settings.tiktok.iosUrl : popup.settings.tiktok.androidUrl) || popup.settings.tiktok.url || popup.secondUrl);
+    window.clearInterval(timer);
+    if (step >= 2) { overlay.remove(); document.body.classList.remove('managed-locked'); return; }
+    if (!overlay.isConnected) document.body.appendChild(overlay);
+    document.body.classList.add('managed-locked');
+    const renderedStep = step;
+    const platform = steps[step];
+    const name = platform.platform;
+    const url = platform.url;
     const delay = Math.max(0, Number(platform.delaySeconds || 0));
     const image = platform.imageUrl || popup.imageUrl || '';
-    readyAt = Date.now() + delay * 1000;
     overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><div><small>MỞ LIÊN KẾT</small><b>' + name + ' · lượt ' + (step + 1) + '/2</b></div><span>' + (delay ? 'Sau ' + delay + ' giây' : 'Sẵn sàng') + '</span></div><div class="managed-popup-media"></div><button class="managed-popup-open" type="button">Đóng để xem</button><p class="managed-popup-progress">Bạn cần đóng ' + (step + 1) + '/2 popup để xem được nội dung</p><p class="managed-popup-message"></p></div>';
     const media = overlay.querySelector('.managed-popup-media');
     if (image && media) media.style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
@@ -363,35 +370,53 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
     const message = overlay.querySelector('.managed-popup-message');
     const update = () => {
       const left = Math.max(0, Math.ceil((readyAt - Date.now()) / 1000));
-      if (button) { button.disabled = left > 0; button.textContent = left > 0 ? 'Chờ ' + left + 's' : 'Đóng để xem'; }
+      if (button) { button.disabled = left > 0 || opening; button.textContent = left > 0 ? 'Chờ ' + left + 's' : opening ? 'Đang mở...' : 'Đóng để xem'; }
       if (message) message.textContent = left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
-      if (!left) window.clearInterval(timer);
+      if (!left && !opening) window.clearInterval(timer);
     };
     const open = () => {
-      if (opening) return;
+      if (opening || step !== renderedStep) return;
       if (Date.now() < readyAt || !url) { if (message) message.textContent = 'Chưa có link ' + name + ' hợp lệ.'; return; }
       const fromStep = step;
       const nextStep = fromStep + 1;
-      pendingOpen = { fromStep, nextStep, leftPage: false };
+      const pending = { fromStep, nextStep, leftPage: false };
+      pendingOpen = pending;
       opening = true;
       // Persist before window.open so mobile same-tab navigation resumes at the next popup.
       commitStep(nextStep);
       render();
+      if (platform.openMode === 'same-tab') {
+        // Facebook/iOS opens TikTok OneLinks through the current tab, allowing the universal-link handoff.
+        try { window.location.replace(url); } catch (_) {
+          pendingOpen = null;
+          opening = false;
+          commitStep(fromStep);
+          render();
+        }
+        return;
+      }
       let tab = null;
-      try { tab = window.open(url, '_blank'); } catch (_) { tab = null; }
+      try { tab = window.open(url, '_blank'); } catch (_) {
+        pendingOpen = null;
+        opening = false;
+        commitStep(fromStep);
+        render();
+        return;
+      }
       if (tab) {
         pendingOpen = null;
         opening = false;
         try { tab.opener = null; } catch (_) {}
+        render();
         return;
       }
       window.setTimeout(() => {
-        if (!pendingOpen || pendingOpen.leftPage || document.visibilityState === 'hidden') return;
+        if (pendingOpen !== pending || pending.leftPage || document.visibilityState === 'hidden') return;
         pendingOpen = null;
         opening = false;
         // A mobile webview may return null even though the external tab opened.
         // Keep the persisted next step so returning users see TikTok, not Shopee.
-        if (mobile) return;
+        if (mobile) { render(); return; }
         commitStep(fromStep);
         render();
         const retryMessage = overlay.querySelector('.managed-popup-message');

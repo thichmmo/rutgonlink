@@ -46,15 +46,18 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit --pretty false
 
+      - name: Popup runtime regressions
+        run: node scripts/test-popup-runtime.cjs
+
       - name: Lint
         run: >-
           pnpm exec eslint
           app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
-          lib/content-management.ts lib/popup-settings.ts
+          lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
-          scripts/package-cpanel.mjs
+          scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs
 
       - name: Validate deployment scripts
         run: |

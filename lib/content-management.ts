@@ -95,10 +95,10 @@ export async function ownsActivePopups(userId: string, popupIds: string[]) {
 
 export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl: string): PopupSettings {
   const normalized = normalizePopupSettings(settings, firstUrl, secondUrl)
-  const safe = (value: string, fallback: string) => {
+  const safe = (value: string, fallback: string, maxLength = 2048) => {
     try {
       const url = new URL(value)
-      return value.length <= 2048 && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : fallback
+      return value.length <= maxLength && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : fallback
     } catch {
       return fallback
     }
@@ -106,7 +106,8 @@ export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl
   normalized.shopee.url = safe(normalized.shopee.url, firstUrl)
   normalized.tiktok.url = safe(normalized.tiktok.url, secondUrl)
   normalized.tiktok.androidUrl = safe(normalized.tiktok.androidUrl, secondUrl)
-  normalized.tiktok.iosUrl = safe(normalized.tiktok.iosUrl, secondUrl)
+  // TikTok OneLinks can carry a signed deep-link payload longer than a normal web URL.
+  normalized.tiktok.iosUrl = safe(normalized.tiktok.iosUrl, secondUrl, 8192)
   const safeImage = (value: string | null) => value && value.length <= MAX_INTERMEDIATE_IMAGE_LENGTH && isValidIntermediateImage(value) ? value : null
   normalized.shopee.imageUrl = safeImage(normalized.shopee.imageUrl)
   normalized.tiktok.imageUrl = safeImage(normalized.tiktok.imageUrl)
