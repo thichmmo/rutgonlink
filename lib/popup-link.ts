@@ -15,6 +15,16 @@ export function isTikTokOneLinkUrl(value: string) {
   }
 }
 
+export function isTikTokShortUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password
+      && !parsed.port && ['vt.tiktok.com', 'vm.tiktok.com'].includes(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
 // Keep the original affiliate URL inside TikTok's product deep link, not the reference site's tracking.
 export function buildTikTokOneLinkUrl(value: string) {
   if (isTikTokOneLinkUrl(value)) return value
@@ -54,7 +64,7 @@ export function buildTikTokOneLinkUrl(value: string) {
 }
 
 export function getTikTokIosLaunchUrl(value: string, userAgent: string) {
-  return isIosUserAgent(userAgent) && isFacebookInAppUserAgent(userAgent)
+  return isIosFacebookUserAgent(userAgent)
     ? buildTikTokOneLinkUrl(value)
     : value
 }
@@ -67,18 +77,22 @@ function isFacebookInAppUserAgent(userAgent: string) {
   return FACEBOOK_IN_APP_PATTERN.test(userAgent)
 }
 
+export function isIosFacebookUserAgent(userAgent: string) {
+  return isIosUserAgent(userAgent) && isFacebookInAppUserAgent(userAgent)
+}
+
 export function getPopupLinkOpenMode(
   value: string,
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
-  const isIosFacebook = isIosUserAgent(options.userAgent)
-    && isFacebookInAppUserAgent(options.userAgent)
+  const isIosFacebook = isIosFacebookUserAgent(options.userAgent)
 
   // Let Facebook handle the link action before allocating a script-opened blank webview.
   if (isIosFacebook && platform === 'SHOPEE') return 'anchor-new-tab'
 
-  return isIosFacebook && platform === 'TIKTOK' && isTikTokOneLinkUrl(value)
+  // An unresolved short link must not fall back to a script-created Facebook tab.
+  return isIosFacebook && platform === 'TIKTOK' && (isTikTokOneLinkUrl(value) || isTikTokShortUrl(value))
     ? 'same-tab'
     : 'new-tab'
 }

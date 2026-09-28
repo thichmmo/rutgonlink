@@ -5,8 +5,13 @@ Shared validation normalizes popup settings (including the default Shopee/TikTok
 `getPopupStep` is shared by both runtimes. For iPhone/Facebook only, it opens Shopee
 through an attached `_blank` link (rather than a script-created blank child) and wraps valid
 HTTPS TikTok product URLs in `snssdk1180.onelink.me/BAuo`, preserving the raw signed
-URL in `params_url` and its `trackParams`. Existing OneLinks, short links and other
-browsers are not rewritten. Navigation is synchronous with the user's click;
+URL in `params_url` and its `trackParams`. `popup-settings-server.ts` expands iOS
+Facebook `vt.tiktok.com`/`vm.tiktok.com` URLs before rendering, stopping at the signed
+product redirect (before any login redirect) and building the same OneLink. A
+4-second chain deadline, bounded 200-entry cache, 5-minute success TTL and 15-second
+failure TTL bound latency and upstream load. Saved fields, custom iOS OneLinks and
+other devices stay unchanged. A failed lookup keeps the original short URL in the
+current tab. Navigation is synchronous with the user's click;
 Facebook/iOS remains responsible for its native confirmation and app routing.
 
 Verify with `node scripts/test-popup-runtime.cjs`, `pnpm exec eslint lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts` and `pnpm exec tsc --noEmit --pretty false`.

@@ -41,7 +41,7 @@ function parseTikTokUrl(value: string) {
     throw new TikTokLinkError('Link TikTok không hợp lệ')
   }
 
-  if (parsed.protocol !== 'https:' || !isTikTokHost(parsed.hostname)) {
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || !isTikTokHost(parsed.hostname)) {
     throw new TikTokLinkError('Chỉ chấp nhận link HTTPS thuộc TikTok')
   }
 
@@ -58,10 +58,18 @@ async function discardResponseBody(response: Response) {
   }
 }
 
-export async function resolveTikTokUrl(inputUrl: string) {
+function productIdFromUrl(parsed: URL) {
+  const isProductPath = parsed.pathname.includes('/pdp/') || parsed.pathname.includes('/view/product/')
+  return isProductPath ? parsed.pathname.match(/\/(\d{15,25})\/?$/)?.[1] : undefined
+}
+
+export async function resolveTikTokUrl(inputUrl: string, options: { signal?: AbortSignal; stopAtProduct?: boolean } = {}) {
   let currentUrl = parseTikTokUrl(inputUrl).href
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    // The signed product redirect is enough for a popup OneLink. Loading its web
+    // page can redirect again to login and discard the usable product destination.
+    if (options.stopAtProduct && productIdFromUrl(parseTikTokUrl(currentUrl))) return currentUrl
     let response: Response
 
     try {
@@ -73,7 +81,7 @@ export async function resolveTikTokUrl(inputUrl: string) {
           accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'user-agent': TIKTOK_USER_AGENT,
         },
-        signal: AbortSignal.timeout(15_000),
+        signal: options.signal || AbortSignal.timeout(15_000),
       })
     } catch (error) {
       const message = error instanceof Error && error.name === 'TimeoutError'
@@ -88,7 +96,7 @@ export async function resolveTikTokUrl(inputUrl: string) {
 
     if (isRedirect && location) {
       const nextUrl = new URL(location, currentUrl)
-      if (nextUrl.protocol !== 'https:' || !isTikTokHost(nextUrl.hostname)) {
+      if (nextUrl.protocol !== 'https:' || nextUrl.username || nextUrl.password || nextUrl.port || !isTikTokHost(nextUrl.hostname)) {
         throw new TikTokLinkError('TikTok chuyển hướng tới domain không hợp lệ', 502)
       }
 
@@ -127,14 +135,10 @@ export function convertTikTokProductUrl(shortUrl: string, officialUrl: string): 
   const urlWithoutQuery = queryIndex >= 0 ? officialUrl.slice(0, queryIndex) : officialUrl
   const parsed = parseTikTokUrl(urlWithoutQuery)
 
-  const isProductPath = parsed.pathname.includes('/pdp/') || parsed.pathname.includes('/view/product/')
-  const productIdMatch = parsed.pathname.match(/\/(\d{15,25})\/?$/)
-
-  if (!isProductPath || !productIdMatch) {
+  const productId = productIdFromUrl(parsed)
+  if (!productId) {
     throw new TikTokLinkError('Link không trỏ tới sản phẩm TikTok Shop')
   }
-
-  const productId = productIdMatch[1]
 
   // Preserve the raw query byte-for-byte because it may contain signed affiliate payloads.
   const convertedUrl = `https://www.tiktok.com/view/product/${productId}${rawQuery}`

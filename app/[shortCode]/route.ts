@@ -10,6 +10,7 @@ import { isValidIntermediateImage } from '@/lib/intermediate-image'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { getPopupStep, popupAppliesToDevice } from '@/lib/popup-settings'
+import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 
 interface LinkResult {
   id: string
@@ -265,7 +266,7 @@ async function findManagedPostForHost(slug: string, hostname: string) {
 
 // Route handlers return a standalone HTML document so custom domains keep the public slug.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
+async function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const image = post.previewImage && isValidIntermediateImage(post.previewImage) ? post.previewImage : null
   const preview = image ? `<div class="preview-image"><img src="${escapeHtml(image)}" alt="">${post.isFakeVideo ? '<span class="preview-play">▶</span>' : ''}</div>` : ''
   const plainText = String(post.content).replace(/<[^>]+>/g, '').slice(0, 160)
@@ -277,7 +278,10 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
   const before = blocks.filter((block: any) => block.placement === 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const after = blocks.filter((block: any) => block.placement !== 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
-  const popupSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const normalizedPopupSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
+  const popupSettings = post.popup?.isActive && normalizedPopupSettings
+    ? await preparePopupSettingsForRequest(normalizedPopupSettings, userAgent)
+    : normalizedPopupSettings
   const popup = post.popup && popupSettings
     ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
     : null
@@ -462,7 +466,7 @@ export async function GET(
   // Managed posts take precedence over short links on the selected public domain.
   const managedPost = await findManagedPostForHost(shortCode, hostname)
   if (managedPost) {
-    return new Response(buildManagedPostPage(managedPost, hostname.toLowerCase(), req.headers.get('user-agent') || ''), {
+    return new Response(await buildManagedPostPage(managedPost, hostname.toLowerCase(), req.headers.get('user-agent') || ''), {
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     })
   }
