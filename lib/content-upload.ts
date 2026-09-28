@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 export const CONTENT_UPLOAD_ROUTE = '/uploads/content'
 export const MAX_CONTENT_IMAGE_BYTES = 8 * 1024 * 1024
@@ -19,7 +19,19 @@ const MIME_EXTENSIONS: Record<string, string> = {
 
 export function getContentUploadDirectory() {
   // Keep media outside the atomically swapped standalone tree on cPanel.
-  return resolve(process.env.CONTENT_UPLOAD_DIR?.trim() || join(/*turbopackIgnore: true*/ process.cwd(), 'uploads', 'content'))
+  const configured = process.env.CONTENT_UPLOAD_DIR?.trim()
+  if (configured) return resolve(configured)
+  const cwd = /*turbopackIgnore: true*/ process.cwd().replace(/[\\/]+$/, '')
+  const standaloneSuffix = `${sep}.next${sep}standalone`
+  if (cwd.endsWith(standaloneSuffix)) {
+    // Release preflight runs below `.deploy/<id>/unpacked`; live Passenger runs
+    // below `.next/standalone`. Both must resolve to the persistent app media.
+    const deployMarker = `${sep}.deploy${sep}`
+    const deployIndex = cwd.indexOf(deployMarker)
+    if (deployIndex >= 0) return resolve(cwd.slice(0, deployIndex), 'uploads', 'content')
+    return resolve(cwd, '..', '..', 'uploads', 'content')
+  }
+  return resolve(join(cwd, 'uploads', 'content'))
 }
 
 export function getContentUploadPolicy(mimeType: string) {

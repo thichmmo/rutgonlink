@@ -49,6 +49,9 @@ jobs:
       - name: Popup runtime regressions
         run: node scripts/test-popup-runtime.cjs
 
+      - name: Persistent content upload path regressions
+        run: node scripts/test-content-upload-path.cjs
+
       - name: Lint
         run: >-
           pnpm exec eslint
@@ -57,7 +60,7 @@ jobs:
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
           lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
-          scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs
+          scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
 
       - name: Validate deployment scripts
         run: |

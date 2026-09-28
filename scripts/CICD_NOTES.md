@@ -14,7 +14,7 @@ The release packager resolves the generated Prisma client beside the real `@pris
 
 The packager also dereferences nested pnpm links. The first content release passed the symlink-count check on Windows but its Linux preflight could not load `nanoid/non-secure/index.js` through a nested link; the package now requires that file and a full Linux preflight before production swap.
 
-Post editor uploads are stored under the persistent cPanel app directory `uploads/content`; the release script creates that directory before every atomic swap so published media survives deployments.
+Post editor uploads are stored under the persistent cPanel app directory `uploads/content`; the release script creates that directory before every atomic swap, exports `CONTENT_UPLOAD_DIR` during preflight, and Passenger sets the same default at startup so published media survives deployments.
 
 If a prior manual deployment already created the popup/post tables, the first CI run adopts that existing schema into `RutgonlinkMigration` instead of replaying the `CREATE TABLE` migration.
 

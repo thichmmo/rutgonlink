@@ -48,6 +48,8 @@ test -f "$app/.env"
 test -x "$node"
 test -d "$live"
 test ! -e "$backup"
+# Keep both preflight and the new Passenger process on the persistent media path.
+export CONTENT_UPLOAD_DIR="$app/uploads/content"
 # GitHub release downloads can briefly reset on shared hosting; retry before marking the release failed.
 curl --fail --silent --show-error --location --max-time 300 --retry 3 --retry-delay 5 "$artifact_url" -o "$archive"
 actual_sha="$(sha256sum "$archive" | cut -d' ' -f1)"

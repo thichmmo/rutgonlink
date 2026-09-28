@@ -8,6 +8,9 @@ Verification: dispatch the workflow, download `rutgonlink-cpanel-<sha>`, inspect
 
 The PR workflow lint now covers popup/post APIs, fixed content, affiliate resolver and public slug routing. Production health checks also require the unauthenticated dashboard redirect; optional `SMOKE_POST_URL` and `SMOKE_SHORT_URL` secrets exercise known published URLs after deployment.
 
-The deploy workflow also runs `node scripts/test-popup-runtime.cjs` before packaging.
+The deploy workflow also runs `node scripts/test-popup-runtime.cjs` and
+`node scripts/test-content-upload-path.cjs` before packaging. The latter covers
+local, live standalone, staged standalone, configured-directory, and upload
+round-trip behavior.
 It compiles the generated inline JavaScript and mounts the real React popup with
 storage/navigation mocks to catch iOS/Facebook handoff regressions before release.
