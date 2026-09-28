@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Bold, Code2, FileCode2, ImagePlus, Italic, Link2, List, PlaySquare, Quote, Underline, Video } from 'lucide-react'
+import { MANAGED_MEDIA_CSS, normalizeVideoEmbedUrl, videoEmbedHtml } from '@/lib/video-embed'
 
 type Props = {
   value: string
@@ -34,6 +35,9 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   const [sourceMode, setSourceMode] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [showVideo, setShowVideo] = useState(false)
+  const [videoInput, setVideoInput] = useState('')
+  const [videoError, setVideoError] = useState('')
 
   useEffect(() => {
     if (!sourceMode && editorRef.current && editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value
@@ -66,6 +70,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
 
   function insertHtml(html: string) {
     if (!html) return
+    if (sourceMode) { onChange(value + html); return }
     editorRef.current?.focus()
     restoreSelection()
     document.execCommand('insertHTML', false, html)
@@ -129,14 +134,20 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
 
   function promptVideo() {
     saveSelection()
-    const input = window.prompt('URL video/embed (YouTube, TikTok...):', '')?.trim()
-    if (!input) return
-    let url: URL
-    try { url = new URL(input) } catch { setMessage('URL video không hợp lệ.'); return }
-    if (url.protocol !== 'https:') { setMessage('Chỉ chấp nhận URL HTTPS.'); return }
-    if (url.hostname === 'youtu.be') url = new URL(`https://www.youtube.com/embed/${url.pathname.slice(1)}`)
-    if (url.hostname.endsWith('youtube.com') && url.pathname === '/watch') url = new URL(`https://www.youtube.com/embed/${url.searchParams.get('v') || ''}`)
-    insertHtml(`<div class="video-embed"><iframe src="${escapeAttribute(url.href)}" title="Video" loading="lazy" allowfullscreen></iframe></div><p><br></p>`)
+    setVideoInput('')
+    setVideoError('')
+    setShowVideo(true)
+  }
+
+  function submitVideo() {
+    const embed = normalizeVideoEmbedUrl(videoInput)
+    if (!embed) {
+      setVideoError('Dán URL video công khai hoặc mã iframe từ YouTube, Vimeo, TikTok, Facebook, Instagram, Google Drive; hoặc link MP4/WebM/OGG. Với TikTok, dùng link đầy đủ dạng /@ten/video/ID.')
+      return
+    }
+    insertHtml(videoEmbedHtml(embed))
+    setShowVideo(false)
+    setMessage(`Đã chèn ${embed.title}.`)
   }
 
   function promptHtml() {
@@ -186,9 +197,19 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
       <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/ogg" onChange={handleVideoFile} className="hidden" />
       {message && <p className="px-2 pt-2 text-xs text-sky-700" role="status">{message}</p>}
     </div>
+    {showVideo && <div className="space-y-3 border-b border-sky-200 bg-sky-50 p-4" role="group" aria-label="Nhúng video">
+      <label className="grid gap-2 text-sm font-semibold text-gray-800">URL video hoặc mã iframe
+        <textarea autoFocus rows={3} value={videoInput} onChange={event => setVideoInput(event.target.value)} placeholder="https://vimeo.com/... hoặc <iframe src=...></iframe>" className="w-full rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm" />
+      </label>
+      <p className="text-xs text-gray-600">YouTube, Vimeo, TikTok, Facebook, Instagram, Google Drive hoặc video MP4/WebM/OGG. Video cần cho phép xem công khai và nhúng.</p>
+      {videoError && <p role="alert" className="text-sm text-red-700">{videoError}</p>}
+      <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowVideo(false)} className="rounded-lg border bg-white px-3 py-2 text-sm">Hủy nhúng</button><button type="button" onClick={submitVideo} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">Chèn video</button></div>
+    </div>}
+    {/<iframe\b(?![^>]*\bsrc\s*=)[^>]*>/i.test(value) && <p role="status" className="bg-amber-50 px-4 py-3 text-xs text-amber-900">Video cũ đã mất URL nguồn khi lưu. Hãy xóa khung trống trong Mã nguồn và nhúng lại link video gốc.</p>}
     {sourceMode
       ? <textarea value={value} onChange={event => onChange(event.target.value)} className="min-h-72 w-full resize-y px-4 py-3 font-mono text-xs leading-6 outline-none" aria-label="Mã nguồn HTML" />
-      : <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} onKeyUp={saveSelection} className="prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Nhập nội dung bài viết..." />}
-    <style jsx>{`.prose:empty:before{content:attr(data-placeholder);color:#94a3b8;pointer-events:none}.video-embed{margin:1rem 0;aspect-ratio:16/9}.video-embed iframe,.video-embed video{width:100%;height:100%;border:0;border-radius:.75rem}.video-embed video{background:#000}`}</style>
+      : <div ref={editorRef} contentEditable role="textbox" aria-label="Nội dung bài viết" aria-multiline="true" suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} onKeyUp={saveSelection} onMouseUp={saveSelection} className="managed-rich-content prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Nhập nội dung bài viết..." />}
+    <style>{MANAGED_MEDIA_CSS}</style>
+    <style jsx>{`.prose:empty:before{content:attr(data-placeholder);color:#94a3b8;pointer-events:none}`}</style>
   </div>
 }

@@ -1,5 +1,7 @@
 # Popup runtime regression tests
 
+The harness also asserts absolute managed-post preview metadata; `test-content-media.cjs` separately verifies provider-aware video URL normalization.
+
 Run `node scripts/test-popup-runtime.cjs`. The test transpiles the actual route and
 React sources, compiles the rendered inline script, and executes both against
 JSDOM with mocked navigation, storage failures and deterministic clocks. No

@@ -8,8 +8,10 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
+import { getPostPreviewImageUrl } from '@/lib/post-preview'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
+import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
 
@@ -35,18 +37,32 @@ export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const { slug } = await params
   const post = await findPost(slug)
   if (!post) return { title: 'Không tìm thấy bài viết', robots: { index: false } }
-  const image = post.previewImage || undefined
+  const canonical = publicUrl(post)
+  const description = post.excerpt || post.content.replace(/<[^>]+>/g, '').slice(0, 160)
+  const image = getPostPreviewImageUrl(post)
   return {
-    title: post.title,
-    description: post.excerpt || post.content.replace(/<[^>]+>/g, '').slice(0, 160),
-    alternates: { canonical: publicUrl(post) },
-    openGraph: { title: post.title, description: post.excerpt || undefined, type: 'article', url: publicUrl(post), images: image ? [{ url: image }] : undefined },
+    title: { absolute: post.title },
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: post.title,
+      description,
+      type: 'article',
+      url: canonical,
+      images: image ? [{ url: image, width: 1200, height: 630, alt: post.title }] : undefined,
+    },
+    twitter: {
+      card: image ? 'summary_large_image' : 'summary',
+      title: post.title,
+      description,
+      images: image ? [image] : undefined,
+    },
   }
 }
 
 function RenderContent({ content, format }: { content: string; format: string }) {
   if (format === 'raw-html') return <RawHtml html={content} />
-  if (format === 'rich') return <div className="prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content) }} />
+  if (format === 'rich') return <div className="managed-rich-content prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content) }} />
   const blocks = content.split(/\n\s*\n/).map(block => block.trim()).filter(Boolean)
   return <>{blocks.map((block, index) => block.startsWith('## ')
     ? <h2 key={index} className="pt-4 text-2xl font-bold leading-snug text-gray-950">{block.slice(3)}</h2>
@@ -67,6 +83,7 @@ export default async function ManagedPostPage({ params }: Context) {
   const settings = post.popup?.isActive && normalizedSettings
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
     : normalizedSettings
+  const previewImage = getPostPreviewImageUrl(post) || post.previewImage
 
   return <div className="min-h-screen bg-[#f8fafc] text-gray-900">
     <Navbar />
@@ -75,7 +92,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <article className="rounded-3xl border border-gray-200 bg-white px-5 py-9 shadow-sm sm:px-10 sm:py-12">
         <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-950 sm:text-5xl">{post.title}</h1>
         <div className="mt-5 flex items-center gap-2 text-sm text-gray-500"><CalendarDays className="h-4 w-4" /> {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'long' }).format(post.createdAt)}</div>
-        {post.previewImage && <div className="relative mt-8 overflow-hidden rounded-2xl"><Image src={post.previewImage} alt="" width={1200} height={630} unoptimized className="max-h-96 w-full object-cover" />{post.isFakeVideo && <span className="pointer-events-none absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-red-600/95 text-2xl text-white shadow-xl" aria-label="Video">▶</span>}</div>}
+        {previewImage && <div className="relative mt-8 overflow-hidden rounded-2xl"><Image src={previewImage} alt="" width={1200} height={630} unoptimized className="max-h-96 w-full object-cover" />{post.isFakeVideo && <span className="pointer-events-none absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-red-600/95 text-2xl text-white shadow-xl" aria-label="Video">▶</span>}</div>}
         {post.excerpt && <p className="mt-8 border-l-4 border-sky-500 pl-5 text-lg leading-relaxed text-gray-600">{post.excerpt}</p>}
         {before.map(block => <div key={block.id} className="mt-8 border-y border-gray-100 py-5"><RenderContent content={block.content} format={block.contentFormat} /></div>)}
         <div className="mt-10 space-y-5 border-t border-gray-100 pt-9 text-base leading-8 text-gray-800"><RenderContent content={post.content} format={post.contentFormat} /></div>
@@ -84,6 +101,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <Link href="/" className="mt-8 inline-block text-sm font-medium text-sky-700 hover:underline">Về trang chủ</Link>
     </main>
     <Footer />
+    <style>{MANAGED_MEDIA_CSS}</style>
     {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div>
 }

@@ -11,11 +11,11 @@ avoid Facebook's empty script-created child page when returning from the Shopee 
 the committed TikTok step remains visible in the original popup page. The native
 return path still needs a physical iPhone/Facebook check.
 
-Raw admin source executes script elements after hydration; rich HTML/video embeds are allowlist-sanitized. A post with `isFakeVideo` overlays a play button on its preview image. The primary `/domain/slug` route uses its own server-rendered document and keeps the article hidden until the session completes both clicks.
+Raw admin source executes script elements after hydration; rich HTML/video embeds are allowlist-sanitized. A post with `isFakeVideo` overlays a play button on its preview image. The article and metadata use the same server-generated JPEG preview endpoint, so uploaded, external and data-image sources render consistently while Facebook receives an absolute URL. Metadata resolves stored `/uploads/content/...` paths to absolute public URLs and includes complete Open Graph/Twitter image fields so Facebook can render the same preview image. The primary `/domain/slug` route uses its own server-rendered document and keeps the article hidden until the session completes both clicks.
 
 The DOM is flushed before handing off so iOS does not snapshot the previous popup.
 Missing storage never rewinds in-memory progress. Independent, expiring local/cookie
 fallbacks include completion and share the cookie key with the root route. A
 wall-clock deadline handles countdowns after background suspension.
 
-Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both clicks, tab blocking, refresh and a no-popup post on desktop/mobile.
+Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both clicks, tab blocking, refresh, Facebook crawler metadata and a no-popup post on desktop/mobile.

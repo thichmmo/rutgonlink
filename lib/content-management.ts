@@ -7,6 +7,7 @@ import { isValidIntermediateImage, MAX_INTERMEDIATE_IMAGE_LENGTH } from '@/lib/i
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { getSiteHostname } from '@/lib/site-config'
 import { defaultPopupSettings, normalizePopupSettings, type PopupSettings } from '@/lib/popup-settings'
+import { getAllowedIframeHostnames, normalizeVideoEmbedUrl } from '@/lib/video-embed'
 
 const externalUrl = z.url().max(2048).refine((value) => {
   try {
@@ -124,10 +125,22 @@ export function sanitizeRichHtml(value: string) {
       iframe: ['src', 'title', 'width', 'height', 'allow', 'allowfullscreen', 'loading'],
       video: ['src', 'poster', 'controls', 'width', 'height', 'preload', 'playsinline'],
       source: ['src', 'type'],
+      figure: ['class'],
+      div: ['class'],
+    },
+    allowedClasses: { figure: ['video-embed', 'video-portrait'], div: ['video-embed', 'video-portrait'] },
+    // Repair legacy share-URL iframes before host filtering; never leave an empty frame.
+    transformTags: {
+      iframe: (_tag, attributes) => {
+        const embed = normalizeVideoEmbedUrl(attributes.src || '')
+        if (!embed) return { tagName: 'span', attribs: {} as Record<string, string> }
+        if (embed.kind === 'video') return { tagName: 'video', attribs: { src: embed.url, controls: '', playsinline: '', preload: 'metadata' } as Record<string, string> }
+        return { tagName: 'iframe', attribs: { src: embed.url, title: embed.title, width: embed.portrait ? '360' : '560', height: embed.portrait ? '640' : '315', loading: 'lazy', allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: '' } as Record<string, string> }
+      },
     },
     allowedSchemes: ['http', 'https', 'mailto'],
     allowedSchemesByTag: { img: ['http', 'https', 'data'], iframe: ['https'], video: ['http', 'https', 'data'], source: ['http', 'https', 'data'] },
-    allowedIframeHostnames: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com', 'tiktok.com', 'www.tiktok.com'],
+    allowedIframeHostnames: getAllowedIframeHostnames(),
   })
 }
 

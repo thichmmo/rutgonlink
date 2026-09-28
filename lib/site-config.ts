@@ -44,6 +44,17 @@ export function buildShortUrl(shortCode: string): string {
   return buildSiteUrl(`/${shortCode}`)
 }
 
+/** Resolve stored relative uploads for crawlers that require an absolute image URL. */
+export function buildPublicAssetUrl(value: string | null | undefined, origin = getSiteUrl()): string | null {
+  if (!value || value.startsWith('data:')) return null
+  try {
+    const url = new URL(value, `${origin.replace(/\/$/, '')}/`)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null
+  } catch {
+    return null
+  }
+}
+
 export function getMainAppHostnames(): Set<string> {
   const primaryHostname = getSiteHostname()
   const aliases = (process.env.APP_ALLOWED_HOSTS || '')

@@ -25,7 +25,7 @@ function load(file) {
   } }).outputText
   const localRequire = id => {
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -43,7 +43,7 @@ const product = 'https://www.tiktok.com/view/product/1729605979383696179?checksu
 const shopee = 'https://shopee.vn/product/123/456?affiliate=original'
 const shortTikTok = 'https://vt.tiktok.com/ZS9rPANpNhyeP-JpTZz/'
 const { defaultPopupSettings, getPopupStep, updateTikTokPopupUrl } = load('lib/popup-settings.ts')
-const { normalizeSettings } = load('lib/content-management.ts')
+const { normalizeSettings, sanitizeRichHtml } = load('lib/content-management.ts')
 const prepareSettings = fs.existsSync(path.join(sourceRoot, 'lib/popup-settings-server.ts'))
   ? load('lib/popup-settings-server.ts').preparePopupSettingsForRequest
   : async settings => settings
@@ -341,6 +341,18 @@ async function main() {
       : new Response(null, { status: 200 }), async () => {
       assert.equal(await prepareSettings(settings, facebookIos), settings)
     })
+  })
+  await scenario('managed post metadata and article use an absolute public preview image', async () => {
+    const html = await buildPage({ id: 'post-meta', slug: 'meta', title: 'Preview title', excerpt: 'Preview description', previewImage: '/uploads/content/preview.jpg', isFakeVideo: false, content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: null }, 'custom.example', desktop)
+    assert.match(html, /property="og:image" content="https?:\/\/[^\"]+\/api\/posts\/post-meta\/preview-image\?v=/)
+    assert.match(html, /property="og:type" content="article"/)
+    assert.match(html, /name="twitter:card" content="summary_large_image"/)
+    assert.match(html, /class="preview-image"><img src="https?:\/\/[^\"]+\/api\/posts\/post-meta\/preview-image\?v=/)
+  })
+  await scenario('rich video sanitization repairs supported share URLs', async () => {
+    const html = sanitizeRichHtml('<figure><iframe src="https://www.tiktok.com/@creator/video/1234567890123456789"></iframe><iframe src="https://evil.example/embed/1"></iframe></figure>')
+    assert.match(html, /tiktok\.com\/player\/v1\/1234567890123456789/)
+    assert.doesNotMatch(html, /evil\.example/)
   })
   for (const kind of ['route', 'react']) {
     for (const handle of ['handle', 'null']) await scenario(kind + ' storage-denied ' + handle + ' return', async () => {
