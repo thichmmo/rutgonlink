@@ -382,7 +382,7 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
       const pending = { fromStep, nextStep, leftPage: false };
       pendingOpen = pending;
       opening = true;
-      // Persist before window.open so mobile same-tab navigation resumes at the next popup.
+      // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
       render();
       if (platform.openMode === 'same-tab') {
@@ -396,7 +396,20 @@ function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
         return;
       }
       let tab = null;
-      try { tab = window.open(url, '_blank'); } catch (_) {
+      try {
+        if (platform.openMode === 'anchor-new-tab') {
+          // Use a link action so Facebook/iOS can hand off before creating an empty child webview.
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.target = '_blank';
+          anchor.rel = 'noopener noreferrer';
+          anchor.hidden = true;
+          document.body.appendChild(anchor);
+          try { anchor.click(); } finally { anchor.remove(); }
+        } else {
+          tab = window.open(url, '_blank');
+        }
+      } catch (_) {
         pendingOpen = null;
         opening = false;
         commitStep(fromStep);

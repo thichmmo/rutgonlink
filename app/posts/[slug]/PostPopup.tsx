@@ -160,7 +160,20 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     }
 
     let opened: Window | null = null
-    try { opened = window.open(current.url, '_blank') } catch {
+    try {
+      if (current.openMode === 'anchor-new-tab') {
+        // An attached link gives Facebook/iOS a navigation action, not a script-created blank child.
+        const anchor = document.createElement('a')
+        anchor.href = current.url
+        anchor.target = '_blank'
+        anchor.rel = 'noopener noreferrer'
+        anchor.hidden = true
+        document.body.appendChild(anchor)
+        try { anchor.click() } finally { anchor.remove() }
+      } else {
+        opened = window.open(current.url, '_blank')
+      }
+    } catch {
       pendingOpenRef.current = null
       setOpening(false)
       commitStep(fromStep)
@@ -174,8 +187,8 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       return
     }
 
-    // A blocked popup leaves the page visible; a mobile same-tab handoff fires
-    // pagehide/visibilitychange and keeps the persisted next step instead.
+    // Anchors have no window handle. Retain the same pending guard until the app
+    // round trip or timeout, so a second tap cannot launch TikTok immediately.
     window.setTimeout(() => {
       if (pendingOpenRef.current !== pending || pending.leftPage || document.visibilityState === 'hidden') return
       pendingOpenRef.current = null

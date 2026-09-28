@@ -8,8 +8,13 @@ production requests or affiliate clicks are made.
 Coverage includes DOM progress before navigation, mobile null handles, all-storage
 failure, cookie-only reloads, completed handoffs, expiry, suspended countdowns,
 desktop popup blocking, navigation exceptions, signed OneLinks and iOS field
-preservation. It validates application behavior, not iOS universal-link routing or
-Facebook's native confirmation dialog; those still need an iPhone/Facebook test.
+preservation. The iPhone/Facebook Shopee case also verifies an attached hidden
+`_blank` anchor is present during the click, removed afterward, and rolls back on a
+click exception. Blur/focus-only return must unlock TikTok without a Back action,
+while repeated taps during handoff remain blocked. It validates application behavior, not iOS universal-link routing,
+Facebook's native confirmation dialog, or the physical return page; those still need
+an iPhone/Facebook test.
 
 For a historical baseline, set `POPUP_TEST_ROOT` to a source snapshot and pass
-`--baseline`; this asserts the old storage-denied replay and web TikTok URL.
+`--baseline`; this records the previous iPhone/Facebook Shopee `window.open`
+mode before comparing it with the attached-anchor mode in the modified runtime.

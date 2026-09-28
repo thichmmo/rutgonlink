@@ -94,6 +94,19 @@ async function mount(kind, options = {}) {
       return options.handle === 'null' ? null : { opener: null }
     },
   }
+  dom.window.HTMLAnchorElement.prototype.click = function clickAnchor() {
+    calls.push({
+      mode: 'anchor-new-tab',
+      url: this.href,
+      target: this.target,
+      rel: this.rel,
+      hidden: this.hidden,
+      attached: this.isConnected,
+      state: state(),
+      session: [...storage.session],
+    })
+    if (options.anchorThrows) throw new Error('Navigation failed')
+  }
   const win = new Proxy(dom.window, { get(target, prop) { return prop in overrides ? overrides[prop] : Reflect.get(target, prop) } })
   const realNow = Date.now
   Date.now = () => now
@@ -145,6 +158,7 @@ async function mount(kind, options = {}) {
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
+    async blur() { await fire(win, 'blur') },
     async focus() { await fire(win, 'focus') },
     async close() { if (root) await React.act(async () => root.unmount()); dom.window.close(); Date.now = realNow; delete global.window; delete global.document; delete global.HTMLElement },
   }
@@ -164,14 +178,16 @@ async function using(kind, options, fn) {
 async function main() {
   if (baseline) {
     for (const kind of ['route', 'react']) {
-      await using(kind, { session: false, local: false, cookies: false }, async h => {
-        await h.click(); await h.away(); await h.back()
-        assert.equal(h.state(), 'Shopee')
-        console.log('BASELINE ' + kind + ' storage-denied-return=Shopee (bug reproduced)')
+      await using(kind, { handle: 'null' }, async h => {
+        await h.click()
+        assert.equal(h.calls[0].mode, 'new-tab')
+        assert.equal(h.calls[0].target, '_blank')
+        assert.equal(h.calls[0].state, 'TikTok')
+        console.log('BASELINE ' + kind + ' shopee-open-mode=new-tab')
       })
     }
-    assert.equal(getPopupStep(defaultPopupSettings(shopee, product), 1, facebookIos).url, product)
-    console.log('BASELINE tiktok=product-web-url')
+    assert.equal(getPopupStep(defaultPopupSettings(shopee, product), 0, facebookIos).openMode, 'new-tab')
+    console.log('BASELINE shopee-open-mode=new-tab')
     return
   }
 
@@ -205,6 +221,7 @@ async function main() {
         await h.click()
         assert.equal(h.calls[0].state, 'TikTok', 'DOM advances before external navigation')
         assert.equal(h.calls[0].url, shopee)
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
         await h.away(); await h.back(); await h.focus(); await h.tick(1000)
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.button().disabled, false)
@@ -217,7 +234,7 @@ async function main() {
       })
     })
     await scenario(kind + ' mobile null handle without lifecycle events', async () => {
-      await using(kind, { handle: 'null', session: false, local: false, cookies: false }, async h => {
+      for (const ua of [facebookIos, safariIos, android]) await using(kind, { ua, handle: 'null', session: false, local: false, cookies: false }, async h => {
         await h.click(); await h.tick(1000); await h.focus()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.button().disabled, false)
@@ -232,7 +249,7 @@ async function main() {
     await scenario(kind + ' supplied OneLink and inactive popup', async () => {
       const oneLink = helper.buildTikTokOneLinkUrl(product)
       await using(kind, { iosUrl: oneLink }, async h => {
-        await h.click(); await h.click()
+        await h.click(); await h.tick(1000); await h.click()
         assert.equal(h.calls[1].url, oneLink)
         assert.equal(h.calls[1].mode, 'same-tab')
       })
@@ -250,7 +267,7 @@ async function main() {
     })
     await scenario(kind + ' completed local handoff reload', async () => {
       const local = await using(kind, { session: false, cookies: false }, async h => {
-        await h.click(); await h.click(); return [...h.storage.local]
+        await h.click(); await h.tick(1000); await h.click(); return [...h.storage.local]
       })
       await using(kind, { session: false, cookies: false, local }, async h => assert.equal(h.state(), 'ARTICLE'))
     })
@@ -261,7 +278,7 @@ async function main() {
       await using(kind, { ua: desktop, handle: 'throw', session: [['post-popup:post1:2026-09-27T00:00:00.000Z', '1']] }, async h => {
         assert.equal(h.state(), 'TikTok'); await h.click(); assert.equal(h.state(), 'TikTok')
       })
-      await using(kind, { handle: 'throw' }, async h => { await h.click(); assert.equal(h.state(), 'Shopee') })
+      await using(kind, { ua: desktop, handle: 'throw' }, async h => { await h.click(); assert.equal(h.state(), 'Shopee') })
     })
     await scenario(kind + ' countdown survives background suspension', async () => {
       await using(kind, { handle: 'null', firstDelay: 1, secondDelay: 10 }, async h => {
@@ -278,9 +295,47 @@ async function main() {
         assert.equal(h.state(), 'ARTICLE')
       })
     })
+    await scenario(kind + ' Facebook iPhone Shopee uses an attached link', async () => {
+      await using(kind, { handle: 'throw' }, async h => {
+        await h.click()
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.calls[0].target, '_blank')
+        assert.equal(h.calls[0].rel, 'noopener noreferrer')
+        assert.equal(h.calls[0].hidden, true)
+        assert.equal(h.calls[0].attached, true)
+        assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
+        assert.equal(h.state(), 'TikTok')
+      })
+    })
+    await scenario(kind + ' attached link exception restores Shopee', async () => {
+      await using(kind, { anchorThrows: true }, async h => {
+        await h.click()
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.state(), 'Shopee')
+        assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
+        assert.equal(h.storage.session.get('post-popup:post1:2026-09-27T00:00:00.000Z'), '0')
+        assert.equal(h.storage.local.size, 0)
+        assert.equal(h.cookie(), '')
+        assert.equal(h.button().disabled, false)
+      })
+    })
+    await scenario(kind + ' Shopee blur-focus return keeps TikTok ready', async () => {
+      await using(kind, { handle: 'throw', session: false, local: false, cookies: false }, async h => {
+        await h.click(); await h.click()
+        assert.equal(h.calls.length, 1, 'A pending handoff ignores a second tap')
+        // Facebook can emit blur/focus without changing document visibility.
+        await h.blur(); await h.focus()
+        assert.equal(h.doc.visibilityState, 'visible')
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.button().disabled, false)
+        await h.click()
+        assert.deepEqual(h.calls.map(call => call.mode), ['anchor-new-tab', 'same-tab'])
+        assert.equal(h.calls[1].state, 'ARTICLE')
+      })
+    })
     await scenario(kind + ' same-tab exception restores the second popup', async () => {
       await using(kind, { replaceThrows: true }, async h => {
-        await h.click(); await h.click(); assert.equal(h.state(), 'TikTok')
+        await h.click(); await h.tick(1000); await h.click(); assert.equal(h.state(), 'TikTok')
       })
     })
   }

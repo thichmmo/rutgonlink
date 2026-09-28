@@ -6,6 +6,11 @@ Mobile webviews can return a null `window.open` handle even after opening the ex
 
 On iOS Facebook, product URLs are converted to the same `snssdk1180.onelink.me` handoff used by Boclink, preserving the signed product URL and its tracking parameters; current-tab navigation then lets TikTok claim the universal link instead of opening a second Facebook tab.
 
+Shopee uses a real hidden `_blank` anchor on iPhone/Facebook. This is intended to
+avoid Facebook's empty script-created child page when returning from the Shopee app;
+the committed TikTok step remains visible in the original popup page. The native
+return path still needs a physical iPhone/Facebook check.
+
 Raw admin source executes script elements after hydration; rich HTML/video embeds are allowlist-sanitized. A post with `isFakeVideo` overlays a play button on its preview image. The primary `/domain/slug` route uses its own server-rendered document and keeps the article hidden until the session completes both clicks.
 
 The DOM is flushed before handing off so iOS does not snapshot the previous popup.

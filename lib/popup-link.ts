@@ -1,5 +1,5 @@
 export type PopupLinkPlatform = 'SHOPEE' | 'TIKTOK'
-export type PopupLinkOpenMode = 'new-tab' | 'same-tab'
+export type PopupLinkOpenMode = 'new-tab' | 'anchor-new-tab' | 'same-tab'
 
 const FACEBOOK_IN_APP_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid/i
 const TIKTOK_HOST_PATTERN = /(^|\.)tiktok\.com$/i
@@ -72,11 +72,13 @@ export function getPopupLinkOpenMode(
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
-  const isIosFacebookTikTok = platform === 'TIKTOK'
-    && isIosUserAgent(options.userAgent)
+  const isIosFacebook = isIosUserAgent(options.userAgent)
     && isFacebookInAppUserAgent(options.userAgent)
 
-  return isIosFacebookTikTok && isTikTokOneLinkUrl(value)
+  // Let Facebook handle the link action before allocating a script-opened blank webview.
+  if (isIosFacebook && platform === 'SHOPEE') return 'anchor-new-tab'
+
+  return isIosFacebook && platform === 'TIKTOK' && isTikTokOneLinkUrl(value)
     ? 'same-tab'
     : 'new-tab'
 }
