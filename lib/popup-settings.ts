@@ -115,7 +115,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
-      openMode: 'new-tab' as const,
+      openMode: getPopupLinkOpenMode(settings.shopee.url, 'SHOPEE', { userAgent }),
       imageUrl: settings.shopee.imageUrl,
       delaySeconds: settings.shopee.delaySeconds,
       forceBrowser,
