@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
 import { getPopupStep, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 
@@ -17,7 +18,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const isMobile = /android|iphone|ipad|ipod/i.test(userAgent)
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
-  const cookieKey = `post_popup_${postId}_${popup.updatedAt}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+  const cookieKey = `post_popup_${postId}_${new Date(popup.updatedAt).getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   const handoffTtlMs = 30 * 60 * 1000
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
@@ -31,9 +32,10 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const readStoredStep = useCallback(() => {
     const values: number[] = []
     const addValue = (value: string | null | undefined, source: 'session' | 'local' | 'cookie') => {
-      const raw = source === 'local' ? value?.split('|')[0] : value
-      const expiry = source === 'local' ? Number(value?.split('|')[1] || 0) : 0
-      if (source === 'local' && (!expiry || expiry < Date.now())) return
+      if (!value) return
+      const raw = source === 'session' ? value : value.split('|')[0]
+      const expiry = source === 'session' ? 0 : Number(value.split('|')[1] || 0)
+      if (source !== 'session' && (!expiry || expiry <= Date.now())) return
       const parsed = Number(raw || '')
       if (Number.isInteger(parsed) && parsed >= 0 && parsed <= steps.length) values.push(parsed)
     }
@@ -44,28 +46,28 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       addValue(window.localStorage.getItem(storageKey), 'local')
     } catch { /* Local storage is only a handoff fallback. */ }
     try {
-      const cookie = window.document.cookie.split('; ').find(value => value.startsWith(`${cookieKey}=`))
+      const cookie = window.document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(`${cookieKey}=`))
       addValue(cookie?.slice(cookieKey.length + 1), 'cookie')
     } catch { /* Cookie access can be disabled in private webviews. */ }
     return values.length ? Math.max(...values) : 0
   }, [cookieKey, storageKey, steps.length])
 
-  const commitStep = useCallback((nextStep: number, resetDelay = true) => {
+  const commitStep = useCallback((nextStep: number) => {
     const boundedStep = Math.max(0, Math.min(steps.length, nextStep))
     stepRef.current = boundedStep
-    if (resetDelay) readyAtRef.current = Date.now() + (steps[boundedStep]?.delaySeconds || 0) * 1000
+    readyAtRef.current = Date.now() + (steps[boundedStep]?.delaySeconds || 0) * 1000
     setStep(boundedStep)
     setRemaining(steps[boundedStep]?.delaySeconds || 0)
     try { window.sessionStorage.setItem(storageKey, String(boundedStep)) } catch { /* Continue in memory if storage is unavailable. */ }
+    const handoff = `${boundedStep}|${Date.now() + handoffTtlMs}`
+    // A failed local-storage write must not prevent the cookie fallback from running.
     try {
-      if (boundedStep > 0 && boundedStep < steps.length) {
-        window.localStorage.setItem(storageKey, `${boundedStep}|${Date.now() + handoffTtlMs}`)
-        window.document.cookie = `${cookieKey}=${boundedStep}; Path=/; SameSite=Lax`
-      } else {
-        window.localStorage.removeItem(storageKey)
-        window.document.cookie = `${cookieKey}=; Max-Age=0; Path=/; SameSite=Lax`
-      }
+      if (boundedStep > 0) window.localStorage.setItem(storageKey, handoff)
+      else window.localStorage.removeItem(storageKey)
     } catch { /* Fallback storage is best-effort for restricted webviews. */ }
+    try {
+      window.document.cookie = `${cookieKey}=${boundedStep > 0 ? handoff : ''}; Max-Age=${boundedStep > 0 ? handoffTtlMs / 1000 : 0}; Path=/; SameSite=Lax`
+    } catch { /* Retain in-memory progress even when both fallbacks are disabled. */ }
   }, [cookieKey, handoffTtlMs, steps, storageKey])
 
   useEffect(() => {
@@ -88,12 +90,14 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       if (document.visibilityState !== 'visible') return
 
       const stored = readStoredStep()
-      if (stored !== stepRef.current) commitStep(stored)
+      // Missing/expired storage must never rewind progress already committed in this document.
+      if (stored > stepRef.current) commitStep(stored)
       if (pending?.leftPage) {
         pendingOpenRef.current = null
         setOpening(false)
         setError('')
       }
+      setRemaining(Math.max(0, Math.ceil((readyAtRef.current - Date.now()) / 1000)))
     }
 
     const markPageHidden = () => {
@@ -117,15 +121,14 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
 
   useEffect(() => {
     if (!ready || step >= steps.length) return
-    const delay = Math.max(0, steps[step]?.delaySeconds || 0)
-    const startTimer = window.setTimeout(() => setRemaining(delay), 0)
-    if (!delay) return () => window.clearTimeout(startTimer)
-    const timer = window.setInterval(() => setRemaining(value => Math.max(0, value - 1)), 1000)
-    return () => { window.clearTimeout(startTimer); window.clearInterval(timer) }
+    // Timers pause in backgrounded iOS webviews; derive the countdown from its deadline.
+    const update = () => setRemaining(Math.max(0, Math.ceil((readyAtRef.current - Date.now()) / 1000)))
+    const timer = window.setInterval(update, 250)
+    return () => window.clearInterval(timer)
   }, [ready, step, steps])
 
   function advance() {
-    if (!ready || opening || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
+    if (!ready || pendingOpenRef.current || step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
     const fromStep = stepRef.current
     const current = steps[fromStep]
     if (!current?.url) {
@@ -136,14 +139,34 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     const nextStep = fromStep + 1
     const pending = { fromStep, nextStep, leftPage: false }
     pendingOpenRef.current = pending
-    setOpening(true)
-    // Persist before opening: mobile browsers may navigate this tab instead of
-    // returning a WindowProxy, so the next popup must survive the round trip.
-    commitStep(nextStep)
-    setError('')
+    // Commit the DOM before iOS snapshots/suspends this page, without losing the click gesture.
+    flushSync(() => {
+      setOpening(true)
+      commitStep(nextStep)
+      setError('')
+    })
+
+    if (current.openMode === 'same-tab') {
+      // Use the OneLink handoff in the originating Facebook tab, as in the reference flow.
+      try {
+        window.location.replace(current.url)
+      } catch {
+        pendingOpenRef.current = null
+        setOpening(false)
+        commitStep(fromStep)
+        setError('Không thể mở liên kết, hãy thử lại.')
+      }
+      return
+    }
 
     let opened: Window | null = null
-    try { opened = window.open(current.url, '_blank') } catch { opened = null }
+    try { opened = window.open(current.url, '_blank') } catch {
+      pendingOpenRef.current = null
+      setOpening(false)
+      commitStep(fromStep)
+      setError('Không thể mở liên kết, hãy thử lại.')
+      return
+    }
     if (opened) {
       pendingOpenRef.current = null
       setOpening(false)
