@@ -27,6 +27,7 @@ export type PopupSettings = {
 // render the same compact Boclink-style popup without requiring an upload.
 export const DEFAULT_SHOPEE_IMAGE_URL = 'https://pub-efb18fd93e8d4d56a30635057bd6f5c4.r2.dev/defaults/shopee-default.webp'
 export const DEFAULT_TIKTOK_IMAGE_URL = 'https://pub-efb18fd93e8d4d56a30635057bd6f5c4.r2.dev/defaults/tiktok-default.webp'
+export const DEVTOOLS_REDIRECT_URL = 'https://mesale.vn'
 
 export const defaultPopupSettings = (firstUrl = '', secondUrl = ''): PopupSettings => ({
   shopee: {
@@ -100,7 +101,13 @@ export function isAndroidUserAgent(userAgent: string) {
   return /android/i.test(userAgent)
 }
 
+export function isMobileUserAgent(userAgent: string) {
+  return isIosUserAgent(userAgent) || isAndroidUserAgent(userAgent)
+}
+
 export function popupAppliesToDevice(settings: PopupSettings, userAgent: string) {
+  // Boclink only gates mobile traffic; desktop visitors read the article directly.
+  if (!isMobileUserAgent(userAgent)) return false
   const platforms = [settings.shopee, settings.tiktok]
   return platforms.every(platform => platform.enabled && (
     isIosUserAgent(userAgent) ? platform.iosEnabled :

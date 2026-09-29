@@ -1,6 +1,6 @@
 # Public managed post
 
-Published posts render at `/posts/{slug}`. Their text is escaped by React; a selected popup covers the article with a compact white-card creative until two separate user clicks open Shopee then TikTok. The next step is persisted before navigation; session storage is preferred, with short-lived local-storage/cookie handoff fallback for mobile webviews that reopen the article in a fresh tab. `visibilitychange`/`pagehide`/`pageshow` resume that step when a mobile browser navigates the current tab or returns from the external app. A blocked desktop tab does not advance, and the second step updates in place without a reload. Completion follows the configured cooldown: zero clears the completion marker for the next load, while an unfinished Shopee handoff keeps its short resume window.
+Published posts render at `/posts/{slug}`. Their text is escaped by React; a selected popup covers the article with a compact white-card creative until two separate user clicks open Shopee then TikTok. Popups are mobile-only (iPhone/iPad/iPod/Android); desktop visitors see the article immediately. The next step is persisted before navigation; session storage is preferred, with short-lived local-storage/cookie handoff fallback for mobile webviews that reopen the article in a fresh tab. `visibilitychange`/`pagehide`/`pageshow` resume that step when a mobile browser navigates the current tab or returns from the external app. A blocked desktop tab does not advance, and the second step updates in place without a reload. Completion follows the configured cooldown: zero clears the completion marker for the next load, while an unfinished Shopee handoff keeps its short resume window.
 
 Mobile webviews can return a null `window.open` handle even after opening the external tab. Blur/focus lifecycle signals now preserve the committed next step, and the mobile timeout no longer rolls back to Shopee in that case.
 
@@ -19,9 +19,12 @@ fallbacks include completion and share the cookie key with the root route. A
 wall-clock deadline handles countdowns after background suspension, and reading
 storage on reload never extends the completion expiry.
 
+Desktop pages install a small F12/DevTools guard; opening DevTools redirects to
+`https://mesale.vn`, while mobile UAs and the destination host are ignored.
+
 All storage sources validate absolute expiry, including session storage. Completion
 records carry the configured duration; old permanent/fixed-30m records are ignored.
 Zero cooldown clears persisted completion but keeps the current document unlocked
 on app return. Test 0, 1, 5 and 60 minutes plus cookie-only reload before/at expiry.
 
-Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both clicks, tab blocking, refresh, Facebook crawler metadata and a no-popup post on desktop/mobile.
+Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both mobile clicks, desktop article rendering, F12/DevTools redirect, tab blocking, refresh, Facebook crawler metadata and a no-popup post on desktop/mobile.

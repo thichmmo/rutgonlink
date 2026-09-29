@@ -43,13 +43,14 @@ const desktop = 'Mozilla/5.0 (Windows NT 10.0) Chrome/140'
 const product = 'https://www.tiktok.com/view/product/1729605979383696179?checksum=keep%2Fraw&encode_params=A+B%3D%3D&trackParams=%7B%22affiliate%22%3A%22original%22%7D'
 const shopee = 'https://shopee.vn/product/123/456?affiliate=original'
 const shortTikTok = 'https://vt.tiktok.com/ZS9rPANpNhyeP-JpTZz/'
-const { defaultPopupSettings, getPopupStep, updateTikTokPopupUrl } = load('lib/popup-settings.ts')
+const { defaultPopupSettings, getPopupStep, popupAppliesToDevice, updateTikTokPopupUrl } = load('lib/popup-settings.ts')
 const { normalizeSettings, sanitizeRichHtml } = load('lib/content-management.ts')
 const prepareSettings = fs.existsSync(path.join(sourceRoot, 'lib/popup-settings-server.ts'))
   ? load('lib/popup-settings-server.ts').preparePopupSettingsForRequest
   : async settings => settings
 const buildPage = load('app/[shortCode]/route.ts').buildManagedPostPage
 const PostPopup = load('app/posts/[slug]/PostPopup.tsx').default
+const DesktopDevToolsGuard = load('app/posts/[slug]/DesktopDevToolsGuard.tsx').default
 global.IS_REACT_ACT_ENVIRONMENT = true
 
 async function mount(kind, options = {}) {
@@ -99,8 +100,12 @@ async function mount(kind, options = {}) {
     sessionStorage: storageApi('session'), localStorage: storageApi('local'),
     setTimeout: (fn, ms) => schedule(fn, ms || 0, 0), clearTimeout: id => timers.delete(id),
     setInterval: (fn, ms) => schedule(fn, ms, ms), clearInterval: id => timers.delete(id),
-    location: { replace(url) {
-      calls.push({ mode: 'same-tab', url, state: state(), session: [...storage.session] })
+    innerWidth: options.innerWidth ?? 1024,
+    outerWidth: options.outerWidth ?? 1024,
+    innerHeight: options.innerHeight ?? 768,
+    outerHeight: options.outerHeight ?? 768,
+    location: { hostname: options.hostname || 'fixture.example', replace(url) {
+      calls.push({ mode: url === 'https://mesale.vn' ? 'devtools-redirect' : 'same-tab', url, state: state(), session: [...storage.session] })
       if (options.replaceThrows) throw new Error('Navigation failed')
     } },
     open(url, target) {
@@ -156,15 +161,18 @@ async function mount(kind, options = {}) {
   if (kind === 'route') {
     const html = await buildPage({ id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain',
       user: { managedContentBlocks: [] }, popup: { ...popup, updatedAt: new Date(popup.updatedAt) } }, 'fixture.example', ua)
-    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
-    if (script) {
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1])
+    for (const script of scripts) {
       new vm.Script(script).runInNewContext({ window: win, document: doc, navigator: { userAgent: ua },
         sessionStorage: overrides.sessionStorage, localStorage: overrides.localStorage, Date, URL })
     }
   } else {
     if (popup.isActive) popup.settings = await prepareSettings(settings, ua)
     root = createRoot(doc.querySelector('#root'))
-    await React.act(async () => root.render(React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua })))
+    await React.act(async () => root.render(React.createElement(React.Fragment, null,
+      React.createElement(DesktopDevToolsGuard, { userAgent: ua }),
+      React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua }),
+    )))
     await tick()
   }
   const button = () => doc.querySelector(kind === 'route' ? '.managed-popup-open' : '[role="dialog"] button')
@@ -174,6 +182,7 @@ async function mount(kind, options = {}) {
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
+    async keydown(key) { await React.act(async () => win.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true }))) },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
     async blur() { await fire(win, 'blur') },
@@ -371,6 +380,13 @@ async function main() {
       assert.equal(await prepareSettings(settings, facebookIos), settings)
     })
   })
+  await scenario('popup applies only to mobile user agents', async () => {
+    const settings = defaultPopupSettings(shopee, product)
+    assert.equal(popupAppliesToDevice(settings, facebookIos), true)
+    assert.equal(popupAppliesToDevice(settings, android), true)
+    assert.equal(popupAppliesToDevice(settings, desktop), false)
+    assert.equal(popupAppliesToDevice(settings, ''), false)
+  })
   await scenario('managed post metadata uses a social image without inserting it into the article', async () => {
     const html = await buildPage({ id: 'post-meta', slug: 'meta', title: 'Preview title', excerpt: 'Preview description', previewImage: '/uploads/content/preview.jpg', isFakeVideo: false, content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: null }, 'custom.example', desktop)
     assert.match(html, /property="og:image" content="https?:\/\/[^\"]+\/api\/posts\/post-meta\/preview-image\?v=/)
@@ -557,14 +573,31 @@ async function main() {
       })
       await using(kind, { session: false, cookies: false, local }, async h => assert.equal(h.state(), 'ARTICLE'))
     })
-    await scenario(kind + ' desktop blocked popup and second-step throw', async () => {
+    await scenario(kind + ' desktop renders article without popup', async () => {
       await using(kind, { ua: desktop, handle: 'null' }, async h => {
-        await h.click(); await h.focus(); await h.tick(1000); assert.equal(h.state(), 'Shopee')
+        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(h.button(), null)
+        assert.equal(h.calls.length, 0)
       })
-      await using(kind, { ua: desktop, handle: 'throw', session: [['post-popup:post1:2026-09-27T00:00:00.000Z', '1']] }, async h => {
-        assert.equal(h.state(), 'TikTok'); await h.click(); assert.equal(h.state(), 'TikTok')
+    })
+    await scenario(kind + ' desktop F12 redirects to mesale', async () => {
+      await using(kind, { ua: desktop }, async h => {
+        await h.keydown('F12')
+        assert.equal(h.calls[0].mode, 'devtools-redirect')
+        assert.equal(h.calls[0].url, 'https://mesale.vn')
       })
-      await using(kind, { ua: desktop, handle: 'throw' }, async h => { await h.click(); assert.equal(h.state(), 'Shopee') })
+    })
+    await scenario(kind + ' desktop resize does not false-positive redirect', async () => {
+      await using(kind, { ua: desktop, outerWidth: 1280, innerWidth: 900 }, async h => {
+        assert.equal(h.calls.length, 0)
+        assert.equal(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' mobile ignores DevTools dimensions', async () => {
+      for (const ua of [facebookIos, android]) await using(kind, { ua, outerWidth: 1280, innerWidth: 900 }, async h => {
+        assert.equal(h.calls.filter(call => call.url === 'https://mesale.vn').length, 0)
+        assert.notEqual(h.state(), 'ARTICLE')
+      })
     })
     await scenario(kind + ' countdown survives background suspension', async () => {
       await using(kind, { handle: 'null', firstDelay: 1, secondDelay: 10 }, async h => {
@@ -574,11 +607,15 @@ async function main() {
         await h.focus(); assert.equal(h.button().disabled, false)
       })
     })
-    await scenario(kind + ' Safari Android desktop navigation unchanged', async () => {
-      for (const ua of [safariIos, android, desktop]) await using(kind, { ua }, async h => {
+    await scenario(kind + ' Safari and Android navigation unchanged', async () => {
+      for (const ua of [safariIos, android]) await using(kind, { ua }, async h => {
         await h.click(); await h.click()
         assert.deepEqual(h.calls.map(call => [call.mode, call.url]), [['new-tab', shopee], ['new-tab', product]])
         assert.equal(h.state(), 'ARTICLE')
+      })
+      await using(kind, { ua: desktop }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(h.calls.length, 0)
       })
     })
     await scenario(kind + ' Facebook iPhone Shopee uses an attached link', async () => {

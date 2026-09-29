@@ -11,6 +11,7 @@ import { getPostPreviewImageUrl } from '@/lib/post-preview'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
+import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
 
@@ -99,6 +100,7 @@ export default async function ManagedPostPage({ params }: Context) {
     </main>
     <Footer />
     <style>{MANAGED_MEDIA_CSS}</style>
+    <DesktopDevToolsGuard userAgent={userAgent} />
     {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div>
 }

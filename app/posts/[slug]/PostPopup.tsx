@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
-import { getPopupStep, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
+import { getPopupStep, isMobileUserAgent, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 
 type Popup = {
   imageUrl: string | null
@@ -16,7 +16,8 @@ type Popup = {
 
 export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
-  const isMobile = /android|iphone|ipad|ipod/i.test(userAgent)
+  const isMobile = isMobileUserAgent(userAgent)
+  const applies = popup.isActive && popupAppliesToDevice(popup.settings, userAgent)
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const cookieKey = `post_popup_${postId}_${new Date(popup.updatedAt).getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   // An unfinished app round trip needs resume time even when repeat cooldown is zero.
@@ -91,15 +92,17 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   }, [cooldownMs, cookieKey, handoffTtlMs, steps, storageKey])
 
   useEffect(() => {
+    // Desktop/inactive views must not read or migrate mobile handoff storage.
+    if (!applies) return
     const timer = window.setTimeout(() => {
       commitStep(readStoredStep(), false)
       setReady(true)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [commitStep, readStoredStep])
+  }, [applies, commitStep, readStoredStep])
 
   useEffect(() => {
-    if (!ready) return
+    if (!applies || !ready) return
 
     const syncAfterReturn = () => {
       const pending = pendingOpenRef.current
@@ -137,18 +140,18 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       window.removeEventListener('blur', markPageHidden)
       window.removeEventListener('focus', markPageVisible)
     }
-  }, [commitStep, readStoredStep, ready])
+  }, [applies, commitStep, readStoredStep, ready])
 
   useEffect(() => {
-    if (!ready || step >= steps.length) return
+    if (!applies || !ready || step >= steps.length) return
     // Timers pause in backgrounded iOS webviews; derive the countdown from its deadline.
     const update = () => setRemaining(Math.max(0, Math.ceil((readyAtRef.current - Date.now()) / 1000)))
     const timer = window.setInterval(update, 250)
     return () => window.clearInterval(timer)
-  }, [ready, step, steps])
+  }, [applies, ready, step, steps])
 
   function advance() {
-    if (!ready || pendingOpenRef.current || step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
+    if (!applies || !ready || pendingOpenRef.current || step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
     const fromStep = stepRef.current
     const current = steps[fromStep]
     if (!current?.url) {
@@ -221,7 +224,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     }, 900)
   }
 
-  if (!popup.isActive || !popupAppliesToDevice(popup.settings, userAgent) || step >= steps.length) return null
+  if (!applies || step >= steps.length) return null
   if (!ready) return <div className="fixed inset-0 z-[100] bg-black" aria-label="Đang tải màn hình trung gian" />
 
   const current = steps[step]

@@ -9,7 +9,7 @@ import { getSiteUrl, isMainAppHostname } from '@/lib/site-config'
 import { isValidIntermediateImage } from '@/lib/intermediate-image'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
-import { getPopupStep, popupAppliesToDevice } from '@/lib/popup-settings'
+import { DEVTOOLS_REDIRECT_URL, getPopupStep, popupAppliesToDevice } from '@/lib/popup-settings'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
 import { getPostPreviewImageUrl } from '@/lib/post-preview'
@@ -293,6 +293,33 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
   const safeDescription = escapeHtml(post.excerpt || plainText).replace(/\r?\n/g, ' ')
   const canonical = `https://${hostname}/${encodeURIComponent(post.slug)}`
+  // Do not infer DevTools from viewport sizes: desktop zoom/sidebars cause false positives.
+  const desktopDevToolsGuard = `<script>
+(() => {
+  const ua = navigator.userAgent || '';
+  if (/android|iphone|ipad|ipod/i.test(ua)) return;
+  const host = window.location.hostname || '';
+  if (/^(?:www\\.)?mesale\\.vn$/i.test(host)) return;
+  const target = ${escapeInlineJson(DEVTOOLS_REDIRECT_URL)};
+  let redirected = false;
+  const redirect = () => {
+    if (redirected) return;
+    redirected = true;
+    window.location.replace(target);
+  };
+  window.addEventListener('keydown', (event) => {
+    const key = event.key.toLowerCase();
+    const devToolsShortcut = ['i', 'j', 'c'].includes(key) && (
+      (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey)
+      || (event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey)
+    );
+    if (key === 'f12' || event.code === 'F12' || event.keyCode === 123 || devToolsShortcut) {
+      event.preventDefault();
+      redirect();
+    }
+  }, true);
+})();
+</script>`
   const popupScript = popup && popup.applies ? `<script>
 (() => {
   const popup = ${popupJson};
@@ -467,7 +494,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
 })();
 </script>` : ''
   const socialImage = absoluteImage ? `<meta property="og:image" content="${escapeHtml(absoluteImage)}"><meta property="og:image:secure_url" content="${escapeHtml(absoluteImage)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${safeTitle}">` : ''
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}<style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-open{width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;margin-top:18px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}${MANAGED_MEDIA_CSS}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><main class="wrap"><article class="card managed-rich-content"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content managed-rich-content">${content}</div>${after}</article></main>${popupScript}</body></html>`
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}<style>*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-open{width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;margin-top:18px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}${MANAGED_MEDIA_CSS}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><main class="wrap"><article class="card managed-rich-content"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content managed-rich-content">${content}</div>${after}</article></main>${desktopDevToolsGuard}${popupScript}</body></html>`
 }
 
 export async function GET(
