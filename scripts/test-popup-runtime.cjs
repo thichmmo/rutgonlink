@@ -13,6 +13,8 @@ const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
 const baseline = process.argv.includes('--baseline')
 const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
 const cooldownBaseline = process.argv.includes('--cooldown-baseline')
+const deviceBaseline = process.argv.includes('--device-baseline')
+const deviceCheck = process.argv.includes('--device-check')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -50,7 +52,9 @@ const prepareSettings = fs.existsSync(path.join(sourceRoot, 'lib/popup-settings-
   : async settings => settings
 const buildPage = load('app/[shortCode]/route.ts').buildManagedPostPage
 const PostPopup = load('app/posts/[slug]/PostPopup.tsx').default
-const DesktopDevToolsGuard = load('app/posts/[slug]/DesktopDevToolsGuard.tsx').default
+const DesktopDevToolsGuard = fs.existsSync(path.join(sourceRoot, 'app/posts/[slug]/DesktopDevToolsGuard.tsx'))
+  ? load('app/posts/[slug]/DesktopDevToolsGuard.tsx').default
+  : () => null
 global.IS_REACT_ACT_ENVIRONMENT = true
 
 async function mount(kind, options = {}) {
@@ -64,6 +68,7 @@ async function mount(kind, options = {}) {
   const timers = new Map()
   const calls = []
   const storage = { session: new Map(options.session || []), local: new Map(options.local || []) }
+  const storageReads = []
   const cookieJar = new Map(String(options.cookie || '').split(';').map(value => value.trim()).filter(Boolean).map(value => {
     const index = value.indexOf('=')
     return [value.slice(0, index), { value: value.slice(index + 1), expires: Infinity }]
@@ -75,7 +80,7 @@ async function mount(kind, options = {}) {
     return !overlay ? 'ARTICLE' : overlay.textContent.includes('TikTok') ? 'TikTok' : 'Shopee'
   }
   const storageApi = name => ({
-    getItem(key) { if (options[name] === false) throw new Error('Storage denied'); return storage[name].get(key) ?? null },
+    getItem(key) { storageReads.push([name, key]); if (options[name] === false) throw new Error('Storage denied'); return storage[name].get(key) ?? null },
     setItem(key, value) { if (options[name] === false) throw new Error('Storage denied'); storage[name].set(key, value) },
     removeItem(key) { if (options[name] === false) throw new Error('Storage denied'); storage[name].delete(key) },
   })
@@ -139,7 +144,7 @@ async function mount(kind, options = {}) {
   settings.tiktok.delaySeconds = options.secondDelay || 0
   if (options.iosUrl) settings.tiktok.iosUrl = options.iosUrl
   const popup = { isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: product, settings }
-  const ua = options.ua || facebookIos
+  const ua = options.ua ?? facebookIos
   let root
   async function tick(ms = 0) {
     await React.act(async () => {
@@ -160,7 +165,8 @@ async function mount(kind, options = {}) {
   }
   if (kind === 'route') {
     const html = await buildPage({ id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain',
-      user: { managedContentBlocks: [] }, popup: { ...popup, updatedAt: new Date(popup.updatedAt) } }, 'fixture.example', ua)
+      user: { managedContentBlocks: [] }, popup: options.noPopup ? null : { ...popup, updatedAt: new Date(popup.updatedAt) } }, 'fixture.example', ua)
+    doc.body.className = /<body class="([^"]*)"/.exec(html)?.[1] || ''
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1])
     for (const script of scripts) {
       new vm.Script(script).runInNewContext({ window: win, document: doc, navigator: { userAgent: ua },
@@ -171,21 +177,25 @@ async function mount(kind, options = {}) {
     root = createRoot(doc.querySelector('#root'))
     await React.act(async () => root.render(React.createElement(React.Fragment, null,
       React.createElement(DesktopDevToolsGuard, { userAgent: ua }),
-      React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua }),
+      options.noPopup ? null : React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua }),
     )))
     await tick()
   }
   const button = () => doc.querySelector(kind === 'route' ? '.managed-popup-open' : '[role="dialog"] button')
   const fire = async (target, type) => React.act(async () => target.dispatchEvent(new dom.window.Event(type)))
   return {
-    state, calls, storage, button, doc, tick, cookieWrites,
+    state, calls, storage, storageReads, button, doc, tick, cookieWrites,
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
-    async keydown(key) {
-      await React.act(async () => win.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true })))
+    async keydown(key, modifiers = {}) {
+      const event = new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true, ...modifiers })
+      await React.act(async () => win.dispatchEvent(event))
       await tick()
+      return event.defaultPrevented
     },
+    async resize() { await fire(win, 'resize') },
+    async unmount() { if (root) { await React.act(async () => root.unmount()); root = null } },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
     async blur() { await fire(win, 'blur') },
@@ -216,6 +226,17 @@ async function withFetch(handler, fn) {
 }
 
 async function main() {
+  if (deviceBaseline || deviceCheck) {
+    for (const kind of ['route', 'react']) await using(kind, { ua: desktop }, async h => {
+      assert.equal(h.state(), deviceBaseline ? 'Shopee' : 'ARTICLE')
+      await h.keydown('F12')
+      assert.equal(h.calls.length, deviceBaseline ? 0 : 1)
+      if (deviceCheck) assert.equal(h.calls[0].url, 'https://mesale.vn')
+      console.log(`${kind} desktop=${h.state()} F12=${h.calls[0]?.url || 'none'}`)
+    })
+    console.log(deviceBaseline ? 'RESULT=BASELINE_CONFIRMED' : 'RESULT=DEVICE_CHECK_PASS')
+    return
+  }
   if (cooldownBaseline) {
     for (const kind of ['route', 'react']) {
       const state = await using(kind, { cooldownMinutes: 0 }, async h => {
@@ -389,6 +410,14 @@ async function main() {
     assert.equal(popupAppliesToDevice(settings, android), true)
     assert.equal(popupAppliesToDevice(settings, desktop), false)
     assert.equal(popupAppliesToDevice(settings, ''), false)
+    for (const ua of ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15', 'Mozilla/5.0 (X11; Linux x86_64) Firefox/140', 'facebookexternalhit/1.1']) {
+      assert.equal(popupAppliesToDevice(settings, ua), false)
+    }
+    settings.tiktok.iosEnabled = false
+    assert.equal(popupAppliesToDevice(settings, facebookIos), false)
+    assert.equal(popupAppliesToDevice(settings, android), true)
+    settings.shopee.androidEnabled = false
+    assert.equal(popupAppliesToDevice(settings, android), false)
   })
   await scenario('managed post metadata uses a social image without inserting it into the article', async () => {
     const html = await buildPage({ id: 'post-meta', slug: 'meta', title: 'Preview title', excerpt: 'Preview description', previewImage: '/uploads/content/preview.jpg', isFakeVideo: false, content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: null }, 'custom.example', desktop)
@@ -577,29 +606,66 @@ async function main() {
       await using(kind, { session: false, cookies: false, local }, async h => assert.equal(h.state(), 'ARTICLE'))
     })
     await scenario(kind + ' desktop renders article without popup', async () => {
-      await using(kind, { ua: desktop, handle: 'null' }, async h => {
+      const session = [['post-popup:post1:2026-09-27T00:00:00.000Z', '1']]
+      await using(kind, { ua: desktop, handle: 'null', session }, async h => {
         assert.equal(h.state(), 'ARTICLE')
         assert.equal(h.button(), null)
+        assert.equal(h.doc.body.classList.contains('managed-locked'), false)
+        await h.focus(); await h.away(); await h.back(); await h.tick(1500)
         assert.equal(h.calls.length, 0)
+        assert.deepEqual(h.storageReads, [])
+        assert.deepEqual([...h.storage.session], session, 'Desktop must not migrate mobile handoffs')
       })
     })
     await scenario(kind + ' desktop F12 redirects to mesale', async () => {
       await using(kind, { ua: desktop }, async h => {
+        assert.equal(await h.keydown('F12'), true)
         await h.keydown('F12')
+        assert.equal(h.calls.length, 1)
         assert.equal(h.calls[0].mode, 'devtools-redirect')
         assert.equal(h.calls[0].url, 'https://mesale.vn')
       })
     })
     await scenario(kind + ' desktop resize does not false-positive redirect', async () => {
       await using(kind, { ua: desktop, outerWidth: 1280, innerWidth: 900 }, async h => {
+        await h.resize(); await h.tick(1500)
         assert.equal(h.calls.length, 0)
         assert.equal(h.state(), 'ARTICLE')
       })
     })
     await scenario(kind + ' mobile ignores DevTools dimensions', async () => {
-      for (const ua of [facebookIos, android]) await using(kind, { ua, outerWidth: 1280, innerWidth: 900 }, async h => {
+      for (const ua of [facebookIos, safariIos, android]) await using(kind, { ua, outerWidth: 1280, innerWidth: 900 }, async h => {
+        assert.equal(await h.keydown('F12'), false)
+        assert.equal(await h.keydown('I', { ctrlKey: true, shiftKey: true }), false)
         assert.equal(h.calls.filter(call => call.url === 'https://mesale.vn').length, 0)
         assert.notEqual(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' desktop guard also runs without an active popup', async () => {
+      for (const options of [{ noPopup: true }, { active: false }]) await using(kind, { ua: desktop, ...options }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+        await h.keydown('F12')
+        assert.equal(h.calls.length, 1)
+        assert.equal(h.calls[0].url, 'https://mesale.vn')
+      })
+    })
+    await scenario(kind + ' developer shortcuts redirect but normal shortcuts do not', async () => {
+      for (const modifiers of [{ ctrlKey: true, shiftKey: true }, { metaKey: true, altKey: true }]) {
+        for (const key of ['i', 'J', 'c']) await using(kind, { ua: desktop }, async h => {
+          await h.keydown(key, modifiers)
+          assert.equal(h.calls.length, 1)
+          assert.equal(h.calls[0].url, 'https://mesale.vn')
+        })
+      }
+      await using(kind, { ua: desktop }, async h => {
+        for (const key of ['c', 'a', 'v', 'f', 'p', 'l', 'r', 'u']) assert.equal(await h.keydown(key, { ctrlKey: true }), false)
+        assert.equal(h.calls.length, 0)
+      })
+    })
+    await scenario(kind + ' redirect destination host avoids a loop', async () => {
+      for (const hostname of ['mesale.vn', 'www.mesale.vn']) await using(kind, { ua: desktop, hostname }, async h => {
+        assert.equal(await h.keydown('F12'), false)
+        assert.equal(h.calls.length, 0)
       })
     })
     await scenario(kind + ' countdown survives background suspension', async () => {
@@ -665,6 +731,13 @@ async function main() {
       })
     })
   }
+  await scenario('React guard removes its listener on unmount', async () => {
+    await using('react', { ua: desktop }, async h => {
+      await h.unmount()
+      assert.equal(await h.keydown('F12'), false)
+      assert.equal(h.calls.length, 0)
+    })
+  })
   await scenario('root route and React alias share cookie handoff', async () => {
     const cookie = await using('route', { session: false, local: false }, async h => { await h.click(); return h.cookie() })
     await using('react', { session: false, local: false, cookie }, async h => assert.equal(h.state(), 'TikTok'))
