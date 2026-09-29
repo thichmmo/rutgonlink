@@ -5,13 +5,18 @@ const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { spawnSync } = require('node:child_process')
+const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..')
-const moduleUrl = pathToFileURL(path.join(root, 'lib/content-upload.ts')).href
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'rutgonlink-upload-'))
+const compiledModule = path.join(temp, 'content-upload.mjs')
+fs.writeFileSync(compiledModule, ts.transpileModule(fs.readFileSync(path.join(root, 'lib/content-upload.ts'), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText)
+const moduleUrl = pathToFileURL(compiledModule).href
 
 function run(code, cwd, extraEnv = {}) {
-  const result = spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', '--input-type=module', '-e', code], {
+  const result = spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', code], {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, ...extraEnv, TEST_MODULE: moduleUrl },
