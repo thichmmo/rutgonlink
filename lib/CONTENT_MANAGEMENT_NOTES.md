@@ -16,6 +16,12 @@ other devices stay unchanged. A failed lookup keeps the original short URL in th
 current tab. Navigation is synchronous with the user's click;
 Facebook/iOS remains responsible for its native confirmation and app routing.
 
+`popupAppliesToDevice` requires an iPhone/iPad/iPod/Android user agent before
+checking the saved platform toggles. Desktop and unknown UAs read the article
+without popups. Both post renderers share this rule and the fixed desktop
+keyboard redirect destination, `https://mesale.vn`. This does not change popup
+delays, cooldowns, app-launch URLs or signed tracking parameters.
+
 Uploaded content resolves from `CONTENT_UPLOAD_DIR` when configured. Without it,
 standalone cPanel releases detect both the live `.next/standalone` tree and the
 `.deploy/<id>/unpacked/.next/standalone` preflight tree, while local development

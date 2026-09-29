@@ -305,7 +305,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const redirect = () => {
     if (redirected) return;
     redirected = true;
-    // Defer navigation until the keyboard event finishes so F12 is not swallowed by the browser.
+    // Coalesce repeated keys and navigate after the keyboard event finishes.
     window.setTimeout(() => window.location.replace(target), 0);
   };
   window.addEventListener('keydown', (event) => {

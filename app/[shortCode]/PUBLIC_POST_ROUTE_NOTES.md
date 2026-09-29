@@ -21,8 +21,10 @@ persisted completion while the current document stays unlocked after TikTok retu
 
 The Facebook preview JPEG stays in Open Graph/Twitter metadata, not the article body.
 
-Every standalone managed-post document also installs the desktop F12/DevTools
-guard. It redirects desktop DevTools sessions to `https://mesale.vn` and skips
-mobile UAs and the destination host.
+Every standalone managed-post document also installs the desktop keyboard guard,
+including posts without an active popup. F12, Ctrl+Shift+I/J/C and Cmd+Option+I/J/C
+redirect once to `https://mesale.vn`; mobile UAs and the destination host are
+ignored. Zoom/resize alone never redirect. Menu-opened or already-open DevTools
+are not detected. Dashboard and ordinary short-link routes remain unchanged.
 
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/[shortCode]/route.ts'`, plus mobile popup, desktop no-popup/F12, root-post metadata, alias and short-link smoke requests.

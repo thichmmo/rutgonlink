@@ -19,8 +19,11 @@ fallbacks include completion and share the cookie key with the root route. A
 wall-clock deadline handles countdowns after background suspension, and reading
 storage on reload never extends the completion expiry.
 
-Desktop pages install a small F12/DevTools guard; opening DevTools redirects to
-`https://mesale.vn`, while mobile UAs and the destination host are ignored.
+Public desktop post pages install a keyboard guard independently of the popup.
+F12, Ctrl+Shift+I/J/C and Cmd+Option+I/J/C redirect once to `https://mesale.vn`.
+Mobile UAs and the destination host are ignored. Cleanup cancels pending navigation.
+The guard does not infer DevTools from viewport dimensions: zoom and sidebars also
+change those values. Menu-opened or already-open DevTools are not detected.
 
 All storage sources validate absolute expiry, including session storage. Completion
 records carry the configured duration; old permanent/fixed-30m records are ignored.

@@ -9,7 +9,7 @@ production requests or affiliate clicks are made.
 
 Coverage includes DOM progress before navigation, mobile null handles, all-storage
 failure, cookie-only reloads, completed handoffs, expiry, suspended countdowns,
-desktop popup blocking, navigation exceptions, signed OneLinks and iOS field
+desktop popup bypass, navigation exceptions, signed OneLinks and iOS field
 preservation. The iPhone/Facebook Shopee case also verifies an attached hidden
 `_blank` anchor is present during the click, removed afterward, and rolls back on a
 click exception. Blur/focus-only return must unlock TikTok without a Back action,
@@ -39,3 +39,11 @@ zero-minute suppression on revisit and permanent session completion. The normal
 suite tests 0, 1, 5, 60 and 10080 minutes, exact expiry, reads that must not extend
 deadlines, independent storage fallbacks, old handoff migration, and failed-launch
 rollback. The cookie mock handles multiple cookies and their actual Max-Age.
+
+Desktop cases assert ARTICLE with no popup storage reads/migration, including
+old mobile handoff markers. F12 and Windows/macOS DevTools shortcuts navigate
+once to `https://mesale.vn`; ordinary shortcuts, zoom/resize and mobile keys do
+not. The guard runs without an active popup and removes its listener and pending
+navigation on React unmount. The harness executes every inline script, not just
+the first. Use `--device-check` for a focused check or `POPUP_TEST_ROOT` pointing
+at the original snapshot with `--device-baseline` to record desktop Shopee/F12=none.

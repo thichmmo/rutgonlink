@@ -12,11 +12,12 @@ export default function DesktopDevToolsGuard({ userAgent }: { userAgent: string 
     if (/^(?:www\.)?mesale\.vn$/i.test(host)) return
 
     let redirected = false
+    let redirectTimer: number | undefined
     const redirect = () => {
       if (redirected) return
       redirected = true
-      // Defer navigation until the keyboard event finishes so F12 is not swallowed by the browser.
-      window.setTimeout(() => window.location.replace(DEVTOOLS_REDIRECT_URL), 0)
+      // Coalesce repeated keys and cancel pending navigation if this page unmounts.
+      redirectTimer = window.setTimeout(() => window.location.replace(DEVTOOLS_REDIRECT_URL), 0)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
@@ -34,6 +35,7 @@ export default function DesktopDevToolsGuard({ userAgent }: { userAgent: string 
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
+      window.clearTimeout(redirectTimer)
     }
   }, [userAgent])
 

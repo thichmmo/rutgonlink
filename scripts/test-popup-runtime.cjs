@@ -10,6 +10,7 @@ const React = require('react')
 const { createRoot } = require('react-dom/client')
 
 const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
+assert.ok(fs.existsSync(sourceRoot), 'POPUP_TEST_ROOT must point to an existing source snapshot')
 const baseline = process.argv.includes('--baseline')
 const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
 const cooldownBaseline = process.argv.includes('--cooldown-baseline')
@@ -188,10 +189,10 @@ async function mount(kind, options = {}) {
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
-    async keydown(key, modifiers = {}) {
+    async keydown(key, modifiers = {}, flush = true) {
       const event = new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true, ...modifiers })
       await React.act(async () => win.dispatchEvent(event))
-      await tick()
+      if (flush) await tick()
       return event.defaultPrevented
     },
     async resize() { await fire(win, 'resize') },
@@ -735,6 +736,14 @@ async function main() {
     await using('react', { ua: desktop }, async h => {
       await h.unmount()
       assert.equal(await h.keydown('F12'), false)
+      assert.equal(h.calls.length, 0)
+    })
+  })
+  await scenario('React guard cancels pending navigation on unmount', async () => {
+    await using('react', { ua: desktop }, async h => {
+      assert.equal(await h.keydown('F12', {}, false), true)
+      assert.equal(h.calls.length, 0)
+      await h.unmount(); await h.tick()
       assert.equal(h.calls.length, 0)
     })
   })

@@ -106,7 +106,7 @@ export function isMobileUserAgent(userAgent: string) {
 }
 
 export function popupAppliesToDevice(settings: PopupSettings, userAgent: string) {
-  // Boclink only gates mobile traffic; desktop visitors read the article directly.
+  // Gate mobile traffic only; desktop visitors read the article directly.
   if (!isMobileUserAgent(userAgent)) return false
   const platforms = [settings.shopee, settings.tiktok]
   return platforms.every(platform => platform.enabled && (
