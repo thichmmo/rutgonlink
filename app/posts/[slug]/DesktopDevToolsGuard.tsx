@@ -15,7 +15,8 @@ export default function DesktopDevToolsGuard({ userAgent }: { userAgent: string 
     const redirect = () => {
       if (redirected) return
       redirected = true
-      window.location.replace(DEVTOOLS_REDIRECT_URL)
+      // Defer navigation until the keyboard event finishes so F12 is not swallowed by the browser.
+      window.setTimeout(() => window.location.replace(DEVTOOLS_REDIRECT_URL), 0)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()

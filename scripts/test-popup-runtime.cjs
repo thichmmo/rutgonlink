@@ -182,7 +182,10 @@ async function mount(kind, options = {}) {
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
-    async keydown(key) { await React.act(async () => win.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true }))) },
+    async keydown(key) {
+      await React.act(async () => win.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true })))
+      await tick()
+    },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
     async blur() { await fire(win, 'blur') },
