@@ -300,7 +300,9 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   if (!popup || !popup.isActive || !popup.applies) return;
   const key = 'post-popup:${post.id}:' + popup.updatedAt;
   const cookieKey = ${escapeInlineJson(popupCookieKey)};
+  // An unfinished app round trip needs resume time even when repeat cooldown is zero.
   const handoffTtlMs = 30 * 60 * 1000;
+  const cooldownMs = Math.max(0, Number(popup.settings.cooldownMinutes || 0)) * 60 * 1000;
   let step = 0;
   const ua = navigator.userAgent || '';
   const ios = /iphone|ipad|ipod/i.test(ua);
@@ -316,36 +318,52 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     const values = [];
     const addValue = (raw, source) => {
       if (!raw) return;
-      const parts = source === 'session' ? [raw] : String(raw).split('|');
-      const value = Number(parts[0] || '');
-      const expiry = source === 'session' ? 0 : Number(parts[1] || 0);
-      if (source !== 'session' && (!expiry || expiry <= Date.now())) return;
-      if (Number.isInteger(value) && value >= 0 && value <= 2) values.push(value);
+      const parts = String(raw).split('|');
+      const value = Number(parts[0]);
+      if (!Number.isInteger(value) || value < 1 || value > 2) return;
+      // Migrate an old in-flight Shopee return, but not the old permanent completion.
+      if (source === 'session' && parts.length === 1 && value === 1) {
+        try { sessionStorage.setItem(key, '1|' + (Date.now() + handoffTtlMs)); } catch (_) {}
+        values.push(value);
+        return;
+      }
+      const expiry = Number(parts[1]);
+      if (!Number.isFinite(expiry) || expiry <= Date.now()) return;
+      // Completion carries the configured duration; ignore legacy fixed-30m markers.
+      if (value === 2 && (cooldownMs === 0 || Number(parts[2]) !== cooldownMs)) return;
+      values.push(value);
     };
     try { addValue(sessionStorage.getItem(key), 'session'); } catch (_) {}
     try { addValue(localStorage.getItem(key), 'local'); } catch (_) {}
     try { const cookie = document.cookie.split(';').map((value) => value.trim()).find((value) => value.indexOf(cookieKey + '=') === 0); addValue(cookie && cookie.slice(cookieKey.length + 1), 'cookie'); } catch (_) {}
     return values.length ? Math.max.apply(null, values) : 0;
   };
-  const commitStep = (nextStep) => {
+  const commitStep = (nextStep, persist = true) => {
     step = Math.max(0, Math.min(2, nextStep));
     readyAt = Date.now() + (steps[step]?.delaySeconds || 0) * 1000;
-    try { sessionStorage.setItem(key, String(step)); } catch (_) {}
-    const handoff = String(step) + '|' + (Date.now() + handoffTtlMs);
+    // Reading saved progress must not restart its expiry on every reload/focus.
+    if (!persist) return;
+    const ttlMs = step === 2 ? cooldownMs : handoffTtlMs;
+    const saved = step > 0 && ttlMs > 0 ? String(step) + '|' + (Date.now() + ttlMs) + (step === 2 ? '|' + cooldownMs : '') : '';
+    // Zero cooldown clears completion for the next visit, not this document's progress.
+    try {
+      if (saved) sessionStorage.setItem(key, saved);
+      else sessionStorage.removeItem(key);
+    } catch (_) {}
     // Each fallback is independent, including completion after the TikTok handoff.
     try {
-      if (step > 0) localStorage.setItem(key, handoff);
+      if (saved) localStorage.setItem(key, saved);
       else localStorage.removeItem(key);
     } catch (_) {}
-    try { document.cookie = cookieKey + '=' + (step > 0 ? handoff : '') + '; Max-Age=' + (step > 0 ? handoffTtlMs / 1000 : 0) + '; Path=/; SameSite=Lax'; } catch (_) {}
+    try { document.cookie = cookieKey + '=' + saved + '; Max-Age=' + (saved ? ttlMs / 1000 : 0) + '; Path=/; SameSite=Lax'; } catch (_) {}
   };
-  commitStep(readStoredStep());
+  commitStep(readStoredStep(), false);
   const syncAfterReturn = () => {
     if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
     if (document.visibilityState !== 'visible') return;
     const stored = readStoredStep();
     // Missing/expired storage must never rewind progress already committed in this document.
-    if (stored > step) commitStep(stored);
+    if (stored > step) commitStep(stored, false);
     if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; }
     render();
   };

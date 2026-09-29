@@ -12,6 +12,7 @@ const { createRoot } = require('react-dom/client')
 const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
 const baseline = process.argv.includes('--baseline')
 const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
+const cooldownBaseline = process.argv.includes('--cooldown-baseline')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -56,13 +57,18 @@ async function mount(kind, options = {}) {
     url: 'https://fixture.example/post', pretendToBeVisual: true,
   })
   const doc = dom.window.document
-  let now = options.now || 1_000_000
+  let now = options.now ?? 1_000_000
   let timerId = 0
   let visibility = 'visible'
   const timers = new Map()
   const calls = []
   const storage = { session: new Map(options.session || []), local: new Map(options.local || []) }
-  let cookie = options.cookie || ''
+  const cookieJar = new Map(String(options.cookie || '').split(';').map(value => value.trim()).filter(Boolean).map(value => {
+    const index = value.indexOf('=')
+    return [value.slice(0, index), { value: value.slice(index + 1), expires: Infinity }]
+  }))
+  const cookieWrites = []
+  const cookies = () => [...cookieJar].filter(([, item]) => item.expires > now).map(([key, item]) => `${key}=${item.value}`).join('; ')
   const state = () => {
     const overlay = doc.querySelector(kind === 'route' ? '.managed-popup' : '[role="dialog"]')
     return !overlay ? 'ARTICLE' : overlay.textContent.includes('TikTok') ? 'TikTok' : 'Shopee'
@@ -74,10 +80,14 @@ async function mount(kind, options = {}) {
   })
   Object.defineProperty(doc, 'visibilityState', { get: () => visibility })
   Object.defineProperty(doc, 'cookie', {
-    get() { if (options.cookies === false) throw new Error('Cookies denied'); return cookie },
+    get() { if (options.cookies === false) throw new Error('Cookies denied'); return cookies() },
     set(value) {
       if (options.cookies === false) throw new Error('Cookies denied')
-      cookie = value.includes('Max-Age=0;') ? '' : value.split(';')[0]
+      cookieWrites.push(value)
+      const pair = value.split(';')[0]
+      const index = pair.indexOf('=')
+      const age = /Max-Age=(\d+)/i.exec(value)
+      cookieJar.set(pair.slice(0, index), { value: pair.slice(index + 1), expires: age ? now + Number(age[1]) * 1000 : Infinity })
     },
   })
   const schedule = (fn, ms, interval) => {
@@ -119,6 +129,7 @@ async function mount(kind, options = {}) {
   global.document = doc
   global.HTMLElement = dom.window.HTMLElement
   const settings = defaultPopupSettings(shopee, product)
+  if (options.cooldownMinutes !== undefined) settings.cooldownMinutes = options.cooldownMinutes
   settings.shopee.delaySeconds = options.firstDelay || 0
   settings.tiktok.delaySeconds = options.secondDelay || 0
   if (options.iosUrl) settings.tiktok.iosUrl = options.iosUrl
@@ -159,8 +170,9 @@ async function mount(kind, options = {}) {
   const button = () => doc.querySelector(kind === 'route' ? '.managed-popup-open' : '[role="dialog"] button')
   const fire = async (target, type) => React.act(async () => target.dispatchEvent(new dom.window.Event(type)))
   return {
-    state, calls, storage, button, doc, tick,
-    cookie: () => cookie,
+    state, calls, storage, button, doc, tick, cookieWrites,
+    cookie: cookies,
+    snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
@@ -192,6 +204,23 @@ async function withFetch(handler, fn) {
 }
 
 async function main() {
+  if (cooldownBaseline) {
+    for (const kind of ['route', 'react']) {
+      const state = await using(kind, { cooldownMinutes: 0 }, async h => {
+        await h.click(); await h.tick(1000); await h.click(); return h.snapshot()
+      })
+      await using(kind, { ...state, cooldownMinutes: 0 }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+        console.log('BASELINE ' + kind + ' cooldown=0 revisit=ARTICLE (bug)')
+      })
+      await using(kind, { ...state, cooldownMinutes: 0, now: state.now + 31 * 60_000 }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+        console.log('BASELINE ' + kind + ' session-completion-never-expires (bug)')
+      })
+    }
+    console.log('RESULT=BASELINE_CONFIRMED')
+    return
+  }
   if (shortLinkBaseline) {
     for (const kind of ['route', 'react']) await using(kind, { iosUrl: shortTikTok }, async h => {
       await h.click(); await h.tick(1000); await h.click()
@@ -424,9 +453,103 @@ async function main() {
       const cookie2 = await using(kind, { session: false, local: false, cookie: cookie1 }, async h => {
         assert.equal(h.state(), 'TikTok'); await h.click(); return h.cookie()
       })
-      assert.match(cookie2, /=2\|\d+$/)
+      assert.match(cookie2, /=2\|\d+\|1800000$/)
       await using(kind, { session: false, local: false, cookie: cookie2 }, async h => assert.equal(h.state(), 'ARTICLE'))
       await using(kind, { session: false, local: false, cookie: cookie2, now: 3_000_000 }, async h => assert.equal(h.state(), 'Shopee'))
+    })
+    await scenario(kind + ' zero cooldown shows popup on the next load', async () => {
+      for (const only of [{}, { local: false, cookies: false }, { session: false, cookies: false }, { session: false, local: false }]) {
+        const state = await using(kind, { ...only, cooldownMinutes: 0 }, async h => {
+          await h.click(); await h.tick(1000); await h.click()
+          await h.away(); await h.back(); await h.focus()
+          assert.equal(h.state(), 'ARTICLE', 'An app return must not start a popup loop')
+          return h.snapshot()
+        })
+        assert.equal(state.session.length, 0)
+        assert.equal(state.local.length, 0)
+        assert.equal(state.cookie, '')
+        await using(kind, { ...state, ...only, cooldownMinutes: 0 }, async h => assert.equal(h.state(), 'Shopee'))
+      }
+    })
+    await scenario(kind + ' nonzero cooldown expires the completion marker', async () => {
+      for (const cooldownMinutes of [1, 5, 60, 10080]) {
+        for (const only of [{ local: false, cookies: false }, { session: false, cookies: false }, { session: false, local: false }]) {
+          const state = await using(kind, { ...only, cooldownMinutes }, async h => {
+            await h.click(); await h.tick(1000); await h.click()
+            if (only.cookies !== false) assert.ok(h.cookieWrites.at(-1).includes(`Max-Age=${cooldownMinutes * 60};`))
+            return h.snapshot()
+          })
+          const expiry = state.now + cooldownMinutes * 60_000
+          const beforeExpiry = await using(kind, { ...state, ...only, cooldownMinutes, now: expiry - 1 }, async h => {
+            assert.equal(h.state(), 'ARTICLE')
+            await h.focus()
+            return h.snapshot()
+          })
+          assert.deepEqual(beforeExpiry.session, state.session, 'Reading must not extend session expiry')
+          assert.deepEqual(beforeExpiry.local, state.local, 'Reading must not extend local expiry')
+          assert.equal(beforeExpiry.cookie, state.cookie, 'Reading must not extend cookie expiry')
+          await using(kind, { ...beforeExpiry, ...only, cooldownMinutes, now: expiry }, async h => assert.equal(h.state(), 'Shopee'))
+        }
+      }
+    })
+    await scenario(kind + ' zero cooldown preserves Shopee return and unfinished reload', async () => {
+      const state = await using(kind, { cooldownMinutes: 0, session: false, local: false }, async h => {
+        await h.click(); await h.blur(); await h.focus()
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.button().disabled, false)
+        return h.snapshot()
+      })
+      await using(kind, { ...state, cooldownMinutes: 0, session: false, local: false }, async h => {
+        assert.equal(h.state(), 'TikTok')
+        await h.click()
+        assert.equal(h.calls[0].mode, 'same-tab')
+        assert.equal(new URL(h.calls[0].url).hostname, 'snssdk1180.onelink.me')
+        assert.equal(h.state(), 'ARTICLE')
+        await h.away(); await h.back()
+        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(h.cookie(), '')
+      })
+    })
+    await scenario(kind + ' legacy and mismatched completion cannot override cooldown', async () => {
+      const key = 'post-popup:post1:2026-09-27T00:00:00.000Z'
+      const cookieKey = 'post_popup_post1_1790467200000'
+      const legacy = { session: [[key, '2']], local: [[key, '2|2800000']], cookie: cookieKey + '=2|2800000' }
+      for (const cooldownMinutes of [0, 5, 60]) await using(kind, { ...legacy, cooldownMinutes }, async h => assert.equal(h.state(), 'Shopee'))
+      const state = await using(kind, { cooldownMinutes: 5 }, async h => {
+        await h.click(); await h.tick(1000); await h.click(); return h.snapshot()
+      })
+      await using(kind, { ...state, cooldownMinutes: 0 }, async h => assert.equal(h.state(), 'Shopee'))
+      await using(kind, { ...state, cooldownMinutes: 1 }, async h => assert.equal(h.state(), 'Shopee'))
+      await using(kind, { cooldownMinutes: 0, session: [[key, '1']] }, async h => {
+        assert.equal(h.state(), 'TikTok', 'An older in-flight handoff must still resume')
+        assert.equal(h.storage.session.get(key), '1|2800000')
+      })
+    })
+    await scenario(kind + ' first-step resume expires in session without extending on read', async () => {
+      const state = await using(kind, { cooldownMinutes: 0, local: false, cookies: false }, async h => { await h.click(); return h.snapshot() })
+      const expiry = state.now + 30 * 60_000
+      const resumed = await using(kind, { ...state, cooldownMinutes: 0, local: false, cookies: false, now: expiry - 1 }, async h => {
+        assert.equal(h.state(), 'TikTok'); return h.snapshot()
+      })
+      assert.deepEqual(resumed.session, state.session)
+      await using(kind, { ...resumed, cooldownMinutes: 0, local: false, cookies: false, now: expiry }, async h => assert.equal(h.state(), 'Shopee'))
+    })
+    await scenario(kind + ' failed second navigation restores progress instead of cooldown', async () => {
+      for (const cooldownMinutes of [0, 5]) {
+        const state = await using(kind, { cooldownMinutes, replaceThrows: true }, async h => {
+          await h.click(); await h.tick(1000); await h.click()
+          assert.equal(h.state(), 'TikTok'); return h.snapshot()
+        })
+        await using(kind, { ...state, cooldownMinutes }, async h => assert.equal(h.state(), 'TikTok'))
+      }
+    })
+    await scenario(kind + ' zero cooldown leaves unrelated cookies and storage intact', async () => {
+      await using(kind, { cooldownMinutes: 0, session: [['unrelated', 'keep']], local: [['unrelated', 'keep']], cookie: 'unrelated=keep' }, async h => {
+        await h.click(); await h.tick(1000); await h.click()
+        assert.deepEqual([...h.storage.session], [['unrelated', 'keep']])
+        assert.deepEqual([...h.storage.local], [['unrelated', 'keep']])
+        assert.equal(h.cookie(), 'unrelated=keep')
+      })
     })
     await scenario(kind + ' completed local handoff reload', async () => {
       const local = await using(kind, { session: false, cookies: false }, async h => {
@@ -476,7 +599,7 @@ async function main() {
         assert.equal(h.calls[0].mode, 'anchor-new-tab')
         assert.equal(h.state(), 'Shopee')
         assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
-        assert.equal(h.storage.session.get('post-popup:post1:2026-09-27T00:00:00.000Z'), '0')
+        assert.equal(h.storage.session.get('post-popup:post1:2026-09-27T00:00:00.000Z'), undefined)
         assert.equal(h.storage.local.size, 0)
         assert.equal(h.cookie(), '')
         assert.equal(h.button().disabled, false)
@@ -505,6 +628,14 @@ async function main() {
   await scenario('root route and React alias share cookie handoff', async () => {
     const cookie = await using('route', { session: false, local: false }, async h => { await h.click(); return h.cookie() })
     await using('react', { session: false, local: false, cookie }, async h => assert.equal(h.state(), 'TikTok'))
+  })
+  await scenario('root route and React alias share configured completion expiry', async () => {
+    const state = await using('route', { cooldownMinutes: 5, session: false, local: false }, async h => {
+      await h.click(); await h.tick(1000); await h.click(); return h.snapshot()
+    })
+    await using('react', { ...state, cooldownMinutes: 5, session: false, local: false }, async h => assert.equal(h.state(), 'ARTICLE'))
+    await using('react', { ...state, cooldownMinutes: 5, session: false, local: false, now: state.now + 300_000 }, async h => assert.equal(h.state(), 'Shopee'))
+    await using('react', { ...state, cooldownMinutes: 0, session: false, local: false }, async h => assert.equal(h.state(), 'Shopee'))
   })
   console.log('RESULT=PASS scenarios=' + passed)
 }

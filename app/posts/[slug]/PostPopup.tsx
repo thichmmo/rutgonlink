@@ -19,7 +19,9 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const isMobile = /android|iphone|ipad|ipod/i.test(userAgent)
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const cookieKey = `post_popup_${postId}_${new Date(popup.updatedAt).getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+  // An unfinished app round trip needs resume time even when repeat cooldown is zero.
   const handoffTtlMs = 30 * 60 * 1000
+  const cooldownMs = Math.max(0, Number(popup.settings.cooldownMinutes || 0)) * 60 * 1000
   const [step, setStep] = useState(0)
   const [ready, setReady] = useState(false)
   const [remaining, setRemaining] = useState(0)
@@ -31,13 +33,22 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
 
   const readStoredStep = useCallback(() => {
     const values: number[] = []
-    const addValue = (value: string | null | undefined, source: 'session' | 'local' | 'cookie') => {
-      if (!value) return
-      const raw = source === 'session' ? value : value.split('|')[0]
-      const expiry = source === 'session' ? 0 : Number(value.split('|')[1] || 0)
-      if (source !== 'session' && (!expiry || expiry <= Date.now())) return
-      const parsed = Number(raw || '')
-      if (Number.isInteger(parsed) && parsed >= 0 && parsed <= steps.length) values.push(parsed)
+    const addValue = (raw: string | null | undefined, source: 'session' | 'local' | 'cookie') => {
+      if (!raw) return
+      const parts = raw.split('|')
+      const value = Number(parts[0])
+      if (!Number.isInteger(value) || value < 1 || value > steps.length) return
+      // Migrate an old in-flight Shopee return, but not the old permanent completion.
+      if (source === 'session' && parts.length === 1 && value === 1) {
+        try { window.sessionStorage.setItem(storageKey, `1|${Date.now() + handoffTtlMs}`) } catch { /* Resume in memory. */ }
+        values.push(value)
+        return
+      }
+      const expiry = Number(parts[1])
+      if (!Number.isFinite(expiry) || expiry <= Date.now()) return
+      // Completion carries the configured duration; ignore legacy fixed-30m markers.
+      if (value === steps.length && (cooldownMs === 0 || Number(parts[2]) !== cooldownMs)) return
+      values.push(value)
     }
     try {
       addValue(window.sessionStorage.getItem(storageKey), 'session')
@@ -50,29 +61,38 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
       addValue(cookie?.slice(cookieKey.length + 1), 'cookie')
     } catch { /* Cookie access can be disabled in private webviews. */ }
     return values.length ? Math.max(...values) : 0
-  }, [cookieKey, storageKey, steps.length])
+  }, [cookieKey, cooldownMs, handoffTtlMs, storageKey, steps.length])
 
-  const commitStep = useCallback((nextStep: number) => {
+  const commitStep = useCallback((nextStep: number, persist = true) => {
     const boundedStep = Math.max(0, Math.min(steps.length, nextStep))
     stepRef.current = boundedStep
     readyAtRef.current = Date.now() + (steps[boundedStep]?.delaySeconds || 0) * 1000
     setStep(boundedStep)
     setRemaining(steps[boundedStep]?.delaySeconds || 0)
-    try { window.sessionStorage.setItem(storageKey, String(boundedStep)) } catch { /* Continue in memory if storage is unavailable. */ }
-    const handoff = `${boundedStep}|${Date.now() + handoffTtlMs}`
+    // Reading saved progress must not restart its expiry on every reload/focus.
+    if (!persist) return
+    const ttlMs = boundedStep === steps.length ? cooldownMs : handoffTtlMs
+    const saved = boundedStep > 0 && ttlMs > 0
+      ? `${boundedStep}|${Date.now() + ttlMs}${boundedStep === steps.length ? `|${cooldownMs}` : ''}`
+      : ''
+    // Zero cooldown clears completion for the next visit, not this document's progress.
+    try {
+      if (saved) window.sessionStorage.setItem(storageKey, saved)
+      else window.sessionStorage.removeItem(storageKey)
+    } catch { /* Continue in memory if storage is unavailable. */ }
     // A failed local-storage write must not prevent the cookie fallback from running.
     try {
-      if (boundedStep > 0) window.localStorage.setItem(storageKey, handoff)
+      if (saved) window.localStorage.setItem(storageKey, saved)
       else window.localStorage.removeItem(storageKey)
     } catch { /* Fallback storage is best-effort for restricted webviews. */ }
     try {
-      window.document.cookie = `${cookieKey}=${boundedStep > 0 ? handoff : ''}; Max-Age=${boundedStep > 0 ? handoffTtlMs / 1000 : 0}; Path=/; SameSite=Lax`
+      window.document.cookie = `${cookieKey}=${saved}; Max-Age=${saved ? ttlMs / 1000 : 0}; Path=/; SameSite=Lax`
     } catch { /* Retain in-memory progress even when both fallbacks are disabled. */ }
-  }, [cookieKey, handoffTtlMs, steps, storageKey])
+  }, [cooldownMs, cookieKey, handoffTtlMs, steps, storageKey])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      commitStep(readStoredStep())
+      commitStep(readStoredStep(), false)
       setReady(true)
     }, 0)
     return () => window.clearTimeout(timer)
@@ -91,7 +111,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
 
       const stored = readStoredStep()
       // Missing/expired storage must never rewind progress already committed in this document.
-      if (stored > stepRef.current) commitStep(stored)
+      if (stored > stepRef.current) commitStep(stored, false)
       if (pending?.leftPage) {
         pendingOpenRef.current = null
         setOpening(false)

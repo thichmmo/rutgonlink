@@ -8,12 +8,17 @@ anchor instead of calling `window.open`; this is intended to avoid Facebook's
 script-created blank return tab while keeping the next popup committed before
 handoff. The native return still requires an iPhone/Facebook check.
 
-Progress never moves backwards merely because storage reads fail or expire. Local
-storage and cookies are independent, carry a 30-minute expiry and persist completion
-as well as the first handoff. Returning refreshes the button from its deadline, not
-a restarted countdown. Failed navigation restores the overlay even after step two.
+Progress never moves backwards merely because storage reads fail or expire. An
+unfinished first handoff carries a 30-minute resume window; completed state uses
+the popup's configured cooldown, including zero. Returning refreshes the button
+from its deadline, not a restarted countdown. Failed navigation restores the
+overlay even after step two.
 
-The standalone article renders the same absolute server-generated preview JPEG used by
-Open Graph/Twitter metadata, including the fake-video play overlay.
+Session, local storage and the cookie use an absolute expiry. A completion record
+also includes its configured duration, so legacy permanent/fixed-30m completion
+records are ignored. Loading the article never renews the cooldown. Zero clears
+persisted completion while the current document stays unlocked after TikTok returns.
+
+The Facebook preview JPEG stays in Open Graph/Twitter metadata, not the article body.
 
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/[shortCode]/route.ts'`, plus root-post metadata, alias and short-link smoke requests.
