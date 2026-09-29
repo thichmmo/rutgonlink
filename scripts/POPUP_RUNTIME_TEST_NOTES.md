@@ -42,8 +42,9 @@ rollback. The cookie mock handles multiple cookies and their actual Max-Age.
 
 Desktop cases assert ARTICLE with no popup storage reads/migration, including
 old mobile handoff markers. F12 and Windows/macOS DevTools shortcuts navigate
-once to `https://mesale.vn`; ordinary shortcuts, zoom/resize and mobile keys do
-not. The guard runs without an active popup and removes its listener and pending
+once to `https://mesale.vn`; desktop right-click also suppresses the context menu
+and navigates once, while ordinary clicks, zoom/resize and mobile keys do not.
+The guard runs without an active popup and removes its listeners and pending
 navigation on React unmount. The harness executes every inline script, not just
 the first. Use `--device-check` for a focused check or `POPUP_TEST_ROOT` pointing
 at the original snapshot with `--device-baseline` to record desktop Shopee/F12=none.

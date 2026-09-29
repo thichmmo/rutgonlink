@@ -1,6 +1,6 @@
 # Public managed post route
 
-The root `domain/slug` route checks published managed posts before short links. It filters by primary/shared/verified custom domain, renders fixed content and complete absolute Open Graph/Twitter preview metadata, keeps `/posts/slug` as an alias, and runs the two-step popup in the current session only for mobile UAs. Desktop visitors see the article directly. The inline runtime commits the next step before opening an external URL, keeps a short-lived local-storage/cookie handoff for webviews that reopen a fresh tab, and resumes it through mobile page lifecycle events. Blur/focus signals cover webviews that keep `visibilityState` visible, while mobile null `window.open` results keep the committed step instead of replaying Shopee. If no post matches, the existing short-link flow is unchanged.
+The root `domain/slug` route checks published managed posts before short links. It filters by primary/shared/verified custom domain, falls back to a primary publication for known shared-domain aliases when an older record has no explicit target, renders fixed content and complete absolute Open Graph/Twitter preview metadata, keeps `/posts/slug` as an alias, and runs the two-step popup in the current session only for mobile UAs. Desktop visitors see the article directly. The inline runtime commits the next step before opening an external URL, keeps a short-lived local-storage/cookie handoff for webviews that reopen a fresh tab, and resumes it through mobile page lifecycle events. Blur/focus signals cover webviews that keep `visibilityState` visible, while mobile null `window.open` results keep the committed step instead of replaying Shopee. If no post matches, the existing short-link flow is unchanged.
 On iOS Facebook, a TikTok product URL is wrapped into a Boclink-compatible `snssdk1180.onelink.me` handoff with the original signed URL and tracking payload preserved, then navigated in the current tab. The asynchronous page builder prepares TikTok short links through the shared server helper before serializing popup steps, rather than awaiting a lookup on click. Supplied OneLinks stay intact; failed lookups retain the short link in the current tab. Shopee still uses the attached link action on iPhone/Facebook.
 
 For iPhone/Facebook Shopee navigation, the runtime now clicks a hidden `_blank`
@@ -21,8 +21,9 @@ persisted completion while the current document stays unlocked after TikTok retu
 
 The Facebook preview JPEG stays in Open Graph/Twitter metadata, not the article body.
 
-Every standalone managed-post document also installs the desktop keyboard guard,
-including posts without an active popup. F12, Ctrl+Shift+I/J/C and Cmd+Option+I/J/C
+Every standalone managed-post document also installs the desktop inspection guard,
+including posts without an active popup. F12, Ctrl+Shift+I/J/C, Cmd+Option+I/J/C
+and desktop right-click
 redirect once to `https://mesale.vn`; mobile UAs and the destination host are
 ignored. Zoom/resize alone never redirect. Menu-opened or already-open DevTools
 are not detected. Dashboard and ordinary short-link routes remain unchanged.

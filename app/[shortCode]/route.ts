@@ -84,23 +84,30 @@ async function getCachedLink(shortCode: string, hostname: string): Promise<LinkR
   const where = isSharedDomain
     ? { shortCode, domainId: null, sharedDomain: normalizedHostname }
     : { shortCode, domainId }
+  const include = {
+    category: { select: { id: true, folderGroupId: true } },
+    deviceRules: true,
+    countryRules: true,
+    languageRules: true,
+    folderAssignments: {
+      select: { id: true, order: true, folder: { select: { id: true, urls: true, folderGroupId: true } } },
+      orderBy: { order: 'asc' as const },
+    },
+    _count: { select: { clicks: true } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    user: { select: { plan: true, planExpiresAt: true, status: true } } as any,
+  }
   const result = await prisma.link.findFirst({
     where,
-    include: {
-      category: { select: { id: true, folderGroupId: true } },
-      deviceRules: true,
-      countryRules: true,
-      languageRules: true,
-      folderAssignments: {
-        select: { id: true, order: true, folder: { select: { id: true, urls: true, folderGroupId: true } } },
-        orderBy: { order: 'asc' }
-      },
-      _count: { select: { clicks: true } },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        user: { select: { plan: true, planExpiresAt: true, status: true } } as any,
-      },
-    })
-  const link = result as unknown as LinkResult | null
+    include,
+  })
+  // Older links may still be stored on the primary target. Keep known shared
+  // domains compatible while preferring an explicitly assigned shared link.
+  const fallback = !result && isSharedDomain
+    ? await prisma.link.findFirst({ where: { shortCode, domainId: null, sharedDomain: null }, include })
+    : null
+  const linkResult = result || fallback
+  const link = linkResult as unknown as LinkResult | null
   return link?.user.status === 'active' ? link : null
 }
 
@@ -257,8 +264,18 @@ async function findManagedPostForHost(slug: string, hostname: string) {
     : isShared
       ? { domainId: null, sharedDomain: normalized }
       : { domainId: domain!.id }
-  return prisma.managedPost.findFirst({
+  const post = await prisma.managedPost.findFirst({
     where: { slug, isPublished: true, ...targetWhere, user: { status: 'active', deletedAt: null } },
+    include: {
+      popup: true,
+      user: { select: { managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }] } } },
+    },
+  })
+  if (post || !isShared) return post
+
+  // Preserve links created before a shared domain was selected in the editor.
+  return prisma.managedPost.findFirst({
+    where: { slug, isPublished: true, domainId: null, sharedDomain: null, user: { status: 'active', deletedAt: null } },
     include: {
       popup: true,
       user: { select: { managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }] } } },
@@ -318,6 +335,11 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       event.preventDefault();
       redirect();
     }
+  }, true);
+  window.addEventListener('contextmenu', (event) => {
+    // Keep the desktop inspection guard consistent with the React alias.
+    event.preventDefault();
+    redirect();
   }, true);
 })();
 </script>`

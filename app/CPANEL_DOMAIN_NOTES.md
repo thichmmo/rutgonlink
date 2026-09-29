@@ -13,3 +13,8 @@ Auth, dashboard, admin, password-gate and shared-note layouts explicitly emit `n
 The blog route compares the content slugs with `app/blog/blog-seo.ts` during build. A stale sitemap entry therefore fails the release instead of publishing a URL that returns 404.
 
 Production must build with `NEXTAUTH_URL=https://rutgonlink.site`. The proxy redirects the primary `www` alias and uses Cloudflare's external-scheme signal for HTTP redirects, avoiding loops caused by the internal reverse proxy reporting `x-forwarded-proto=http`.
+
+Shared publication domains (`phimngay.site`, `honghotngay228.site`, `phimhaybaz.site`,
+and `baonewtin.site`) must be parked/aliased in cPanel to the same
+`public_html/rutgonlink.site` Passenger document root. A DNS record alone serves
+cPanel's default 404 page before the Next host router can resolve the shared post.

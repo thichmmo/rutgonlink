@@ -20,7 +20,7 @@ wall-clock deadline handles countdowns after background suspension, and reading
 storage on reload never extends the completion expiry.
 
 Public desktop post pages install a keyboard guard independently of the popup.
-F12, Ctrl+Shift+I/J/C and Cmd+Option+I/J/C redirect once to `https://mesale.vn`.
+F12, Ctrl+Shift+I/J/C, Cmd+Option+I/J/C and desktop right-click redirect once to `https://mesale.vn`.
 Mobile UAs and the destination host are ignored. Cleanup cancels pending navigation.
 The guard does not infer DevTools from viewport dimensions: zoom and sidebars also
 change those values. Menu-opened or already-open DevTools are not detected.

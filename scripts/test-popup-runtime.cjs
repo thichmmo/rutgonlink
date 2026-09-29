@@ -16,6 +16,8 @@ const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
 const cooldownBaseline = process.argv.includes('--cooldown-baseline')
 const deviceBaseline = process.argv.includes('--device-baseline')
 const deviceCheck = process.argv.includes('--device-check')
+const contextMenuBaseline = process.argv.includes('--contextmenu-baseline')
+const contextMenuCheck = process.argv.includes('--contextmenu-check')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -195,6 +197,12 @@ async function mount(kind, options = {}) {
       if (flush) await tick()
       return event.defaultPrevented
     },
+    async mouse(type, flush = true) {
+      const event = new dom.window.MouseEvent(type, { button: type === 'contextmenu' ? 2 : 0, bubbles: true, cancelable: true })
+      await React.act(async () => doc.querySelector('main').dispatchEvent(event))
+      if (flush) await tick()
+      return event.defaultPrevented
+    },
     async resize() { await fire(win, 'resize') },
     async unmount() { if (root) { await React.act(async () => root.unmount()); root = null } },
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
@@ -227,6 +235,17 @@ async function withFetch(handler, fn) {
 }
 
 async function main() {
+  if (contextMenuBaseline || contextMenuCheck) {
+    for (const kind of ['route', 'react']) await using(kind, { ua: desktop }, async h => {
+      const prevented = await h.mouse('contextmenu')
+      console.log(`${kind} desktop=${h.state()} contextmenu.prevented=${prevented} redirect=${h.calls[0]?.url || 'none'}`)
+      assert.equal(prevented, !contextMenuBaseline)
+      assert.equal(h.calls.length, contextMenuBaseline ? 0 : 1)
+      if (contextMenuCheck) assert.equal(h.calls[0].url, 'https://mesale.vn')
+    })
+    console.log(contextMenuBaseline ? 'RESULT=CONTEXTMENU_BASELINE_CONFIRMED' : 'RESULT=CONTEXTMENU_CHECK_PASS')
+    return
+  }
   if (deviceBaseline || deviceCheck) {
     for (const kind of ['route', 'react']) await using(kind, { ua: desktop }, async h => {
       assert.equal(h.state(), deviceBaseline ? 'Shopee' : 'ARTICLE')
@@ -627,6 +646,41 @@ async function main() {
         assert.equal(h.calls[0].url, 'https://mesale.vn')
       })
     })
+    await scenario(kind + ' desktop right-click redirects once and suppresses the menu', async () => {
+      await using(kind, { ua: desktop }, async h => {
+        assert.equal(await h.mouse('contextmenu', false), true)
+        assert.equal(await h.mouse('contextmenu', false), true)
+        assert.equal(await h.keydown('F12', {}, false), true)
+        await h.tick()
+        assert.deepEqual(h.calls.map(call => [call.mode, call.url]), [['devtools-redirect', 'https://mesale.vn']])
+        assert.equal(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' desktop right-click works without an active popup', async () => {
+      for (const options of [{ noPopup: true }, { active: false }]) await using(kind, { ua: desktop, ...options }, async h => {
+        assert.equal(await h.mouse('contextmenu'), true)
+        assert.equal(h.calls.length, 1)
+        assert.equal(h.calls[0].url, 'https://mesale.vn')
+      })
+    })
+    await scenario(kind + ' normal desktop clicks do not redirect', async () => {
+      await using(kind, { ua: desktop }, async h => {
+        assert.equal(await h.mouse('click'), false)
+        assert.equal(await h.mouse('dblclick'), false)
+        assert.equal(h.calls.length, 0)
+      })
+    })
+    await scenario(kind + ' mobile context menus preserve popup progress', async () => {
+      for (const ua of [facebookIos, safariIos, android]) await using(kind, { ua }, async h => {
+        assert.equal(await h.mouse('contextmenu'), false)
+        assert.equal(h.state(), 'Shopee')
+        assert.equal(h.calls.length, 0)
+        await h.click(); await h.tick(1000)
+        assert.equal(await h.mouse('contextmenu'), false)
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.calls.filter(call => call.mode === 'devtools-redirect').length, 0)
+      })
+    })
     await scenario(kind + ' desktop resize does not false-positive redirect', async () => {
       await using(kind, { ua: desktop, outerWidth: 1280, innerWidth: 900 }, async h => {
         await h.resize(); await h.tick(1500)
@@ -666,6 +720,7 @@ async function main() {
     await scenario(kind + ' redirect destination host avoids a loop', async () => {
       for (const hostname of ['mesale.vn', 'www.mesale.vn']) await using(kind, { ua: desktop, hostname }, async h => {
         assert.equal(await h.keydown('F12'), false)
+        assert.equal(await h.mouse('contextmenu'), false)
         assert.equal(h.calls.length, 0)
       })
     })
@@ -736,12 +791,21 @@ async function main() {
     await using('react', { ua: desktop }, async h => {
       await h.unmount()
       assert.equal(await h.keydown('F12'), false)
+      assert.equal(await h.mouse('contextmenu'), false)
       assert.equal(h.calls.length, 0)
     })
   })
   await scenario('React guard cancels pending navigation on unmount', async () => {
     await using('react', { ua: desktop }, async h => {
       assert.equal(await h.keydown('F12', {}, false), true)
+      assert.equal(h.calls.length, 0)
+      await h.unmount(); await h.tick()
+      assert.equal(h.calls.length, 0)
+    })
+  })
+  await scenario('React guard cancels pending right-click navigation on unmount', async () => {
+    await using('react', { ua: desktop }, async h => {
+      assert.equal(await h.mouse('contextmenu', false), true)
       assert.equal(h.calls.length, 0)
       await h.unmount(); await h.tick()
       assert.equal(h.calls.length, 0)

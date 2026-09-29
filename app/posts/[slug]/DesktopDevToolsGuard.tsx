@@ -31,10 +31,18 @@ export default function DesktopDevToolsGuard({ userAgent }: { userAgent: string 
       }
     }
 
+    const onContextMenu = (event: MouseEvent) => {
+      // Desktop right-click is treated like the other inspection entry points.
+      event.preventDefault()
+      redirect()
+    }
+
     // Window dimensions also change with zoom/sidebars; only explicit shortcuts redirect.
     window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('contextmenu', onContextMenu, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('contextmenu', onContextMenu, true)
       window.clearTimeout(redirectTimer)
     }
   }, [userAgent])
