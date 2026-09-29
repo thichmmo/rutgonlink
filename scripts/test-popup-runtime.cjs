@@ -342,12 +342,12 @@ async function main() {
       assert.equal(await prepareSettings(settings, facebookIos), settings)
     })
   })
-  await scenario('managed post metadata and article use an absolute public preview image', async () => {
+  await scenario('managed post metadata uses a social image without inserting it into the article', async () => {
     const html = await buildPage({ id: 'post-meta', slug: 'meta', title: 'Preview title', excerpt: 'Preview description', previewImage: '/uploads/content/preview.jpg', isFakeVideo: false, content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: null }, 'custom.example', desktop)
     assert.match(html, /property="og:image" content="https?:\/\/[^\"]+\/api\/posts\/post-meta\/preview-image\?v=/)
     assert.match(html, /property="og:type" content="article"/)
     assert.match(html, /name="twitter:card" content="summary_large_image"/)
-    assert.match(html, /class="preview-image"><img src="https?:\/\/[^\"]+\/api\/posts\/post-meta\/preview-image\?v=/)
+    assert.doesNotMatch(html.split('<body')[1], /\/api\/posts\/post-meta\/preview-image/)
   })
   await scenario('rich video sanitization repairs supported share URLs', async () => {
     const html = sanitizeRichHtml('<figure><iframe src="https://www.tiktok.com/@creator/video/1234567890123456789"></iframe><iframe src="https://evil.example/embed/1"></iframe></figure>')

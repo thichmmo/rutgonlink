@@ -6,7 +6,7 @@ Verification: `npx tsc --noEmit -p tsconfig.root-check.json --pretty false`; `np
 
 Shared-domain routing: links created with a configured shared domain are looked up by both `shortCode` and `sharedDomain`; the main domain keeps its existing fallback behavior, while unknown hosts no longer resolve domainless links.
 
-Managed posts rendered by the same custom-domain route now include the optional preview image and persisted fake-video play overlay before the popup lock is released.
+Managed posts rendered by the same custom-domain route expose the optional preview image through absolute social metadata; the image is not inserted into the article body, and the popup lock is released only after the handoff flow completes.
 
 The managed-post popup now uses the compact Boclink-style white card and advances from Shopee to TikTok in place. It only records a step after `window.open` returns a tab and keeps the retry available when an in-app browser blocks the tab.
 

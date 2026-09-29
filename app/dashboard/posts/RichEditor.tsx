@@ -55,8 +55,15 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   }
 
   function restoreSelection() {
-    const range = savedRangeRef.current
-    if (!range) return
+    const editor = editorRef.current
+    if (!editor) return
+    let range = savedRangeRef.current
+    // Source-mode switches replace the editor node, invalidating the old caret.
+    if (!range || !editor.contains(range.commonAncestorContainer)) {
+      range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+    }
     const selection = window.getSelection()
     selection?.removeAllRanges()
     selection?.addRange(range)
@@ -158,6 +165,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
 
   function paste(event: React.ClipboardEvent<HTMLDivElement>) {
     const image = [...event.clipboardData.files].find(file => file.type.startsWith('image/'))
+      || [...event.clipboardData.items].find(item => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile()
     if (!image) return
     event.preventDefault()
     void uploadFile(image, 'image')
