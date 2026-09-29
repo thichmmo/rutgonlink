@@ -8,7 +8,8 @@ anchor instead of calling `window.open`; this is intended to avoid Facebook's
 script-created blank return tab while keeping the next popup committed before
 handoff. The native return still requires an iPhone/Facebook check.
 
-Progress never moves backwards merely because storage reads fail or expire. An
+Progress bars show the configured seconds for each inline popup step, and the action
+stays disabled until its wall-clock deadline. Progress never moves backwards merely because storage reads fail or expire. An
 unfinished first handoff carries a 30-minute resume window; completed state uses
 the popup's configured cooldown, including zero. Returning refreshes the button
 from its deadline, not a restarted countdown. Failed navigation restores the

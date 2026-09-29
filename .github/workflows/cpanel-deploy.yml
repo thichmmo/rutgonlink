@@ -49,6 +49,9 @@ jobs:
       - name: Popup runtime regressions
         run: node scripts/test-popup-runtime.cjs
 
+      - name: Popup timing dashboard regressions
+        run: node scripts/test-popup-timing.cjs
+
       - name: Persistent content upload path regressions
         run: node scripts/test-content-upload-path.cjs
 

@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     prisma.managedPost.findMany({
       where,
       include: {
-        popup: { select: { id: true, name: true, isActive: true } },
+        popup: { select: { id: true, name: true, isActive: true, settings: true } },
         domain: { select: { id: true, domain: true } },
       },
       orderBy: { updatedAt: 'desc' },
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
             isFakeVideo: data.isFakeVideo,
             isPublished: data.isPublished,
           },
-          include: { popup: { select: { id: true, name: true, isActive: true } }, domain: { select: { id: true, domain: true } } },
+          include: { popup: { select: { id: true, name: true, isActive: true, settings: true } }, domain: { select: { id: true, domain: true } } },
         }))
       }
       return result

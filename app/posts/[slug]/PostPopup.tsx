@@ -232,11 +232,14 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
   const forceMessage = current.forceBrowser ? `Nếu Facebook chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
   const progress = `Bạn cần đóng ${step + 1}/${steps.length} popup để xem được nội dung`
   const buttonLabel = remaining > 0 ? `Chờ ${remaining}s` : opening ? 'Đang mở...' : 'Đóng để xem'
+  const delay = Math.max(0, Number(current.delaySeconds || 0))
+  const timerPercent = delay ? Math.min(100, Math.max(0, ((delay - remaining) / delay) * 100)) : 100
 
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Màn hình trung gian">
     <div className="w-full max-w-[760px] rounded-[28px] bg-white p-4 text-gray-950 shadow-2xl sm:p-7">
       <div className="mb-3 flex items-center justify-between gap-3 px-1"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-gray-400">Mở liên kết</p><p className="mt-1 text-sm font-medium text-gray-700">{current.platform} · lượt {step + 1}/{steps.length}</p></div><span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">{remaining > 0 ? `Sau ${remaining}s` : 'Sẵn sàng'}</span></div>
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-gray-50"><div className="aspect-[1.68] w-full bg-gray-100 bg-contain bg-center bg-no-repeat" style={image ? { backgroundImage: `url("${image.replaceAll('"', '%22')}")` } : undefined} aria-label={`Ảnh ${current.platform}`} /></div>
+      <div className="mt-4" role="progressbar" aria-label={`Bộ đếm ${current.platform}`} aria-valuemin={0} aria-valuemax={delay} aria-valuenow={Math.max(0, remaining)}><div className="mb-1 flex items-center justify-between text-xs font-semibold text-gray-500"><span>{remaining > 0 ? `Đang đếm ${remaining} giây` : 'Đã hết thời gian chờ'}</span><span>{delay}s</span></div><div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-[#d61f51] transition-[width] duration-200" style={{ width: `${timerPercent}%` }} /></div></div>
       <button type="button" onClick={advance} disabled={remaining > 0 || opening} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>
       <p className="mt-4 text-center text-base font-medium text-[#9ba3b3] sm:text-lg">{progress}</p>
       {forceMessage && <p className="mt-2 text-center text-xs text-amber-600">{forceMessage}</p>}

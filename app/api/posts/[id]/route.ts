@@ -17,7 +17,7 @@ type Context = { params: Promise<{ id: string }> }
 async function getPost(id: string, userId: string) {
   return prisma.managedPost.findFirst({
     where: { id, userId },
-    include: { popup: { select: { id: true, name: true, isActive: true } }, domain: { select: { id: true, domain: true } } },
+    include: { popup: { select: { id: true, name: true, isActive: true, settings: true } }, domain: { select: { id: true, domain: true } } },
   })
 }
 

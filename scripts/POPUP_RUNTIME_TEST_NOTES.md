@@ -48,3 +48,6 @@ The guard runs without an active popup and removes its listeners and pending
 navigation on React unmount. The harness executes every inline script, not just
 the first. Use `--device-check` for a focused check or `POPUP_TEST_ROOT` pointing
 at the original snapshot with `--device-baseline` to record desktop Shopee/F12=none.
+
+
+`node scripts/test-popup-timing.cjs` covers the dashboard timing formatter and legacy/default JSON normalization. It does not open affiliate URLs or mutate popup records; the dashboard preview uses the same wall-clock countdown semantics as the public runtime.

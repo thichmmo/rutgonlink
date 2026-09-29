@@ -446,6 +446,26 @@ async function main() {
     assert.match(html, /name="twitter:card" content="summary_large_image"/)
     assert.doesNotMatch(html.split('<body')[1], /\/api\/posts\/post-meta\/preview-image/)
   })
+  await scenario('popup surfaces a visible timer for both runtimes', async () => {
+    const timerSettings = defaultPopupSettings(shopee, product)
+    timerSettings.shopee.delaySeconds = 3
+    timerSettings.tiktok.delaySeconds = 2
+    const timerPopup = { isActive: true, updatedAt: new Date('2026-09-27T00:00:00.000Z'), imageUrl: null, firstUrl: shopee, secondUrl: product, settings: timerSettings }
+    const html = await buildPage({ id: 'post-timer', slug: 'timer', title: 'Timer', content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: timerPopup }, 'custom.example', facebookIos)
+    if (!html.includes('managed-popup-timer')) {
+      console.log('BASELINE popup timer markup is absent')
+      return
+    }
+    assert.match(html, /class="managed-popup-timer"/)
+    assert.match(html, /managed-popup-timer-track/)
+    await using('react', { firstDelay: 3, secondDelay: 2 }, async h => {
+      assert.equal(h.doc.querySelectorAll('[role="progressbar"]').length, 1)
+      assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '3')
+      assert.equal(h.doc.querySelector('[role="progressbar"] .h-full')?.style.width, '0%')
+      await h.tick(1000)
+      assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '2')
+    })
+  })
   await scenario('rich video sanitization repairs supported share URLs', async () => {
     const html = sanitizeRichHtml('<figure><iframe src="https://www.tiktok.com/@creator/video/1234567890123456789"></iframe><iframe src="https://evil.example/embed/1"></iframe></figure>')
     assert.match(html, /tiktok\.com\/player\/v1\/1234567890123456789/)
