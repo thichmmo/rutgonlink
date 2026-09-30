@@ -12,6 +12,7 @@ const { createRoot } = require('react-dom/client')
 const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
 assert.ok(fs.existsSync(sourceRoot), 'POPUP_TEST_ROOT must point to an existing source snapshot')
 const baseline = process.argv.includes('--baseline')
+const timerBaseline = process.argv.includes('--timer-baseline')
 const shortLinkBaseline = process.argv.includes('--shortlink-baseline')
 const cooldownBaseline = process.argv.includes('--cooldown-baseline')
 const deviceBaseline = process.argv.includes('--device-baseline')
@@ -235,6 +236,16 @@ async function withFetch(handler, fn) {
 }
 
 async function main() {
+  if (timerBaseline) {
+    for (const kind of ['route', 'react']) await using(kind, { firstDelay: 3, secondDelay: 2 }, async h => {
+      assert.equal(h.doc.querySelector('[role="timer"]'), null)
+      assert.equal(h.doc.querySelector('[role="progressbar"]'), null)
+      console.log('BASELINE ' + kind + ' timer=absent progress=absent delay=3s')
+    })
+    console.log('RESULT=TIMER_BASELINE_CONFIRMED')
+    return
+  }
+
   if (contextMenuBaseline || contextMenuCheck) {
     for (const kind of ['route', 'react']) await using(kind, { ua: desktop }, async h => {
       const prevented = await h.mouse('contextmenu')
@@ -446,32 +457,51 @@ async function main() {
     assert.match(html, /name="twitter:card" content="summary_large_image"/)
     assert.doesNotMatch(html.split('<body')[1], /\/api\/posts\/post-meta\/preview-image/)
   })
-  await scenario('popup surfaces a visible timer for both runtimes', async () => {
-    const timerSettings = defaultPopupSettings(shopee, product)
-    timerSettings.shopee.delaySeconds = 3
-    timerSettings.tiktok.delaySeconds = 2
-    const timerPopup = { isActive: true, updatedAt: new Date('2026-09-27T00:00:00.000Z'), imageUrl: null, firstUrl: shopee, secondUrl: product, settings: timerSettings }
-    const html = await buildPage({ id: 'post-timer', slug: 'timer', title: 'Timer', content: 'Article', contentFormat: 'plain', user: { managedContentBlocks: [] }, popup: timerPopup }, 'custom.example', facebookIos)
-    if (!html.includes('managed-popup-timer')) {
-      console.log('BASELINE popup timer markup is absent')
-      return
-    }
-    assert.match(html, /class="managed-popup-timer"/)
-    assert.match(html, /managed-popup-timer-track/)
-    await using('react', { firstDelay: 3, secondDelay: 2 }, async h => {
-      assert.equal(h.doc.querySelectorAll('[role="progressbar"]').length, 1)
-      assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '3')
-      assert.equal(h.doc.querySelector('[role="progressbar"] .h-full')?.style.width, '0%')
-      await h.tick(1000)
-      assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '2')
-    })
-  })
   await scenario('rich video sanitization repairs supported share URLs', async () => {
     const html = sanitizeRichHtml('<figure><iframe src="https://www.tiktok.com/@creator/video/1234567890123456789"></iframe><iframe src="https://evil.example/embed/1"></iframe></figure>')
     assert.match(html, /tiktok\.com\/player\/v1\/1234567890123456789/)
     assert.doesNotMatch(html, /evil\.example/)
   })
   for (const kind of ['route', 'react']) {
+    await scenario(kind + ' visible countdown stays in sync through both steps', async () => {
+      await using(kind, { firstDelay: 3, secondDelay: 2 }, async h => {
+        const timer = () => h.doc.querySelector('[role="timer"]')
+        const bar = () => h.doc.querySelector('[role="progressbar"]')
+        assert.equal(timer().textContent, 'Còn 3 giây')
+        assert.equal(bar().getAttribute('aria-valuenow'), '0')
+        assert.equal(bar().getAttribute('aria-valuemax'), '100')
+        assert.equal(h.button().disabled, true)
+        await h.click()
+        assert.equal(h.calls.length, 0)
+        await h.tick(1000)
+        assert.equal(timer().textContent, 'Còn 2 giây')
+        assert.equal(bar().getAttribute('aria-valuenow'), '33')
+        if (kind === 'route') assert.equal(h.doc.querySelector('.managed-popup-head span').textContent, 'Sau 2s')
+        await h.tick(2000)
+        assert.equal(timer().textContent, 'Sẵn sàng')
+        assert.equal(bar().getAttribute('aria-valuenow'), '100')
+        assert.equal(h.button().disabled, false)
+        await h.click()
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(timer().textContent, 'Còn 2 giây')
+        assert.equal(bar().getAttribute('aria-label'), 'Bộ đếm TikTok')
+        await h.away(3000); await h.back()
+        assert.equal(timer().textContent, 'Sẵn sàng')
+        assert.equal(bar().getAttribute('aria-valuenow'), '100')
+        assert.equal(h.button().disabled, false)
+        await h.click()
+        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(timer(), null)
+      })
+    })
+    await scenario(kind + ' zero delay is ready with valid progress range', async () => {
+      await using(kind, { firstDelay: 0, secondDelay: 0 }, async h => {
+        assert.equal(h.doc.querySelector('[role="timer"]').textContent, 'Sẵn sàng')
+        assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '100')
+        assert.equal(h.doc.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '100')
+        assert.equal(h.button().disabled, false)
+      })
+    })
     for (const handle of ['handle', 'null']) await scenario(kind + ' storage-denied ' + handle + ' return', async () => {
       await using(kind, { handle, session: false, local: false, cookies: false }, async h => {
         assert.equal(h.state(), 'Shopee')

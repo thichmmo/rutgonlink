@@ -14,3 +14,8 @@ local, live standalone, staged standalone, configured-directory, and upload
 round-trip behavior.
 It compiles the generated inline JavaScript and mounts the real React popup with
 storage/navigation mocks to catch iOS/Facebook handoff regressions before release.
+
+Timing checks now include public timer/progress synchronization, zero seconds,
+dashboard preview lifecycle/cleanup, normalization, and owner-scoped API responses.
+Run `node scripts/test-popup-timing.cjs` and `node scripts/test-popup-timing-api.cjs`
+alongside the runtime suite before deployment.

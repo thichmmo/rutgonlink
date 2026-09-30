@@ -30,3 +30,5 @@ ignored. Zoom/resize alone never redirect. Menu-opened or already-open DevTools
 are not detected. Dashboard and ordinary short-link routes remain unchanged.
 
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/[shortCode]/route.ts'`, plus mobile popup, desktop no-popup/F12, root-post metadata, alias and short-link smoke requests.
+
+The header badge, visible timer and accessible 0-100 progress bar update together, including after returning from an external app. `node scripts/test-popup-runtime.cjs` executes the actual inline DOM to verify both steps and zero seconds.

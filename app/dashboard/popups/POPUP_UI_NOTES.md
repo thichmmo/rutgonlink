@@ -8,3 +8,5 @@ Editing Android now updates the required general URL as well. Affiliate resoluti
 preserves a distinct iOS URL instead of replacing a supplied OneLink with a web URL.
 
 Verify with `node scripts/test-popup-runtime.cjs`, `pnpm exec eslint app/dashboard/popups` and exercise create/edit/duplicate/delete at desktop/mobile widths.
+
+Delay inputs are labeled "Chờ mở link" (not initial display delay). The preview is isolated from live navigation and cooldown state; zero remains a deliberate saved value. Verify preview countdown/cleanup with `node scripts/test-popup-timing.cjs`.

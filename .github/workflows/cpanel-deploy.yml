@@ -50,7 +50,9 @@ jobs:
         run: node scripts/test-popup-runtime.cjs
 
       - name: Popup timing dashboard regressions
-        run: node scripts/test-popup-timing.cjs
+        run: |
+          node scripts/test-popup-timing.cjs
+          node scripts/test-popup-timing-api.cjs
 
       - name: Persistent content upload path regressions
         run: node scripts/test-content-upload-path.cjs
@@ -60,10 +62,12 @@ jobs:
           pnpm exec eslint
           app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
+          app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
           lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
+          scripts/test-popup-timing.cjs scripts/test-popup-timing-api.cjs
 
       - name: Validate deployment scripts
         run: |

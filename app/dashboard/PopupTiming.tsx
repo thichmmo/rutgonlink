@@ -26,7 +26,8 @@ function CountdownDemo({ delays }: { delays: number[] }) {
     const update = () => setRemaining(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)))
     const timer = window.setInterval(update, 250)
     window.addEventListener('focus', update)
-    return () => { window.clearInterval(timer); window.removeEventListener('focus', update) }
+    document.addEventListener('visibilitychange', update)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update) }
   }, [deadline, done])
 
   function goTo(next: number) {
@@ -38,7 +39,7 @@ function CountdownDemo({ delays }: { delays: number[] }) {
   return <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3" data-testid="countdown-preview">
     <div className="flex items-center justify-between gap-2 text-xs font-semibold text-gray-700">
       <span>{done ? 'Nội dung bài viết đã mở' : `${platform} · lượt ${step + 1}/2`}</span>
-      <span role="timer" aria-live="off" className="tabular-nums">{remaining}s</span>
+      <span role="timer" aria-live="off" aria-label="Thời gian chờ xem thử" className="tabular-nums">{remaining}s</span>
     </div>
     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true"><div className="h-full bg-[#d61f51]" style={{ width: `${done || !delays[step] ? 100 : Math.min(100, Math.max(0, (1 - remaining / delays[step]) * 100))}%` }} /></div>
     {!done && <button type="button" disabled={remaining > 0} onClick={() => { if (Date.now() >= deadline) goTo(step + 1) }} className="mt-3 w-full rounded-full bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-50">{remaining > 0 ? `Chờ ${remaining}s` : `Mô phỏng mở ${platform}`}</button>}
@@ -50,10 +51,10 @@ function CountdownDemo({ delays }: { delays: number[] }) {
 export function PopupTimingPreview({ settings, name }: { settings?: PopupTimingSettings | null; name?: string }) {
   const [expanded, setExpanded] = useState(false)
   const timing = popupTiming(settings)
-  return <section className="rounded-xl border border-gray-200 bg-slate-50 p-3" aria-label={name ? `Bộ đếm ${name}` : 'Bộ đếm thời gian'}>
+  return <section className="rounded-xl border border-gray-200 bg-slate-50 p-3" aria-label={name || 'Bộ đếm thời gian'}>
     <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-gray-800"><Clock3 className="h-4 w-4" /> {name || 'Bộ đếm thời gian'}</div>
     <PopupTimingSummary settings={settings} />
-    <p className="mt-2 text-xs leading-relaxed text-gray-600">Nút mở link chỉ bật khi hết số giây của lượt đó. 0 giây cho phép bấm ngay. Cooldown tính từ khi hoàn tất hai lượt; 0 phút cho phép hiện lại ở lần tải trang kế tiếp.</p>
+    <p className="mt-2 text-xs leading-relaxed text-gray-600">Nút mở link chỉ bật khi hết số giây của lượt đó. 0 giây cho phép bấm ngay. Thời gian vẫn tính khi chuyển sang app khác. Cooldown tính từ khi hoàn tất hai lượt; 0 phút cho phép hiện lại ở lần tải trang kế tiếp. Popup thật chỉ hiện trên điện thoại khi cả hai nền tảng được bật cho thiết bị.</p>
     <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-2 text-xs font-semibold text-[#d61f51]">{expanded ? 'Ẩn xem thử' : 'Xem thử bộ đếm'}</button>
     {expanded && <CountdownDemo key={`${timing.shopeeSeconds}:${timing.tiktokSeconds}`} delays={[timing.shopeeSeconds, timing.tiktokSeconds]} />}
   </section>

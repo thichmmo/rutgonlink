@@ -31,3 +31,5 @@ Zero cooldown clears persisted completion but keeps the current document unlocke
 on app return. Test 0, 1, 5 and 60 minutes plus cookie-only reload before/at expiry.
 
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both mobile clicks, desktop article rendering, F12/DevTools redirect, tab blocking, refresh, Facebook crawler metadata and a no-popup post on desktop/mobile.
+
+Timer text and a 0-100 percent progress bar share the same deadline. Zero seconds renders ready immediately; focus/visibility return updates both. Verify two nonzero steps plus zero seconds with `node scripts/test-popup-runtime.cjs`.
