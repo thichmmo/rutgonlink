@@ -32,7 +32,7 @@ function load(file) {
   } }).outputText
   const localRequire = id => {
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
-    if (id === '@/lib/popup-click-client') return { sendPopupClick: () => {} }
+    if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
       if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
@@ -73,6 +73,11 @@ async function mount(kind, options = {}) {
   let visibility = 'visible'
   const timers = new Map()
   const calls = []
+  const clickEvents = []
+  Object.defineProperty(dom.window.navigator, 'sendBeacon', { value: (url, body) => {
+    clickEvents.push({ url, ...JSON.parse(body) })
+    return true
+  } })
   const storage = { session: new Map(options.session || []), local: new Map(options.local || []) }
   const storageReads = []
   const cookieJar = new Map(String(options.cookie || '').split(';').map(value => value.trim()).filter(Boolean).map(value => {
@@ -149,7 +154,7 @@ async function mount(kind, options = {}) {
   settings.shopee.delaySeconds = options.firstDelay || 0
   settings.tiktok.delaySeconds = options.secondDelay || 0
   if (options.iosUrl) settings.tiktok.iosUrl = options.iosUrl
-  const popup = { isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: product, settings }
+  const popup = { id: 'popup1', isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: product, settings }
   const ua = options.ua ?? facebookIos
   let root
   async function tick(ms = 0) {
@@ -183,14 +188,15 @@ async function mount(kind, options = {}) {
     root = createRoot(doc.querySelector('#root'))
     await React.act(async () => root.render(React.createElement(React.Fragment, null,
       React.createElement(DesktopDevToolsGuard, { userAgent: ua }),
-      options.noPopup ? null : React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua }),
+      options.noPopup ? null : React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua,
+        tracking: { postId: 'post1', popupId: 'popup1', token: 'fixture-popup-click-token' } }),
     )))
     await tick()
   }
   const button = () => doc.querySelector(kind === 'route' ? '.managed-popup-open' : '[role="dialog"] button')
   const fire = async (target, type) => React.act(async () => target.dispatchEvent(new dom.window.Event(type)))
   return {
-    state, calls, storage, storageReads, button, doc, tick, cookieWrites,
+    state, calls, clickEvents, storage, storageReads, button, doc, tick, cookieWrites,
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
@@ -465,6 +471,26 @@ async function main() {
     assert.doesNotMatch(html, /evil\.example/)
   })
   for (const kind of ['route', 'react']) {
+    await scenario(kind + ' records only ready popup clicks with post and popup identity', async () => {
+      await using(kind, { firstDelay: 1, secondDelay: 1 }, async h => {
+        assert.equal(h.clickEvents.length, 0, 'Rendering the article is not a popup click')
+        await h.click()
+        assert.equal(h.clickEvents.length, 0, 'Disabled countdown taps do not count')
+        await h.tick(1000); await h.click(); await h.click()
+        assert.equal(h.clickEvents.length, 1, 'Repeated taps during handoff do not count twice')
+        await h.away(1500); await h.back(); await h.click()
+        assert.deepEqual(h.clickEvents.map(event => event.platform), ['SHOPEE', 'TIKTOK'])
+        for (const event of h.clickEvents) {
+          assert.equal(event.url, '/api/popup-clicks')
+          assert.equal(event.postId, 'post1')
+          assert.equal(event.popupId, 'popup1')
+          assert.equal(event.token, 'fixture-popup-click-token')
+        }
+        assert.notEqual(h.clickEvents[0].eventId, h.clickEvents[1].eventId)
+        await h.away(); await h.back()
+        assert.equal(h.clickEvents.length, 2, 'Returning from an app does not create another click')
+      })
+    })
     await scenario(kind + ' visible countdown stays in sync through both steps', async () => {
       await using(kind, { firstDelay: 3, secondDelay: 2 }, async h => {
         const timer = () => h.doc.querySelector('[role="timer"]')

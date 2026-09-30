@@ -49,6 +49,9 @@ jobs:
       - name: Popup runtime regressions
         run: node scripts/test-popup-runtime.cjs
 
+      - name: Popup click analytics regressions
+        run: node scripts/test-popup-clicks.cjs
+
       - name: Popup timing dashboard regressions
         run: |
           node scripts/test-popup-timing.cjs
@@ -68,6 +71,10 @@ jobs:
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
           scripts/test-popup-timing.cjs scripts/test-popup-timing-api.cjs
+          app/api/popup-clicks app/api/popup-stats
+          app/dashboard/PopupClickStats.tsx app/dashboard/PopupAnalytics.tsx
+          lib/popup-click-client.ts lib/popup-click-token.ts
+          lib/popup-analytics.ts lib/popup-analytics-server.ts scripts/test-popup-clicks.cjs
 
       - name: Validate deployment scripts
         run: |

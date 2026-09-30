@@ -19,3 +19,8 @@ Timing checks now include public timer/progress synchronization, zero seconds,
 dashboard preview lifecycle/cleanup, normalization, and owner-scoped API responses.
 Run `node scripts/test-popup-timing.cjs` and `node scripts/test-popup-timing-api.cjs`
 alongside the runtime suite before deployment.
+
+Popup click analytics has a dedicated CI regression step and lint coverage for
+the event API, statistics API, aggregation helpers and dashboard components.
+Run `node scripts/test-popup-clicks.cjs`; the runtime suite also captures real
+beacon payloads to assert one event per ready click before affiliate navigation.

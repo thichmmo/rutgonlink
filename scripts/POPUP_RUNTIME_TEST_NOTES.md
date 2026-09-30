@@ -55,3 +55,9 @@ at the original snapshot with `--device-baseline` to record desktop Shopee/F12=n
 Timer baseline reproduction is explicit: set `POPUP_TEST_ROOT` to the original snapshot and use `--timer-baseline`. Normal test runs always require timer markup and fail if it disappears; no silent baseline skip is permitted. The timing API suite verifies authentication/owner filters and persisted settings using mocked database calls.
 
 Popup click tracking is covered by `scripts/test-popup-clicks.cjs`; it verifies signed host-bound events and UTC+7 reporting windows without opening affiliate links.
+
+The click suite also checks duplicate event delivery, bot/desktop exclusion,
+rejected tokens/origins/payloads, keepalive delivery, account-scoped reporting and
+the dashboard detail anchor. Runtime tests execute the real sender in both public
+renderers: page views, countdown taps, repeated pending taps and app returns must
+not create extra clicks. Tests only write to in-memory event stores.
