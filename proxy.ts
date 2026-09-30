@@ -102,6 +102,10 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Shared/custom posts send same-origin beacons; expose only this public write endpoint.
+  // Its signed token binds the rendered post, popup and host. Dashboard APIs stay blocked.
+  if (pathname === "/api/popup-clicks" && req.method === "POST") return NextResponse.next();
+
   // Domain la: chi cho phep /shortCode
   const blockedPrefixes = [
     "/dashboard",

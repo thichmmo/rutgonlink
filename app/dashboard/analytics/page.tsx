@@ -218,7 +218,8 @@ export default function AnalyticsPage() {
     }, [days]);
 
     useEffect(() => {
-        fetchAnalytics();
+        const timer = window.setTimeout(() => { void fetchAnalytics(); }, 0);
+        return () => window.clearTimeout(timer);
     }, [fetchAnalytics]);
 
     const formatDate = (dateStr: string) => {

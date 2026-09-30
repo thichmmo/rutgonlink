@@ -31,6 +31,8 @@ function load(file) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText
   const localRequire = id => {
+    if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
+    if (id === '@/lib/popup-click-client') return { sendPopupClick: () => {} }
     if (id.startsWith('@/lib/')) {
       if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}

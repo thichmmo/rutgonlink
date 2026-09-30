@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { createPopupClickToken } from '@/lib/popup-click-token'
+import { sendPopupClick } from '@/lib/popup-click-client'
 import { prisma } from '@/lib/prisma'
 import { UAParser } from 'ua-parser-js'
 import { createUnlockToken } from '@/lib/unlock-token'
@@ -345,6 +347,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
 </script>`
   const popupScript = popup && popup.applies ? `<script>
 (() => {
+  const tracking = ${escapeInlineJson(post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, hostname) } : null)};
+  const recordPopupClick = ${sendPopupClick.toString()};
   const popup = ${popupJson};
   const steps = ${escapeInlineJson(popupSteps)};
   if (!popup || !popup.isActive || !popup.applies) return;
@@ -465,6 +469,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       const pending = { fromStep, nextStep, leftPage: false };
       pendingOpen = pending;
       opening = true;
+      recordPopupClick(tracking, platform.platform);
       // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
       render();

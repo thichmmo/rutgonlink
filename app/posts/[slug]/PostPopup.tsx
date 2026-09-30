@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
+import { sendPopupClick, type PopupClickTracking } from '@/lib/popup-click-client'
 import { getPopupStep, isMobileUserAgent, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 
 type Popup = {
@@ -14,7 +15,7 @@ type Popup = {
   settings: PopupSettings
 }
 
-export default function PostPopup({ postId, popup, userAgent }: { postId: string; popup: Popup; userAgent: string }) {
+export default function PostPopup({ postId, popup, userAgent, tracking }: { postId: string; popup: Popup; userAgent: string; tracking?: PopupClickTracking }) {
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const isMobile = isMobileUserAgent(userAgent)
   const applies = popup.isActive && popupAppliesToDevice(popup.settings, userAgent)
@@ -162,6 +163,7 @@ export default function PostPopup({ postId, popup, userAgent }: { postId: string
     const nextStep = fromStep + 1
     const pending = { fromStep, nextStep, leftPage: false }
     pendingOpenRef.current = pending
+    sendPopupClick(tracking, current.platform)
     // Commit the DOM before iOS snapshots/suspends this page, without losing the click gesture.
     flushSync(() => {
       setOpening(true)

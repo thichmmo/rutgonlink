@@ -8,6 +8,7 @@ import {Link2, MousePointer, Globe, TrendingUp} from 'lucide-react';
 import {formatNumber, formatDateTimeVN} from '@/lib/utils';
 import {getSiteUrl} from '@/lib/site-config';
 import DashboardQuickShorten from './DashboardQuickShorten';
+import PopupAnalytics from './PopupAnalytics';
 
 type RecentLink = Prisma.LinkGetPayload<{
     include: {
@@ -86,6 +87,7 @@ export default async function DashboardPage() {
 
             {/* Quick Shorten */}
             <DashboardQuickShorten />
+            <PopupAnalytics />
 
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

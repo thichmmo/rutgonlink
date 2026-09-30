@@ -53,3 +53,5 @@ at the original snapshot with `--device-baseline` to record desktop Shopee/F12=n
 `node scripts/test-popup-timing.cjs` covers the dashboard timing formatter and legacy/default JSON normalization. It does not open affiliate URLs or mutate popup records; the dashboard preview uses the same wall-clock countdown semantics as the public runtime.
 
 Timer baseline reproduction is explicit: set `POPUP_TEST_ROOT` to the original snapshot and use `--timer-baseline`. Normal test runs always require timer markup and fail if it disappears; no silent baseline skip is permitted. The timing API suite verifies authentication/owner filters and persisted settings using mocked database calls.
+
+Popup click tracking is covered by `scripts/test-popup-clicks.cjs`; it verifies signed host-bound events and UTC+7 reporting windows without opening affiliate links.

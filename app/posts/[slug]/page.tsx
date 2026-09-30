@@ -11,6 +11,7 @@ import { getPostPreviewImageUrl } from '@/lib/post-preview'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
+import { createPopupClickToken } from '@/lib/popup-click-token'
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
@@ -78,7 +79,9 @@ export default async function ManagedPostPage({ params }: Context) {
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
-  const userAgent = (await headers()).get('user-agent') || ''
+  const requestHeaders = await headers()
+  const userAgent = requestHeaders.get('user-agent') || ''
+  const tracking = post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, requestHeaders.get('host') || getSiteHostname()) } : undefined
   const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const settings = post.popup?.isActive && normalizedSettings
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
@@ -101,6 +104,6 @@ export default async function ManagedPostPage({ params }: Context) {
     <Footer />
     <style>{MANAGED_MEDIA_CSS}</style>
     <DesktopDevToolsGuard userAgent={userAgent} />
-    {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
+    {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div>
 }
