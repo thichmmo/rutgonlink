@@ -24,3 +24,6 @@ Popup click analytics has a dedicated CI regression step and lint coverage for
 the event API, statistics API, aggregation helpers and dashboard components.
 Run `node scripts/test-popup-clicks.cjs`; the runtime suite also captures real
 beacon payloads to assert one event per ready click before affiliate navigation.
+
+The runtime suite also checks the shared preopened DevTools guard and no-JS
+server markup on both public renderers; lint includes `lib/public-post-guard.ts`.

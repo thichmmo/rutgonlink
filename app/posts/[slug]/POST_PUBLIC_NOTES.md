@@ -19,11 +19,16 @@ fallbacks include completion and share the cookie key with the root route. A
 wall-clock deadline handles countdowns after background suspension, and reading
 storage on reload never extends the completion expiry.
 
-Public desktop post pages install a keyboard guard independently of the popup.
-F12, Ctrl+Shift+I/J/C, Cmd+Option+I/J/C and desktop right-click redirect once to `https://mesale.vn`.
-Mobile UAs and the destination host are ignored. Cleanup cancels pending navigation.
-The guard does not infer DevTools from viewport dimensions: zoom and sidebars also
-change those values. Menu-opened or already-open DevTools are not detected.
+Public post pages install the shared inspection guard before the popup's effects.
+F12, Ctrl+Shift+I/J/C, Cmd+Option+I/J/C and desktop right-click redirect once to
+`https://mesale.vn`. Entry/lifecycle checks also handle a persistent docked panel
+and a phone UA paired with a desktop platform. Real-mobile hints and the destination
+host are ignored; cleanup cancels navigation, timers and listeners. Popup startup
+and clicks stop when the guard sets `data-post-guard-blocked`.
+Server-rendered noscript markup hides the public UI and redirects to Mesale with
+JavaScript disabled. This is heuristic deterrence, not source protection; undocked
+tools may escape detection and large browser sidebars can resemble a panel.
+See `lib/PUBLIC_POST_GUARD_NOTES.md` for the shared behavior and limitations.
 
 All storage sources validate absolute expiry, including session storage. Completion
 records carry the configured duration; old permanent/fixed-30m records are ignored.

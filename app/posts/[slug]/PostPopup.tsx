@@ -94,7 +94,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
 
   useEffect(() => {
     // Desktop/inactive views must not read or migrate mobile handoff storage.
-    if (!applies) return
+    if (!applies || document.documentElement.hasAttribute('data-post-guard-blocked')) return
     const timer = window.setTimeout(() => {
       commitStep(readStoredStep(), false)
       setReady(true)
@@ -152,6 +152,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
   }, [applies, ready, step, steps])
 
   function advance() {
+    if (document.documentElement.hasAttribute('data-post-guard-blocked')) return
     if (!applies || !ready || pendingOpenRef.current || step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length) return
     const fromStep = stepRef.current
     const current = steps[fromStep]

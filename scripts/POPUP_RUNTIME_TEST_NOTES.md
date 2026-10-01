@@ -43,11 +43,20 @@ rollback. The cookie mock handles multiple cookies and their actual Max-Age.
 Desktop cases assert ARTICLE with no popup storage reads/migration, including
 old mobile handoff markers. F12 and Windows/macOS DevTools shortcuts navigate
 once to `https://mesale.vn`; desktop right-click also suppresses the context menu
-and navigates once, while ordinary clicks, zoom/resize and mobile keys do not.
+and navigates once, while ordinary clicks, proportional zoom, transient resize
+and real-mobile keys do not.
 The guard runs without an active popup and removes its listeners and pending
 navigation on React unmount. The harness executes every inline script, not just
 the first. Use `--device-check` for a focused check or `POPUP_TEST_ROOT` pointing
 at the original snapshot with `--device-baseline` to record desktop Shopee/F12=none.
+
+Preopened-panel coverage includes both dock positions, mobile UA on desktop
+platforms, iPad desktop mode, hidden-page return, pending-click suppression and
+timer cleanup. Both renderers must emit noscript HTML without an unconditional
+refresh, and the standalone guard must run in the head. Use `--preopened-check`
+for focused checks; `POPUP_TEST_ROOT` plus `--preopened-baseline` reproduces the
+old bypass on a source snapshot. `--export-fixture <directory>` writes standalone
+and React SSR fixture HTML for browser no-JS checks without production requests.
 
 
 `node scripts/test-popup-timing.cjs` covers the dashboard timing formatter and legacy/default JSON normalization. It does not open affiliate URLs or mutate popup records; the dashboard preview uses the same wall-clock countdown semantics as the public runtime.

@@ -12,6 +12,7 @@ import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
 import { createPopupClickToken } from '@/lib/popup-click-token'
+import { PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
@@ -87,7 +88,10 @@ export default async function ManagedPostPage({ params }: Context) {
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
     : normalizedSettings
 
-  return <div className="min-h-screen bg-[#f8fafc] text-gray-900">
+  return <>
+    <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />
+    <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
+    <DesktopDevToolsGuard userAgent={userAgent} />
     <Navbar />
     <main className="mx-auto max-w-3xl px-4 pb-20 pt-32 sm:px-6">
       <div className="mb-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.18em] text-sky-700"><BookOpen className="h-4 w-4" /> Bài viết</div>
@@ -102,8 +106,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <Link href="/" className="mt-8 inline-block text-sm font-medium text-sky-700 hover:underline">Về trang chủ</Link>
     </main>
     <Footer />
-    <style>{MANAGED_MEDIA_CSS}</style>
-    <DesktopDevToolsGuard userAgent={userAgent} />
+    <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS}</style>
     {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
-  </div>
+  </div></>
 }

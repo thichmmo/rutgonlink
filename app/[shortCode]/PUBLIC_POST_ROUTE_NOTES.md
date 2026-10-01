@@ -22,12 +22,15 @@ persisted completion while the current document stays unlocked after TikTok retu
 
 The Facebook preview JPEG stays in Open Graph/Twitter metadata, not the article body.
 
-Every standalone managed-post document also installs the desktop inspection guard,
-including posts without an active popup. F12, Ctrl+Shift+I/J/C, Cmd+Option+I/J/C
-and desktop right-click
-redirect once to `https://mesale.vn`; mobile UAs and the destination host are
-ignored. Zoom/resize alone never redirect. Menu-opened or already-open DevTools
-are not detected. Dashboard and ordinary short-link routes remain unchanged.
+Every standalone managed-post document embeds the shared inspection guard in the
+head, before article markup and popup initialization, even without an active popup.
+F12, desktop right-click, a persistent docked panel on entry and mobile UA/desktop
+platform mismatch redirect to `https://mesale.vn`. Blocked clicks cannot record
+popup events or open affiliate links. Real-mobile hints, proportional zoom and
+transient resize are excluded; undocked DevTools is not reliably detected.
+Noscript markup hides the article/popup and redirects via HTML meta refresh when
+JavaScript is disabled. OG tags stay intact; dashboard and ordinary short-link
+routes remain unchanged. See `lib/PUBLIC_POST_GUARD_NOTES.md` for heuristic limits.
 
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/[shortCode]/route.ts'`, plus mobile popup, desktop no-popup/F12, root-post metadata, alias and short-link smoke requests.
 

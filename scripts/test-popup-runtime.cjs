@@ -8,6 +8,7 @@ const ts = require('typescript')
 const { JSDOM } = require('jsdom')
 const React = require('react')
 const { createRoot } = require('react-dom/client')
+const { renderToStaticMarkup } = require('react-dom/server')
 
 const sourceRoot = path.resolve(process.env.POPUP_TEST_ROOT || '.')
 assert.ok(fs.existsSync(sourceRoot), 'POPUP_TEST_ROOT must point to an existing source snapshot')
@@ -19,6 +20,8 @@ const deviceBaseline = process.argv.includes('--device-baseline')
 const deviceCheck = process.argv.includes('--device-check')
 const contextMenuBaseline = process.argv.includes('--contextmenu-baseline')
 const contextMenuCheck = process.argv.includes('--contextmenu-check')
+const preopenedBaseline = process.argv.includes('--preopened-baseline')
+const preopenedCheck = process.argv.includes('--preopened-check')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -31,10 +34,17 @@ function load(file) {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText
   const localRequire = id => {
+    if (file === 'app/posts/[slug]/page.tsx') {
+      if (id === '@/lib/prisma') return { prisma: { managedPost: { findFirst: async () => postFixture } } }
+      if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': desktop, host: 'fixture.example' }) }
+      if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') } }
+      if (id === 'next/link' || id === '@/components/Navbar' || id === '@/components/Footer') return () => null
+      if (id.startsWith('./')) return load('app/posts/[slug]/' + id.slice(2) + '.tsx')
+    }
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview', 'public-post-guard'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -48,6 +58,7 @@ const facebookIos = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) [FBA
 const safariIos = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) Safari/604.1'
 const android = 'Mozilla/5.0 (Linux; Android 14) Chrome/140 [FBAN/FB4A]'
 const desktop = 'Mozilla/5.0 (Windows NT 10.0) Chrome/140'
+const postFixture = { id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain', createdAt: new Date('2026-10-01'), user: { managedContentBlocks: [] }, popup: null }
 const product = 'https://www.tiktok.com/view/product/1729605979383696179?checksum=keep%2Fraw&encode_params=A+B%3D%3D&trackParams=%7B%22affiliate%22%3A%22original%22%7D'
 const shopee = 'https://shopee.vn/product/123/456?affiliate=original'
 const shortTikTok = 'https://vt.tiktok.com/ZS9rPANpNhyeP-JpTZz/'
@@ -68,9 +79,16 @@ async function mount(kind, options = {}) {
     url: 'https://fixture.example/post', pretendToBeVisual: true,
   })
   const doc = dom.window.document
+  const ua = options.ua ?? facebookIos
+  const mobileUa = /iphone|ipad|ipod|android/i.test(ua)
+  Object.defineProperties(dom.window.navigator, {
+    userAgent: { value: ua },
+    platform: { value: options.platform ?? (mobileUa ? (/android/i.test(ua) ? 'Linux armv8l' : 'iPhone') : 'Win32') },
+    maxTouchPoints: { value: options.maxTouchPoints ?? (mobileUa ? 5 : 0) },
+  })
   let now = options.now ?? 1_000_000
   let timerId = 0
-  let visibility = 'visible'
+  let visibility = options.visibility || 'visible'
   const timers = new Map()
   const calls = []
   const clickEvents = []
@@ -155,7 +173,6 @@ async function mount(kind, options = {}) {
   settings.tiktok.delaySeconds = options.secondDelay || 0
   if (options.iosUrl) settings.tiktok.iosUrl = options.iosUrl
   const popup = { id: 'popup1', isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: product, settings }
-  const ua = options.ua ?? facebookIos
   let root
   async function tick(ms = 0) {
     await React.act(async () => {
@@ -180,7 +197,7 @@ async function mount(kind, options = {}) {
     doc.body.className = /<body class="([^"]*)"/.exec(html)?.[1] || ''
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1])
     for (const script of scripts) {
-      new vm.Script(script).runInNewContext({ window: win, document: doc, navigator: { userAgent: ua },
+      new vm.Script(script).runInNewContext({ window: win, document: doc, navigator: dom.window.navigator,
         sessionStorage: overrides.sessionStorage, localStorage: overrides.localStorage, Date, URL })
     }
   } else {
@@ -212,8 +229,9 @@ async function mount(kind, options = {}) {
       if (flush) await tick()
       return event.defaultPrevented
     },
-    async resize() { await fire(win, 'resize') },
+    async resize(dimensions = {}) { Object.assign(overrides, dimensions); await fire(win, 'resize') },
     async unmount() { if (root) { await React.act(async () => root.unmount()); root = null } },
+    timerCount: () => timers.size,
     async away(ms = 0) { await fire(win, 'blur'); visibility = 'hidden'; await fire(doc, 'visibilitychange'); now += ms },
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
     async blur() { await fire(win, 'blur') },
@@ -244,6 +262,41 @@ async function withFetch(handler, fn) {
 }
 
 async function main() {
+  if (preopenedBaseline) {
+    for (const kind of ['route', 'react']) await using(kind, { ua: desktop, outerWidth: 1600, innerWidth: 1000 }, async h => {
+      await h.tick(1500)
+      assert.equal(h.calls.length, 0)
+      console.log(`${kind} preopened=none`)
+    })
+    console.log('RESULT=PREOPENED_BASELINE_CONFIRMED')
+    return
+  }
+  if (process.argv.includes('--export-fixture')) {
+    const output = path.resolve(process.argv[process.argv.indexOf('--export-fixture') + 1])
+    fs.mkdirSync(output, { recursive: true })
+    const popup = { id: 'popup1', isActive: true, updatedAt: new Date('2026-09-27'), firstUrl: shopee, secondUrl: product, settings: defaultPopupSettings(shopee, product) }
+    fs.writeFileSync(path.join(output, 'route-desktop.html'), await buildPage(postFixture, 'fixture.example', desktop))
+    fs.writeFileSync(path.join(output, 'route-mobile.html'), await buildPage({ ...postFixture, popup }, 'fixture.example', facebookIos))
+    fs.writeFileSync(path.join(output, 'react-ssr.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body>' + renderToStaticMarkup(await load('app/posts/[slug]/page.tsx').default({ params: Promise.resolve({ slug: 'post' }) })) + '</body></html>')
+    console.log('RESULT=FIXTURES_EXPORTED')
+    return
+  }
+  if (preopenedBaseline || preopenedCheck) {
+    for (const kind of ['route', 'react']) {
+      for (const [label, options] of [
+        ['docked', { ua: desktop, outerWidth: 1600, innerWidth: 1000 }],
+        ['emulated', { ua: facebookIos, platform: 'Win32', maxTouchPoints: 1 }],
+      ]) await using(kind, options, async h => {
+        await h.tick(1500)
+        assert.equal(h.calls.length, preopenedBaseline ? 0 : 1)
+        assert.equal(h.doc.documentElement.hasAttribute('data-post-guard-blocked'), !preopenedBaseline)
+        if (preopenedCheck) assert.equal(h.calls[0].url, 'https://mesale.vn')
+        console.log(`${kind} ${label} redirect=${h.calls[0]?.url || 'none'} popup=${h.button() ? 'present' : 'absent'}`)
+      })
+    }
+    console.log(preopenedBaseline ? 'RESULT=PREOPENED_BASELINE_CONFIRMED' : 'RESULT=PREOPENED_CHECK_PASS')
+    return
+  }
   if (timerBaseline) {
     for (const kind of ['route', 'react']) await using(kind, { firstDelay: 3, secondDelay: 2 }, async h => {
       assert.equal(h.doc.querySelector('[role="timer"]'), null)
@@ -464,6 +517,23 @@ async function main() {
     assert.match(html, /property="og:type" content="article"/)
     assert.match(html, /name="twitter:card" content="summary_large_image"/)
     assert.doesNotMatch(html.split('<body')[1], /\/api\/posts\/post-meta\/preview-image/)
+  })
+  await scenario('standalone guard runs in head before article and popup scripts', async () => {
+    const html = await buildPage(postFixture, 'fixture.example', desktop)
+    assert.ok(html.indexOf('<script>') < html.indexOf('</head>'))
+    assert.match(html.slice(0, html.indexOf('</head>')), /data-post-guard-blocked/)
+  })
+  await scenario('both public renderers carry a no-JavaScript redirect without unconditional refresh', async () => {
+    const alias = renderToStaticMarkup(await load('app/posts/[slug]/page.tsx').default({ params: Promise.resolve({ slug: 'post' }) }))
+    for (const html of [await buildPage(postFixture, 'fixture.example', desktop), alias]) {
+      const noScript = html.match(/<noscript>([\s\S]*?)<\/noscript>/)
+      assert.ok(noScript, 'No-JS handling is present in server HTML, not only in a hydrated component')
+      assert.match(noScript[1], /http-equiv="refresh" content="0;url=https:\/\/mesale\.vn"/)
+      assert.match(noScript[1], /\.managed-public-post,\.managed-popup\{display:none!important\}/)
+      assert.match(noScript[1], /href="https:\/\/mesale\.vn"/)
+      assert.match(html, /class="managed-public-post/)
+      assert.doesNotMatch(html.replace(noScript[0], ''), /http-equiv="refresh"/)
+    }
   })
   await scenario('rich video sanitization repairs supported share URLs', async () => {
     const html = sanitizeRichHtml('<figure><iframe src="https://www.tiktok.com/@creator/video/1234567890123456789"></iframe><iframe src="https://evil.example/embed/1"></iframe></figure>')
@@ -759,11 +829,67 @@ async function main() {
         assert.equal(h.calls.filter(call => call.mode === 'devtools-redirect').length, 0)
       })
     })
-    await scenario(kind + ' desktop resize does not false-positive redirect', async () => {
-      await using(kind, { ua: desktop, outerWidth: 1280, innerWidth: 900 }, async h => {
+    await scenario(kind + ' proportional desktop zoom does not redirect', async () => {
+      await using(kind, { ua: desktop, outerWidth: 1600, innerWidth: 1000, outerHeight: 1200, innerHeight: 750 }, async h => {
         await h.resize(); await h.tick(1500)
         assert.equal(h.calls.length, 0)
         assert.equal(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' preopened side and bottom dock redirect without a key event', async () => {
+      for (const dimensions of [{ outerWidth: 1600, innerWidth: 1000 }, { outerHeight: 1000, innerHeight: 600 }]) {
+        for (const options of [{}, { noPopup: true }, { active: false }]) await using(kind, { ua: desktop, ...dimensions, ...options }, async h => {
+          await h.tick(119)
+          assert.equal(h.calls.length, 0)
+          assert.equal(await h.mouse('click', false), true, 'Panel-pending clicks must not propagate')
+          await h.tick(1)
+          assert.equal(h.calls.length, 1)
+          assert.equal(h.calls[0].url, 'https://mesale.vn')
+          assert.equal(h.doc.documentElement.getAttribute('data-post-guard-blocked'), '1')
+          await h.resize(); await h.back(); await h.tick(3000)
+          assert.equal(h.calls.length, 1, 'Repeated events must not queue another navigation')
+          assert.deepEqual(h.clickEvents, [])
+        })
+      }
+    })
+    await scenario(kind + ' emulated phone on a desktop blocks popup initialization', async () => {
+      for (const platform of ['Win32', 'MacIntel', 'Linux x86_64']) {
+        for (const ua of [facebookIos, android]) await using(kind, { ua, platform, maxTouchPoints: 1 }, async h => {
+          await h.tick()
+          assert.equal(h.calls.length, 1)
+          assert.equal(h.calls[0].url, 'https://mesale.vn')
+          assert.equal(h.button(), null)
+          assert.equal(await h.mouse('click'), true)
+          assert.deepEqual(h.storageReads, [])
+          assert.deepEqual(h.clickEvents, [])
+        })
+      }
+    })
+    await scenario(kind + ' real iPad desktop mode and mobile browsers stay usable', async () => {
+      for (const ua of [safariIos, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Version/18 Safari/605']) {
+        await using(kind, { ua, platform: 'MacIntel', maxTouchPoints: 5, outerWidth: 1600, innerWidth: 900 }, async h => {
+          await h.tick(2000)
+          assert.equal(h.calls.length, 0)
+          assert.equal(await h.mouse('contextmenu'), false)
+        })
+      }
+    })
+    await scenario(kind + ' transient resize and invalid window geometry do not redirect', async () => {
+      await using(kind, { ua: desktop }, async h => {
+        await h.resize({ outerWidth: 1600, innerWidth: 900 }); await h.tick(60)
+        await h.resize({ outerWidth: 900, innerWidth: 890 }); await h.tick(1500)
+        assert.equal(h.calls.length, 0)
+        await h.resize({ outerWidth: 0, innerWidth: 0 }); await h.tick(1500)
+        assert.equal(h.calls.length, 0)
+      })
+    })
+    await scenario(kind + ' visibility return rechecks a preopened panel', async () => {
+      await using(kind, { ua: desktop, visibility: 'hidden', outerWidth: 1600, innerWidth: 1000 }, async h => {
+        await h.tick(1500)
+        assert.equal(h.calls.length, 0)
+        await h.back(); await h.tick(120)
+        assert.equal(h.calls.length, 1)
+        assert.equal(h.calls[0].url, 'https://mesale.vn')
       })
     })
     await scenario(kind + ' mobile ignores DevTools dimensions', async () => {
@@ -871,6 +997,15 @@ async function main() {
       assert.equal(await h.keydown('F12'), false)
       assert.equal(await h.mouse('contextmenu'), false)
       assert.equal(h.calls.length, 0)
+      assert.equal(h.timerCount(), 0)
+    })
+  })
+  await scenario('React guard cancels preopened panel confirmation on unmount', async () => {
+    await using('react', { ua: desktop, outerWidth: 1600, innerWidth: 1000 }, async h => {
+      await h.unmount(); await h.tick(1500)
+      assert.equal(h.calls.length, 0)
+      assert.equal(h.timerCount(), 0)
+      assert.equal(h.doc.documentElement.hasAttribute('data-post-guard-blocked'), false)
     })
   })
   await scenario('React guard cancels pending navigation on unmount', async () => {
