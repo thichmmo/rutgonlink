@@ -34,6 +34,7 @@ function record(name, value) {
 function makePrisma() {
   return {
     $transaction: async operations => typeof operations === 'function' ? operations(prisma) : Promise.all(operations),
+    user: { findUnique: async () => ({ telegramSettings: null }) },
     managedPost: {
       count: async args => { record('managedPost.count', args); return 1 },
       findMany: async args => { record('managedPost.findMany', args); return [state.post] },
@@ -76,6 +77,7 @@ function load(file) {
     if (id === '@/lib/content-management') return contentManagement
     if (id === '@/lib/prisma') return { prisma }
     if (id === '@/lib/site-config') return { getSiteHostname: () => 'rutgonlink.site' }
+    if (id === '@/lib/telegram-settings') return load('lib/telegram-settings.ts')
     if (id === '@prisma/client') return { Prisma: { PrismaClientKnownRequestError: class extends Error {} } }
     return require(id)
   }

@@ -52,6 +52,12 @@ jobs:
       - name: Popup click analytics regressions
         run: node scripts/test-popup-clicks.cjs
 
+      - name: Telegram template regressions
+        run: |
+          node scripts/test-telegram-api.cjs
+          node scripts/test-telegram-render.cjs
+          node scripts/test-telegram-dashboard.cjs
+
       - name: Popup timing dashboard regressions
         run: |
           node scripts/test-popup-timing.cjs
@@ -75,6 +81,10 @@ jobs:
           app/dashboard/PopupClickStats.tsx app/dashboard/PopupAnalytics.tsx
           lib/popup-click-client.ts lib/popup-click-token.ts
           lib/popup-analytics.ts lib/popup-analytics-server.ts scripts/test-popup-clicks.cjs
+          lib/telegram-settings.ts lib/telegram-render.ts
+          app/api/settings/telegram app/dashboard/settings/TelegramSettingsSection.tsx
+          app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
+          scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs
 
       - name: Validate deployment scripts
         run: |
@@ -171,6 +181,8 @@ jobs:
           curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/ >/dev/null
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
+          curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/chinh-sach-bao-mat >/dev/null
           dashboard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
           test "$dashboard_status" = 302 || test "$dashboard_status" = 307
           if [ -n "${SMOKE_POST_URL:-}" ]; then

@@ -54,6 +54,8 @@ export async function PUT(req: NextRequest, { params }: Context) {
         previewImage: data.previewImage || null,
         isFakeVideo: data.isFakeVideo,
         isPublished: data.isPublished,
+        // Older clients omit this field; their edits must preserve the stored snapshot.
+        ...(data.telegramSettings === undefined ? {} : { telegramSettings: data.telegramSettings }),
       },
     })
     if (!updated.count) return NextResponse.json({ error: 'Không tìm thấy bài viết' }, { status: 404 })

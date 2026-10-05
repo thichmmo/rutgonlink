@@ -35,3 +35,11 @@ routes remain unchanged. See `lib/PUBLIC_POST_GUARD_NOTES.md` for heuristic limi
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/[shortCode]/route.ts'`, plus mobile popup, desktop no-popup/F12, root-post metadata, alias and short-link smoke requests.
 
 The header badge, visible timer and accessible 0-100 progress bar update together, including after returning from an external app. `node scripts/test-popup-runtime.cjs` executes the actual inline DOM to verify both steps and zero seconds.
+
+## Telegram article template
+
+Share-domain posts use the same escaped CTA/disclaimer and CSS as the React alias.
+A valid enabled post snapshot activates it, not changing account defaults. The
+privacy link points to the primary domain, and title/OG metadata stay intact.
+Existing fixed blocks and popup scripts remain unchanged. Verify
+`node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.

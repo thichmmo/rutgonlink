@@ -70,3 +70,7 @@ rejected tokens/origins/payloads, keepalive delivery, account-scoped reporting a
 the dashboard detail anchor. Runtime tests execute the real sender in both public
 renderers: page views, countdown taps, repeated pending taps and app returns must
 not create extra clicks. Tests only write to in-memory event stores.
+
+Telegram render helpers are included in the source loader so ordinary and Telegram
+post changes still exercise the existing popup/inspection runtime unchanged.
+Verify: `node scripts/test-popup-runtime.cjs`.

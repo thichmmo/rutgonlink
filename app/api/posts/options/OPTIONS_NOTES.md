@@ -3,3 +3,7 @@
 Return saved popup settings beside active, owner-scoped popup options so the post
 editor previews the same countdown used by public posts. No settings are copied
 onto the post. Verify with `node scripts/test-popup-timing-api.cjs`.
+
+Telegram is independent of popup timing: `telegramDefaults` returns the normalized
+current actor's saved default for new-post forms only. Existing post editors read
+the post snapshot instead. Verify isolation with `node scripts/test-telegram-api.cjs`.

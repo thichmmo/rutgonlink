@@ -8,6 +8,7 @@ import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { getSiteHostname } from '@/lib/site-config'
 import { defaultPopupSettings, normalizePopupSettings, type PopupSettings } from '@/lib/popup-settings'
 import { getAllowedIframeHostnames, normalizeVideoEmbedUrl } from '@/lib/video-embed'
+import { telegramSettingsSchema } from '@/lib/telegram-settings'
 
 const externalUrl = z.url().max(2048).refine((value) => {
   try {
@@ -40,6 +41,7 @@ export const postSchema = z.object({
     .refine(isValidIntermediateImage, 'Ảnh phải là URL HTTP(S) hoặc ảnh tải lên').nullable().optional(),
   isFakeVideo: z.boolean().optional().default(false),
   isPublished: z.boolean().optional().default(false),
+  telegramSettings: telegramSettingsSchema.optional(),
 })
 
 export const fixedContentSchema = z.object({

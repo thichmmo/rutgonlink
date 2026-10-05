@@ -7,6 +7,7 @@ import ChangePasswordForm from './ChangePasswordForm';
 import ChangeNameForm from './ChangeNameForm';
 import ApiKeySection from './ApiKeySection';
 import FolderRotationSection from './FolderRotationSection';
+import TelegramSettingsSection from './TelegramSettingsSection';
 
 export default async function SettingsPage() {
     const session = await getServerSession(authOptions);
@@ -50,6 +51,8 @@ export default async function SettingsPage() {
             <ApiKeySection initialApiKey={apiKey} />
 
             <FolderRotationSection />
+
+            <TelegramSettingsSection />
 
             {hasPassword && <ChangePasswordForm />}
         </div>

@@ -25,6 +25,7 @@ model User {
   googleDriveRefreshToken    String?           @db.Text
   googleDriveEmail           String?
   googleDriveFolderId        String?
+  telegramSettings           Json?
   fbDebugIntervalMinutes     Int               @default(20)
   fbDebugMinClicksPerDay     Int               @default(0)
   fbDebugAllActiveLinks      Boolean           @default(false)
@@ -238,6 +239,7 @@ model ManagedPost {
   previewImage  String?        @db.LongText
   isFakeVideo   Boolean        @default(false)
   isPublished   Boolean        @default(false)
+  telegramSettings Json?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -10,6 +10,8 @@ type Props = {
   onChange: (value: string) => void
   onUpload?: (file: File) => Promise<string>
   canUseRawHtml?: boolean
+  onUploadingChange?: (uploading: boolean) => void
+  disabled?: boolean
 }
 
 const IMAGE_FALLBACK_LIMIT = 1_400_000
@@ -27,8 +29,10 @@ function readAsDataUrl(file: File) {
   })
 }
 
-export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = false }: Props) {
+export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = false, onUploadingChange, disabled = false }: Props) {
   const editorRef = useRef<HTMLDivElement>(null)
+  const uploadRequestRef = useRef(0)
+  useEffect(() => () => { uploadRequestRef.current += 1 }, [])
   const imageFileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
   const savedRangeRef = useRef<Range | null>(null)
@@ -44,6 +48,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   }, [sourceMode, value])
 
   function emit() {
+    if (disabled || busy) return
     onChange(editorRef.current?.innerHTML || '')
   }
 
@@ -70,6 +75,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   }
 
   function command(name: string, argument?: string) {
+    if (disabled || busy) return
     editorRef.current?.focus()
     document.execCommand(name, false, argument)
     emit()
@@ -81,7 +87,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
     editorRef.current?.focus()
     restoreSelection()
     document.execCommand('insertHTML', false, html)
-    emit()
+    onChange(editorRef.current?.innerHTML || '')
   }
 
   function insertImage(url: string) {
@@ -93,6 +99,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   }
 
   async function uploadFile(file: File, kind: 'image' | 'video') {
+    if (disabled || busy) return
     setMessage('')
     const accepted = kind === 'image' ? file.type.startsWith('image/') : file.type.startsWith('video/')
     if (!accepted) {
@@ -107,16 +114,20 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
       setMessage('Video cần được tải lên máy chủ trước khi chèn.')
       return
     }
+    const request = ++uploadRequestRef.current
     setBusy(true)
+    onUploadingChange?.(true)
     try {
       const url = onUpload ? await onUpload(file) : await readAsDataUrl(file)
+      // Closing or switching the editor invalidates pending upload responses.
+      if (request !== uploadRequestRef.current) return
       if (kind === 'image') insertImage(url)
       else insertVideo(url, file.type)
       setMessage(`${kind === 'image' ? 'Đã tải ảnh' : 'Đã tải video'} lên.`)
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : 'Không thể tải tệp lên.')
+      if (request === uploadRequestRef.current) setMessage(cause instanceof Error ? cause.message : 'Không thể tải tệp lên.')
     } finally {
-      setBusy(false)
+      if (request === uploadRequestRef.current) { setBusy(false); onUploadingChange?.(false) }
     }
   }
 
@@ -147,6 +158,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   }
 
   function submitVideo() {
+    if (disabled || busy) return
     const embed = normalizeVideoEmbedUrl(videoInput)
     if (!embed) {
       setVideoError('Dán URL video công khai hoặc mã iframe từ YouTube, Vimeo, TikTok, Facebook, Instagram, Google Drive; hoặc link MP4/WebM/OGG. Với TikTok, dùng link đầy đủ dạng /@ten/video/ID.')
@@ -179,7 +191,7 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   const actionClass = 'inline-flex min-w-[72px] flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-medium text-gray-600 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-wait disabled:opacity-50'
 
   return <div className="overflow-hidden rounded-xl border border-gray-300 bg-white">
-    <div className="border-b border-gray-200 bg-white p-2">
+    <fieldset disabled={disabled || busy} className="border-b border-gray-200 bg-white p-2">
       <div className="flex flex-wrap items-center gap-1">
         <select aria-label="Kiểu đoạn" defaultValue="p" onChange={event => command('formatBlock', event.target.value)} className="h-9 rounded-lg border-0 bg-gray-50 px-2 text-xs text-gray-600 outline-none">
           <option value="p">Normal</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>
@@ -204,19 +216,19 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
       <input ref={imageFileRef} type="file" accept="image/*" onChange={handleImageFile} className="hidden" />
       <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/ogg" onChange={handleVideoFile} className="hidden" />
       {message && <p className="px-2 pt-2 text-xs text-sky-700" role="status">{message}</p>}
-    </div>
-    {showVideo && <div className="space-y-3 border-b border-sky-200 bg-sky-50 p-4" role="group" aria-label="Nhúng video">
+    </fieldset>
+    {showVideo && <fieldset disabled={disabled || busy} className="space-y-3 border-b border-sky-200 bg-sky-50 p-4" role="group" aria-label="Nhúng video">
       <label className="grid gap-2 text-sm font-semibold text-gray-800">URL video hoặc mã iframe
         <textarea autoFocus rows={3} value={videoInput} onChange={event => setVideoInput(event.target.value)} placeholder="https://vimeo.com/... hoặc <iframe src=...></iframe>" className="w-full rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm" />
       </label>
       <p className="text-xs text-gray-600">YouTube, Vimeo, TikTok, Facebook, Instagram, Google Drive hoặc video MP4/WebM/OGG. Video cần cho phép xem công khai và nhúng.</p>
       {videoError && <p role="alert" className="text-sm text-red-700">{videoError}</p>}
       <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowVideo(false)} className="rounded-lg border bg-white px-3 py-2 text-sm">Hủy nhúng</button><button type="button" onClick={submitVideo} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">Chèn video</button></div>
-    </div>}
+    </fieldset>}
     {/<iframe\b(?![^>]*\bsrc\s*=)[^>]*>/i.test(value) && <p role="status" className="bg-amber-50 px-4 py-3 text-xs text-amber-900">Video cũ đã mất URL nguồn khi lưu. Hãy xóa khung trống trong Mã nguồn và nhúng lại link video gốc.</p>}
     {sourceMode
-      ? <textarea value={value} onChange={event => onChange(event.target.value)} className="min-h-72 w-full resize-y px-4 py-3 font-mono text-xs leading-6 outline-none" aria-label="Mã nguồn HTML" />
-      : <div ref={editorRef} contentEditable role="textbox" aria-label="Nội dung bài viết" aria-multiline="true" suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} onKeyUp={saveSelection} onMouseUp={saveSelection} className="managed-rich-content prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Nhập nội dung bài viết..." />}
+      ? <textarea disabled={disabled || busy} value={value} onChange={event => onChange(event.target.value)} className="min-h-72 w-full resize-y px-4 py-3 font-mono text-xs leading-6 outline-none" aria-label="Mã nguồn HTML" />
+      : <div ref={editorRef} contentEditable={!disabled && !busy} role="textbox" aria-label="Nội dung bài viết" aria-multiline="true" suppressContentEditableWarning onInput={emit} onBlur={emit} onPaste={paste} onKeyUp={saveSelection} onMouseUp={saveSelection} className="managed-rich-content prose prose-slate min-h-72 max-w-none px-4 py-3 text-sm outline-none" data-placeholder="Nhập nội dung bài viết..." />}
     <style>{MANAGED_MEDIA_CSS}</style>
     <style jsx>{`.prose:empty:before{content:attr(data-placeholder);color:#94a3b8;pointer-events:none}`}</style>
   </div>

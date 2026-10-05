@@ -27,3 +27,9 @@ beacon payloads to assert one event per ready click before affiliate navigation.
 
 The runtime suite also checks the shared preopened DevTools guard and no-JS
 server markup on both public renderers; lint includes `lib/public-post-guard.ts`.
+
+Telegram template releases add nullable JSON columns before swapping the live
+runtime. CI verifies account isolation/default snapshots, legacy compatibility,
+both public renderers and quick-editor UI. Run `node scripts/test-telegram-api.cjs`,
+`node scripts/test-telegram-render.cjs` and `node scripts/test-telegram-dashboard.cjs`.
+Rollback should retain additive columns/data and redeploy the prior runtime.

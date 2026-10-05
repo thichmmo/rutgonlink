@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getManagedContentActor } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -30,6 +31,8 @@ export async function POST(_req: Request, { params }: Context) {
       previewImage: source.previewImage,
       isFakeVideo: source.isFakeVideo,
       isPublished: false,
+      // A legacy NULL means disabled, not "inherit the current account default".
+      telegramSettings: source.telegramSettings === null ? Prisma.DbNull : source.telegramSettings as Prisma.InputJsonValue,
     },
     include: { popup: { select: { id: true, name: true, isActive: true } }, domain: { select: { id: true, domain: true } } },
   })

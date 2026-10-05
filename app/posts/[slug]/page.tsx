@@ -11,6 +11,8 @@ import { getPostPreviewImageUrl } from '@/lib/post-preview'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
+import { normalizeTelegramSettings } from '@/lib/telegram-settings'
+import { renderTelegramHeader, renderTelegramFooter, TELEGRAM_POST_CSS } from '@/lib/telegram-render'
 import { createPopupClickToken } from '@/lib/popup-click-token'
 import { PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
@@ -77,6 +79,7 @@ export default async function ManagedPostPage({ params }: Context) {
   const { slug } = await params
   const post = await findPost(slug)
   if (!post) notFound()
+  const telegram = normalizeTelegramSettings(post.telegramSettings)
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
@@ -92,7 +95,15 @@ export default async function ManagedPostPage({ params }: Context) {
     <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />
     <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
     <DesktopDevToolsGuard userAgent={userAgent} />
-    <Navbar />
+    {telegram.enabled ? <main className="telegram-post-page">
+      <article className="telegram-post">
+        {before.map(block => <div key={block.id}><RenderContent content={block.content} format={block.contentFormat} /></div>)}
+        <div dangerouslySetInnerHTML={{ __html: renderTelegramHeader(telegram) }} />
+        <div className="managed-rich-content"><RenderContent content={post.content} format={post.contentFormat} /></div>
+        {after.map(block => <div key={block.id}><RenderContent content={block.content} format={block.contentFormat} /></div>)}
+        <div dangerouslySetInnerHTML={{ __html: renderTelegramFooter() }} />
+      </article>
+    </main> : <><Navbar />
     <main className="mx-auto max-w-3xl px-4 pb-20 pt-32 sm:px-6">
       <div className="mb-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.18em] text-sky-700"><BookOpen className="h-4 w-4" /> Bài viết</div>
       <article className="rounded-3xl border border-gray-200 bg-white px-5 py-9 shadow-sm sm:px-10 sm:py-12">
@@ -105,8 +116,8 @@ export default async function ManagedPostPage({ params }: Context) {
       </article>
       <Link href="/" className="mt-8 inline-block text-sm font-medium text-sky-700 hover:underline">Về trang chủ</Link>
     </main>
-    <Footer />
-    <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS}</style>
+    <Footer /></>}
+    <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>
     {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div></>
 }

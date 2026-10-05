@@ -11,6 +11,7 @@ import {
 } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
+import { normalizeTelegramSettings } from '@/lib/telegram-settings'
 
 const PAGE_SIZES = [6, 10, 20, 25] as const
 
@@ -78,6 +79,11 @@ export async function POST(req: NextRequest) {
     const target = await validatePublicationTarget(actor.id, data.domainId, data.sharedDomain)
     const format = normalizeContentFormat(data.contentFormat)
     const content = normalizeContent(data.content, format, actor.isAdmin)
+    const account = data.telegramSettings === undefined
+      ? await prisma.user.findUnique({ where: { id: actor.id }, select: { telegramSettings: true } })
+      : null
+    // Snapshot once per create request, including all popup variants; defaults never leak into old posts.
+    const telegramSettings = data.telegramSettings ?? normalizeTelegramSettings(account?.telegramSettings)
     const created = await prisma.$transaction(async (tx) => {
       const result = []
       for (let index = 0; index < Math.max(1, popupIds.length); index += 1) {
@@ -104,6 +110,7 @@ export async function POST(req: NextRequest) {
             previewImage: data.previewImage || null,
             isFakeVideo: data.isFakeVideo,
             isPublished: data.isPublished,
+            telegramSettings,
           },
           include: { popup: { select: { id: true, name: true, isActive: true, settings: true } }, domain: { select: { id: true, domain: true } } },
         }))

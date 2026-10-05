@@ -38,3 +38,12 @@ on app return. Test 0, 1, 5 and 60 minutes plus cookie-only reload before/at exp
 Verify with `node scripts/test-popup-runtime.cjs` and `pnpm exec eslint 'app/posts/[slug]'`, then test both mobile clicks, desktop article rendering, F12/DevTools redirect, tab blocking, refresh, Facebook crawler metadata and a no-popup post on desktop/mobile.
 
 Timer text and a 0-100 percent progress bar share the same deadline. Zero seconds renders ready immediately; focus/visibility return updates both. Verify two nonzero steps plus zero seconds with `node scripts/test-popup-runtime.cjs`.
+
+## Telegram article template
+
+Valid enabled `post.telegramSettings` selects the minimal white template: CTA,
+plain-text disclaimer, article media, and privacy footer. Account defaults are
+never looked up during rendering; old/null snapshots keep the original article.
+Title and Facebook metadata remain even when visual title is hidden. Existing
+fixed blocks stay before/after content, and popup runtime stays unchanged.
+Verify `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.

@@ -10,3 +10,27 @@ the saved popup record instead of displaying default values. A notice explains
 that inactive popups do not gate the public article. Changing the selected popup
 resets the preview. Verify with `node scripts/test-popup-timing.cjs` and
 `node scripts/test-popup-timing-api.cjs`; check the modal at a 390px viewport.
+
+## Telegram fast template
+
+The toolbar opens the same account-default editor as Settings, with an independent
+save button. Create remains disabled until `/api/posts/options` resolves; every new
+form copies `telegramDefaults` once. Editing uses the post's saved `telegramSettings`
+instead of live defaults. A revision guard prevents a late options response from
+reverting an explicit default save. Account changes never rewrite an open draft.
+
+`TelegramPostEditor` keeps CTA/link/disclaimer fields separate from article HTML.
+Its fast URL/embed and image/video upload actions append media by default; replacing
+content requires an explicit checkbox and confirmation. Plain text is escaped when
+converted to rich content. Empty titles/slugs are filled, with generated slugs capped
+at the API's 190 characters; user-entered titles/slugs survive insertion. Preview
+renders only validated media URLs rather than arbitrary saved HTML.
+
+Both quick uploads and rich-editor uploads are scoped to the mounted form. Pending
+uploads disable save and format changes; late results from closed forms are ignored.
+The rich editor remains available for ordinary posts and additional content.
+
+Verify: `node scripts/test-telegram-dashboard.cjs` (35 assertions),
+`node scripts/test-content-media.cjs` (6 cases), and scoped ESLint for this folder.
+Manual: configure account defaults, create using only a video URL, edit an older
+post, and confirm its Telegram snapshot remains unchanged after saving new defaults.
