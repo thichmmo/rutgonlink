@@ -9,10 +9,10 @@ Coverage: independent standard/Telegram create entries; explicit type takes
 precedence over both enabled and disabled account defaults; hidden Telegram
 fields on standard posts; saved link/button/disclaimer snapshots; legacy null
 settings; mode changes retain draft title, slug, body, popup, Facebook preview,
-fixed-content summary and rich-editor identity. Telegram, preview, editor
+fixed-content summary and rich-editor content after its intentional remount. Telegram, preview, editor
 uploads and saving disable mode changes. Saved payloads retain type and content.
 Mutation mocks use the real Telegram settings schema: active invalid settings
-retain the draft with validation feedback, while switching to standard preserves
+retain the draft with client-side validation feedback and no network mutation, while switching to standard preserves
 the unfinished draft but sends a valid disabled payload. Valid disabled snapshots
 keep their saved link, button and disclaimer.
 
@@ -30,3 +30,8 @@ missing type filters (5 assertions).
 Also run `node scripts/test-telegram-dashboard.cjs` and
 `node scripts/test-fixed-content-composer.cjs` to guard the earlier Telegram
 upload lifetime and reusable content behavior in the new separate composer modes.
+
+Compact-Telegram update: the full editor exists only in standard mode, so
+round-trips assert preserved content rather than DOM identity. The invalid-settings
+scenario inserts media first so it specifically exercises Telegram validation.
+The filtering mutation guard snapshots the count immediately before filter tests.

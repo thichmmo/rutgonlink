@@ -1,6 +1,6 @@
 # Fixed-content composer regressions
 
-Run `node scripts/test-fixed-content-composer.cjs` (59 assertions).
+Run `node scripts/test-fixed-content-composer.cjs` (60 assertions).
 The JSDOM harness executes the actual post composer, fixed-content manager,
 summary and Telegram components with in-memory authenticated API fixtures.
 No production post or reusable block is created.
@@ -24,3 +24,8 @@ Separate-post-type update: the new-post scenarios use `Tạo bài Telegram`; the
 saved standard-post edit retains its disabled Telegram snapshot in the submitted
 payload while hiding those fields. Both modes keep fixed-content controls inside
 the composer. The old `--baseline` control remains unchanged for earlier snapshots.
+
+Compact-Telegram update: the preserved editor instance is now the quick-media
+component, not a hidden rich editor. Preview URL and saved payload both verify
+that managing shared blocks leaves inserted draft media intact. Optional-settings
+discoverability is covered in `test-telegram-quick-form.cjs`.

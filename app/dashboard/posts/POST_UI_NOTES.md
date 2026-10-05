@@ -28,7 +28,7 @@ renders only validated media URLs rather than arbitrary saved HTML.
 
 Both quick uploads and rich-editor uploads are scoped to the mounted form. Pending
 uploads disable save and format changes; late results from closed forms are ignored.
-The rich editor remains available for ordinary posts and additional content.
+The rich editor remains available for ordinary posts only; Telegram drafts use the media-only composer described below.
 
 Verify: `node scripts/test-telegram-dashboard.cjs` (35 assertions),
 `node scripts/test-content-media.cjs` (6 cases), and scoped ESLint for this folder.
@@ -37,7 +37,7 @@ post, and confirm its Telegram snapshot remains unchanged after saving new defau
 
 ## Fixed content inside the composer
 
-Both standard and Telegram create/edit forms show `FixedContentSection` before the optional Telegram editor. Its
+Both standard and Telegram create/edit forms retain `FixedContentSection` inside the composer (under optional settings for Telegram). Its
 account-scoped GET summarizes active before/after blocks; inactive blocks are
 counted but never presented as applied. The shortcut opens the existing manager
 above the composer, not as a nested form. The composer stays mounted and inert,
@@ -87,3 +87,29 @@ Verify: `node scripts/test-post-types-dashboard.cjs`,
 `node scripts/test-telegram-dashboard.cjs`,
 `node scripts/test-fixed-content-composer.cjs`, and
 `pnpm exec eslint app/dashboard/posts app/dashboard/settings/TelegramSettingsFields.tsx app/dashboard/settings/TelegramSettingsSection.tsx`.
+
+
+## Compact Telegram composer
+
+Telegram create/edit renders only the quick URL/upload media tools and popup /
+publish controls in the main flow. No RichEditor, article-body textarea or content
+format selector is mounted for this type. Facebook preview, title/slug, domain,
+excerpt and the fixed-content manager shortcut remain in the collapsed `Tùy chọn
+bài viết` section. Standard layout is unchanged. Telegram link/button/disclaimer
+reuse the saved snapshot; their settings open automatically when a link is missing
+or validation fails. The media layout preview is collapsed until requested.
+
+Media insertion and save fill missing metadata, without replacing entered title,
+slug or stored content. Empty Telegram content gets a media-specific validation
+message. Telegram disables native form validation because optional inputs may be
+collapsed: save explicitly validates generated title/slug and Telegram settings,
+while server rejection opens the optional controls. Existing text/plain/raw posts
+remain intact on edit and mode switch; explicit confirmed replacement is still the
+only destructive media action. A legacy text-only post shows a preservation notice.
+Uploading continues to lock Save and the type selector.
+
+Verify: `node scripts/test-telegram-quick-form.cjs`, existing Telegram/post-type/
+fixed-content dashboard suites, and `pnpm exec eslint app/dashboard/posts`.
+Manual: create with saved Telegram defaults using only video URL + popup; open
+optional settings to manage fixed content; switch both modes and edit a legacy
+plain/raw post without losing its stored body.

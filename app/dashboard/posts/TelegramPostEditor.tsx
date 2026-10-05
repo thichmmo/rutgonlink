@@ -16,9 +16,10 @@ type Props = {
   onUploadingChange: (uploading: boolean) => void
   disabled: boolean
   fixedMode?: boolean
+  showSettings?: boolean
 }
 
-export default function TelegramPostEditor({ value, onChange, content, onInsert, onUpload, onUploadingChange, disabled, fixedMode = false }: Props) {
+export default function TelegramPostEditor({ value, onChange, content, onInsert, onUpload, onUploadingChange, disabled, fixedMode = false, showSettings = false }: Props) {
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [replace, setReplace] = useState(false)
@@ -45,7 +46,7 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
     onInsert(html, replace)
     setInput('')
     setError('')
-    setMessage('Đã chèn video. Bạn có thể lưu bài ngay hoặc sửa nội dung bên dưới.')
+    setMessage('Đã chèn video. Chọn popup và lưu bài là xong.')
   }
 
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -75,7 +76,7 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
 
   return <section className="my-4 space-y-4 rounded-2xl border border-sky-200 bg-sky-50/40 p-4 sm:p-5" aria-label="Bài viết Telegram">
     <div><h3 className="flex items-center gap-2 font-semibold text-gray-950"><Send className="h-5 w-5 text-[#229ED9]" /> Bài viết Telegram</h3><p className="mt-1 text-xs leading-5 text-gray-600">Bài Telegram mới dùng link và chữ đã lưu của tài khoản. Mọi chỉnh sửa ở đây chỉ lưu cho bài này; đổi loại bài không xóa nội dung đã nhập.</p></div>
-    <details open={settingsOpen} onToggle={event => setSettingsOpen(event.currentTarget.open)} className="rounded-xl border border-gray-200 bg-white p-3">
+    <details open={settingsOpen || showSettings} onToggle={event => setSettingsOpen(event.currentTarget.open)} className="rounded-xl border border-gray-200 bg-white p-3">
       <summary className="cursor-pointer text-sm font-semibold text-gray-800">{value.enabled ? 'Telegram đang bật' : 'Telegram đang tắt'} · Link, chữ trên nút và đoạn thông báo</summary>
       <div className="mt-4"><TelegramSettingsFields value={value} onChange={onChange} disabled={disabled || uploading} hideEnabledToggle={fixedMode} /></div>
     </details>
@@ -90,13 +91,14 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
           <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700"><Upload className="h-4 w-4" /> Upload video / ảnh</button>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,video/mp4,video/webm,video/ogg" onChange={event => void upload(event)} className="hidden" />
         </div>
-        <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} className="mt-0.5 accent-sky-600" /> Thay toàn bộ nội dung bằng media mới (sẽ hỏi xác nhận). Mặc định chèn thêm và giữ nội dung hiện có.</label>
+        {content.trim() && <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} className="mt-0.5 accent-sky-600" /> Thay toàn bộ nội dung bằng media mới (sẽ hỏi xác nhận). Mặc định chèn thêm và giữ nội dung hiện có.</label>}
         <p className="text-xs text-gray-500">Ảnh tối đa 8 MB, video tối đa 50 MB. Nếu chưa điền, tiêu đề và slug sẽ được tạo tự động sau khi chèn.</p>
       </fieldset>
       {uploading && <p role="status" className="text-sm text-sky-700">Đang tải video/ảnh... Vui lòng chờ trước khi lưu bài.</p>}
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
-      <details className="rounded-xl border border-gray-200 bg-white p-3" open>
+      {content.trim() && !preview && <p className="text-xs text-amber-800">Bài này đang có nội dung cũ và sẽ được giữ nguyên khi lưu. Bạn có thể thêm video/ảnh; nếu cần sửa phần chữ cũ, đổi tạm sang Bài thường.</p>}
+      <details className="rounded-xl border border-gray-200 bg-white p-3">
         <summary className="cursor-pointer text-sm font-semibold text-gray-700">Xem trước bố cục Telegram</summary>
         <div className="mx-auto mt-4 max-w-2xl space-y-5 py-2">
           <div className="text-center"><span className="inline-block max-w-full break-words rounded-full bg-[#229ED9] px-7 py-3 text-base font-bold text-white shadow-lg">{value.buttonText || '✈️ VÀO NHÓM TELEGRAM NGAY'}</span></div>
@@ -107,7 +109,7 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
                 : <div className="grid aspect-video place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">Video/ảnh sẽ hiển thị ở đây</div>}
           <p className="text-center text-xs text-gray-500 underline">Chính sách bảo mật</p>
         </div>
-        <p className="text-xs text-gray-500">Bản xem trước hiển thị media đầu tiên. Toàn bộ nội dung vẫn được giữ trong trình soạn thảo bên dưới.</p>
+        <p className="text-xs text-gray-500">Bản xem trước hiển thị media đầu tiên. Media và nội dung đã lưu được giữ nguyên; thêm mới chỉ thay thế khi bạn chọn và xác nhận.</p>
       </details>
     </>}
   </section>

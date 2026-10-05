@@ -40,3 +40,7 @@ The focused `node scripts/test-fixed-content-composer.cjs` suite runs before pac
 ## Separate post types (2026-10-05)
 
 Run `node scripts/test-post-types-api.cjs` and `node scripts/test-post-types-dashboard.cjs` before packaging. These protect explicit normal/Telegram creation, type-filtered pagination and legacy JSON-null handling, plus draft preservation. No schema migration is added for the split.
+
+## Compact Telegram composer (2026-10-05)
+
+`node scripts/test-telegram-quick-form.cjs` runs with the Telegram suites and scoped lint. It protects media/popup-only creation, hidden optional metadata validation, existing-content preservation, and the unchanged normal-post editor. The UI change adds no migration.

@@ -129,9 +129,9 @@ async function run() {
   await input(field('Link nhóm/kênh Telegram'), 'https://t.me/draft_channel')
   await input(field('Tạo nhanh bằng URL video'), 'https://cdn.example/draft.mp4')
   await click(button('Chèn video', composer()))
-  const contentBefore = composer().querySelector('[aria-label="Nội dung bài viết"]').innerHTML
+  const contentBefore = composer().querySelector('[aria-label="Bài viết Telegram"] video').src
   const composerBefore = composer()
-  const editorBefore = composer().querySelector('[aria-label="Nội dung bài viết"]')
+  const editorBefore = composer().querySelector('[aria-label="Bài viết Telegram"]')
   const opener = button('Thêm / chỉnh nội dung cố định', composer())
   opener.focus()
   await click(opener)
@@ -139,7 +139,7 @@ async function run() {
   check(() => assert.ok(manager(), 'Manager opens from composer'))
   check(() => assert.equal(manager().closest('form'), null, 'Manager form is not nested in post form'))
   check(() => assert.equal(composer(), composerBefore, 'Post composer stays mounted'))
-  check(() => assert.equal(composer().querySelector('[aria-label="Nội dung bài viết"]'), editorBefore, 'Rich editor is not remounted'))
+  check(() => assert.equal(composer().querySelector('[aria-label="Bài viết Telegram"]'), editorBefore, 'Quick-media editor is not remounted'))
   check(() => assert.equal(composer().parentElement.hasAttribute('inert'), true, 'Background draft cannot receive clicks or focus'))
   check(() => assert.equal(composer().parentElement.getAttribute('aria-hidden'), 'true'))
   check(() => assert.match(manager().className, /z-\[120\]/, 'Manager is above the composer'))
@@ -180,12 +180,13 @@ async function run() {
   check(() => assert.equal(field('Tiêu đề').value, 'Unsaved title'))
   check(() => assert.equal(field('Mô tả ngắn').value, 'Unsaved description'))
   check(() => assert.equal(field('Link nhóm/kênh Telegram').value, 'https://t.me/draft_channel', 'Draft Telegram snapshot stays unchanged'))
-  check(() => assert.equal(composer().querySelector('[aria-label="Nội dung bài viết"]').innerHTML, contentBefore))
+  check(() => assert.equal(composer().querySelector('[aria-label="Bài viết Telegram"] video').src, contentBefore))
   check(() => assert.equal(document.activeElement, opener, 'Keyboard focus returns to opener'))
 
   await submit(composer())
   const created = JSON.parse(mutations().at(-1).body)
   check(() => assert.equal(created.telegramSettings.url, 'https://t.me/draft_channel'))
+  check(() => assert.match(created.content, /draft\.mp4/, 'Saved draft media survives fixed-content management'))
   check(() => assert.doesNotMatch(created.content, /Before block|New fixed footer/, 'Global blocks are not duplicated into per-post content'))
 
   await click(document.querySelector('button[title="Sửa"]'))
