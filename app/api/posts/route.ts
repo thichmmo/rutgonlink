@@ -39,12 +39,21 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get('query')?.trim() || ''
   const status = req.nextUrl.searchParams.get('status') || 'all'
   const domain = req.nextUrl.searchParams.get('domain')?.trim().toLowerCase() || ''
+  const type = req.nextUrl.searchParams.get('type') || 'all'
   const page = pageValue(req.nextUrl.searchParams.get('page'), 1)
   const pageSize = pageSizeValue(req.nextUrl.searchParams.get('pageSize'))
+  const typeFilter: Prisma.ManagedPostWhereInput[] = type === 'telegram'
+    ? [{ telegramSettings: { path: '$.enabled', equals: true } }]
+    : type === 'standard' ? [{ OR: [
+      { telegramSettings: { path: '$.enabled', not: true } },
+      // A negated JSON comparison alone drops SQL NULL and legacy objects with no enabled key.
+      { telegramSettings: { path: '$.enabled', equals: Prisma.AnyNull } },
+    ] }] : []
   const where: Prisma.ManagedPostWhereInput = {
     userId: actor.id,
     ...(status === 'published' ? { isPublished: true } : status === 'draft' ? { isPublished: false } : {}),
-    ...(query || domain ? { AND: [
+    ...(query || domain || typeFilter.length ? { AND: [
+      ...typeFilter,
       ...(query ? [{ OR: [{ title: { contains: query } }, { slug: { contains: query } }, { excerpt: { contains: query } }] }] : []),
       ...(domain ? [domain === getSiteHostname()
         ? { domainId: null, sharedDomain: null }

@@ -14,3 +14,16 @@ later. Defaults affect future new forms only; existing posts retain their snapsh
 Verify `node scripts/test-telegram-dashboard.cjs` and scoped ESLint on both
 Telegram components plus `page.tsx`. The existing unrelated `ProPlanModal.tsx`
 anchor lint failure is not part of this change.
+
+## Explicit post types
+
+The enabled account value is retained as a preferred type and as the existing API
+fallback. It no longer silently changes an explicitly created standard post. Copy
+explains that separate standard/Telegram create buttons decide the post type, while
+URL/button/disclaimer defaults are reusable by new Telegram drafts. The shared
+fields accept `hideEnabledToggle` so a composer with a dedicated type selector
+never offers a competing enable checkbox. Changing account defaults still leaves
+existing posts and already-open drafts unchanged.
+
+Verify with `node scripts/test-telegram-dashboard.cjs`,
+`node scripts/test-post-types-dashboard.cjs`, and scoped ESLint.

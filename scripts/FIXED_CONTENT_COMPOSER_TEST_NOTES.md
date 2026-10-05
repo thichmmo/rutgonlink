@@ -19,3 +19,8 @@ To reproduce the old UI against an extracted source snapshot, set
 that the old toolbar control exists but the create modal has no shortcut.
 Also run `node scripts/test-telegram-dashboard.cjs` for upload and snapshot
 regressions. CI must install a JSDOM navigator before loading React on Node 20.
+
+Separate-post-type update: the new-post scenarios use `Tạo bài Telegram`; the
+saved standard-post edit retains its disabled Telegram snapshot in the submitted
+payload while hiding those fields. Both modes keep fixed-content controls inside
+the composer. The old `--baseline` control remains unchanged for earlier snapshots.

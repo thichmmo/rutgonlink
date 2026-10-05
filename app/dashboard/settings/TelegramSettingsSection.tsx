@@ -46,7 +46,7 @@ export default function TelegramSettingsSection({ onSaved }: Props) {
       setValue(saved)
       onSaved?.(saved)
       setFailed(false)
-      setMessage('Đã lưu mặc định Telegram cho bài mới. Các bài đã tạo giữ nguyên.')
+      setMessage('Đã lưu mẫu link và nội dung cho bài Telegram mới. Bài thường và các bài đã tạo giữ nguyên.')
     } catch (cause) {
       setFailed(true)
       setMessage(cause instanceof Error ? cause.message : 'Không lưu được cài đặt Telegram')
@@ -55,7 +55,7 @@ export default function TelegramSettingsSection({ onSaved }: Props) {
 
   return <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6" aria-label="Mặc định Telegram của tài khoản">
     <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900"><Send className="h-5 w-5 text-[#229ED9]" /> Mặc định Telegram</h2>
-    <p className="mb-5 mt-2 text-sm text-gray-600">Lưu một lần để tạo bài nhanh. Thay đổi ở đây chỉ áp dụng cho bài tạo mới sau khi lưu, không sửa bài cũ hoặc bài đang soạn.</p>
+    <p className="mb-5 mt-2 text-sm text-gray-600">Lưu link, chữ trên nút và đoạn thông báo một lần để tạo bài Telegram nhanh. Chọn Tạo bài thường nếu không cần Telegram. Thay đổi mẫu không sửa bài cũ hoặc bài đang soạn.</p>
     {loading ? <p role="status" className="py-5 text-sm text-gray-500">Đang tải cài đặt Telegram...</p> : <TelegramSettingsFields value={value} onChange={setValue} disabled={saving || loadFailed} accountDefaults />}
     {message && <p role={failed ? 'alert' : 'status'} className={`mt-4 rounded-lg p-3 text-sm ${failed ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{message}</p>}
     <div className="mt-5 flex flex-wrap justify-end gap-2">

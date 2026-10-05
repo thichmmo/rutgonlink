@@ -108,7 +108,7 @@ async function run() {
   const root = createRoot(document.getElementById('root'))
   await React.act(async () => root.render(React.createElement(Manager)))
   await flush()
-  await click(button('Tạo bài viết'))
+  await click(button(baseline ? 'Tạo bài viết' : 'Tạo bài Telegram'))
   await flush()
 
   if (baseline) {
@@ -204,8 +204,8 @@ async function run() {
   await flush()
   check(() => assert.match(summary().textContent, /Updated reusable header/))
   check(() => assert.equal(field('Tiêu đề').value, 'Edited unsaved title'))
-  check(() => assert.equal(field('Link nhóm/kênh Telegram').value, oldTelegram.url, 'Edit remains saved post snapshot'))
-  check(() => assert.equal(field('Bật Telegram cho bài viết này').checked, false))
+  check(() => assert.equal(field('Link nhóm/kênh Telegram'), undefined, 'Standard edit hides Telegram fields'))
+  check(() => assert.equal(field('Bài thường (không Telegram)').checked, true))
   await submit(composer())
   const updated = JSON.parse(mutations().at(-1).body)
   check(() => assert.equal(mutations().at(-1).url, '/api/posts/old-post'))
@@ -213,7 +213,7 @@ async function run() {
 
   // A block-service failure must not erase an unrelated post draft or its media.
   blockReadFails = true
-  await click(button('Tạo bài viết'))
+  await click(button(baseline ? 'Tạo bài viết' : 'Tạo bài Telegram'))
   await flush()
   check(() => assert.match(summary().textContent, /Fixture block load failed/))
   check(() => assert.equal(button('Lưu bài viết', composer()).disabled, false))
@@ -223,7 +223,7 @@ async function run() {
   blockReadFails = false
   const staleSummary = deferred()
   nextBlockRead = staleSummary
-  await click(button('Tạo bài viết'))
+  await click(button(baseline ? 'Tạo bài viết' : 'Tạo bài Telegram'))
   check(() => assert.match(summary().textContent, /Đang tải nội dung cố định/))
   await click(button('Thêm / chỉnh nội dung cố định', composer()))
   await flush()
@@ -235,7 +235,7 @@ async function run() {
   check(() => assert.doesNotMatch(summary().textContent, /Stale response title/, 'An older summary request cannot replace fresh block state'))
   await click(button('Hủy', composer()))
   blocks = blocks.map(block => ({ ...block, isActive: false }))
-  await click(button('Tạo bài viết'))
+  await click(button(baseline ? 'Tạo bài viết' : 'Tạo bài Telegram'))
   await flush()
   check(() => assert.match(summary().textContent, /Chưa có nội dung cố định đang bật/))
   check(() => assert.ok(button('Thêm / chỉnh nội dung cố định', composer()), 'Empty state still exposes management'))

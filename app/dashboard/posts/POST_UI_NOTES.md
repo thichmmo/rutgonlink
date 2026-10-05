@@ -15,7 +15,7 @@ resets the preview. Verify with `node scripts/test-popup-timing.cjs` and
 
 The toolbar opens the same account-default editor as Settings, with an independent
 save button. Create remains disabled until `/api/posts/options` resolves; every new
-form copies `telegramDefaults` once. Editing uses the post's saved `telegramSettings`
+form copies reusable `telegramDefaults` fields once; its explicit creation button chooses the enabled state. Editing uses the post's saved `telegramSettings`
 instead of live defaults. A revision guard prevents a late options response from
 reverting an explicit default save. Account changes never rewrite an open draft.
 
@@ -37,7 +37,7 @@ post, and confirm its Telegram snapshot remains unchanged after saving new defau
 
 ## Fixed content inside the composer
 
-Create and edit forms show `FixedContentSection` before the Telegram editor. Its
+Both standard and Telegram create/edit forms show `FixedContentSection` before the optional Telegram editor. Its
 account-scoped GET summarizes active before/after blocks; inactive blocks are
 counted but never presented as applied. The shortcut opens the existing manager
 above the composer, not as a nested form. The composer stays mounted and inert,
@@ -59,3 +59,31 @@ Verify: `node scripts/test-fixed-content-composer.cjs`,
 Manual: enter a draft, open fixed content, add/enable a before/after block, close
 the manager and confirm the summary changes without losing the draft. Repeat
 with an existing Telegram post and a failed content-block GET.
+
+## Separate standard and Telegram posts
+
+The toolbar has explicit `Tạo bài thường` and `Tạo bài Telegram` actions. Both
+snapshot reusable account URL/text fields, but their explicit type overrides the
+account preference. The account preference remains visible and retains existing
+API behavior. Standard forms omit all Telegram settings/media-preview UI; Telegram
+forms show it without a second enable checkbox. The type selector changes only
+`telegramSettings.enabled`, preserving draft media, popup/domain selections,
+preview image, and per-post Telegram link/text; it locks during save or any upload.
+For standard saves only, disabled Telegram fields are normalized in the payload so
+an invalid hidden URL or empty button label cannot block saving; valid disabled
+snapshots remain unchanged and the draft is never rewritten during mode changes.
+Editing and duplication continue to use the saved post snapshot, not live defaults.
+Fixed content stays available inside both composer types.
+
+List buttons send `type=all|standard|telegram` to the API alongside existing search,
+status, domain, and pagination filters; a type change resets page 1. All cards show
+a type badge using strict boolean `enabled === true`. A request generation guards
+records, counts, options, and errors when filters change rapidly. Loading hides the
+prior list; a failed current request clears its rows/count and offers a retry rather
+than showing stale records under the new type. List errors are separate from form
+validation and clear on retry without clearing a draft's error.
+
+Verify: `node scripts/test-post-types-dashboard.cjs`,
+`node scripts/test-telegram-dashboard.cjs`,
+`node scripts/test-fixed-content-composer.cjs`, and
+`pnpm exec eslint app/dashboard/posts app/dashboard/settings/TelegramSettingsFields.tsx app/dashboard/settings/TelegramSettingsSection.tsx`.

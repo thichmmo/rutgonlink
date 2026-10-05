@@ -36,3 +36,7 @@ Rollback should retain additive columns/data and redeploy the prior runtime.
 # Fixed content in the post composer (2026-10-05)
 
 The focused `node scripts/test-fixed-content-composer.cjs` suite runs before packaging, and is included in scoped lint. It protects the create/edit dialog shortcut, account-wide block controls, and preservation of the unsaved post/Telegram draft while managing fixed content.
+
+## Separate post types (2026-10-05)
+
+Run `node scripts/test-post-types-api.cjs` and `node scripts/test-post-types-dashboard.cjs` before packaging. These protect explicit normal/Telegram creation, type-filtered pagination and legacy JSON-null handling, plus draft preservation. No schema migration is added for the split.

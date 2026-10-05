@@ -18,6 +18,8 @@ type Popup = { id: string; name: string; isActive?: boolean; settings?: PopupTim
 type DomainOption = { id: string | null; domain: string; kind: 'primary' | 'shared' | 'custom' }
 type Post = { id: string; title: string; slug: string; excerpt: string | null; content: string; contentFormat: string; popupId: string | null; popup: Popup | null; domainId: string | null; sharedDomain: string | null; previewImage: string | null; isFakeVideo: boolean; publicUrl: string; publicDomain: string; isPublished: boolean; updatedAt: string; telegramSettings: TelegramSettings | null }
 type Form = { title: string; slug: string; excerpt: string; content: string; contentFormat: string; popupIds: string[]; domainKey: string; previewImage: string; isFakeVideo: boolean; isPublished: boolean; telegramSettings: TelegramSettings }
+type PostType = 'standard' | 'telegram'
+type PostTypeFilter = 'all' | PostType
 
 const emptyForm: Form = { title: '', slug: '', excerpt: '', content: '', contentFormat: 'rich', popupIds: [], domainKey: 'primary', previewImage: '', isFakeVideo: false, isPublished: false, telegramSettings: defaultTelegramSettings() }
 
@@ -44,41 +46,61 @@ export default function PostManager() {
   const [uploadingEditor, setUploadingEditor] = useState(false)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
+  const [postType, setPostType] = useState<PostTypeFilter>('all')
   const [domainFilter, setDomainFilter] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [total, setTotal] = useState(0)
+  const [loadingPosts, setLoadingPosts] = useState(true)
   const [busy, setBusy] = useState(false)
   const [uploadingPreview, setUploadingPreview] = useState(false)
   const [error, setError] = useState('')
+  const [listError, setListError] = useState('')
   const previewImageRef = useRef<HTMLInputElement>(null)
   const previewPasteRef = useRef<HTMLDivElement>(null)
   const previewRequest = useRef(0)
   const defaultsRevision = useRef(0)
+  const loadRequest = useRef(0)
   const fixedContentTrigger = useRef<HTMLButtonElement | null>(null)
 
   const load = useCallback(async () => {
+    const request = ++loadRequest.current
     const revision = defaultsRevision.current
-    const [postsResponse, optionsResponse] = await Promise.all([
-      fetch(`/api/posts?query=${encodeURIComponent(query)}&status=${status}&domain=${encodeURIComponent(domainFilter)}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }),
-      fetch('/api/posts/options', { cache: 'no-store' }),
-    ])
-    const postsData = await postsResponse.json()
-    const optionsData = await optionsResponse.json()
-    if (!postsResponse.ok || !optionsResponse.ok) throw new Error(postsData.error || optionsData.error || 'Không tải được dữ liệu')
-    setPosts(postsData.items || [])
-    setTotal(postsData.total || 0)
-    setPopups(optionsData.popups || [])
-    setDomains(optionsData.domains || [])
-    setCanUseRawHtml(Boolean(optionsData.canUseRawHtml))
-    // A pending options request must not revert a newer explicit default save.
-    if (revision === defaultsRevision.current) setTelegramDefaults(normalizeTelegramSettings(optionsData.telegramDefaults))
-    setOptionsReady(true)
-  }, [domainFilter, page, pageSize, query, status])
+    setLoadingPosts(true)
+    setListError('')
+    try {
+      const [postsResponse, optionsResponse] = await Promise.all([
+        fetch(`/api/posts?query=${encodeURIComponent(query)}&status=${status}&type=${postType}&domain=${encodeURIComponent(domainFilter)}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }),
+        fetch('/api/posts/options', { cache: 'no-store' }),
+      ])
+      const postsData = await postsResponse.json()
+      const optionsData = await optionsResponse.json()
+      // Switching a filter/page must invalidate both stale records and stale errors.
+      if (request !== loadRequest.current) return
+      if (!postsResponse.ok || !optionsResponse.ok) throw new Error(postsData.error || optionsData.error || 'Không tải được dữ liệu')
+      setPosts(postsData.items || [])
+      setTotal(postsData.total || 0)
+      setPopups(optionsData.popups || [])
+      setDomains(optionsData.domains || [])
+      setCanUseRawHtml(Boolean(optionsData.canUseRawHtml))
+      // A pending options request must not revert a newer explicit default save.
+      if (revision === defaultsRevision.current) setTelegramDefaults(normalizeTelegramSettings(optionsData.telegramDefaults))
+      setOptionsReady(true)
+    } catch (cause) {
+      if (request === loadRequest.current) {
+        // Never show another type's old rows under a filter whose request failed.
+        setPosts([])
+        setTotal(0)
+        setListError(cause instanceof Error ? cause.message : 'Không tải được dữ liệu')
+      }
+    } finally {
+      if (request === loadRequest.current) setLoadingPosts(false)
+    }
+  }, [domainFilter, page, pageSize, postType, query, status])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void load().catch(cause => setError(cause instanceof Error ? cause.message : 'Không tải được dữ liệu')) }, 0)
-    return () => window.clearTimeout(timer)
+    const timer = window.setTimeout(() => { void load() }, 0)
+    return () => { window.clearTimeout(timer); loadRequest.current += 1 }
   }, [load])
 
   function savedTelegramDefaults(settings: TelegramSettings) {
@@ -98,7 +120,7 @@ export default function PostManager() {
     setFixedContentRevision(current => current + 1)
   }
 
-  function startCreate() {
+  function startCreate(type: PostType) {
     if (!optionsReady) return
     setFormSession(current => current + 1)
     setUploadingTelegram(false)
@@ -106,8 +128,8 @@ export default function PostManager() {
     previewRequest.current += 1
     setUploadingPreview(false)
     setEditingId(null)
-    // Snapshot now: later account-default saves never alter an open draft.
-    setForm({ ...emptyForm, telegramSettings: { ...telegramDefaults } })
+    // Explicit creation wins over the account/API default; the reusable fields still copy once.
+    setForm({ ...emptyForm, telegramSettings: { ...telegramDefaults, enabled: type === 'telegram' } })
     setShowForm(true)
     setError('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -135,6 +157,12 @@ export default function PostManager() {
     setEditingId(null)
     setForm(emptyForm)
     setShowForm(false)
+  }
+
+  function changeFormType(type: PostType) {
+    if (busy || uploadingPreview || uploadingTelegram || uploadingEditor) return
+    // Changing layout must preserve this draft's media and Telegram link/text, not reload defaults.
+    setForm(current => ({ ...current, telegramSettings: { ...current.telegramSettings, enabled: type === 'telegram' } }))
   }
 
   function targetPayload() {
@@ -224,7 +252,9 @@ export default function PostManager() {
     setError('')
     try {
       const target = targetPayload()
-      const payload = { title: form.title, slug: form.slug || slugify(form.title), excerpt: form.excerpt || null, content: form.content, contentFormat: form.contentFormat, previewImage: form.previewImage || null, isFakeVideo: form.isFakeVideo, isPublished: form.isPublished, telegramSettings: form.telegramSettings, ...target, ...(editingId ? { popupId: form.popupIds[0] || null } : { popupIds: form.popupIds }) }
+      // Inactive hidden fields must not block ordinary saves; keep the unsaved draft untouched.
+      const telegramSettings = form.telegramSettings.enabled ? form.telegramSettings : normalizeTelegramSettings(form.telegramSettings)
+      const payload = { title: form.title, slug: form.slug || slugify(form.title), excerpt: form.excerpt || null, content: form.content, contentFormat: form.contentFormat, previewImage: form.previewImage || null, isFakeVideo: form.isFakeVideo, isPublished: form.isPublished, telegramSettings, ...target, ...(editingId ? { popupId: form.popupIds[0] || null } : { popupIds: form.popupIds }) }
       const response = await fetch(editingId ? `/api/posts/${editingId}` : '/api/posts', { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Lưu bài viết thất bại')
@@ -266,6 +296,8 @@ export default function PostManager() {
   }
 
   const pages = Math.max(1, Math.ceil(total / pageSize))
+  const formType = form.telegramSettings.enabled ? 'telegram' : 'standard'
+  const formTitle = `${editingId ? 'Sửa' : 'Tạo'} ${formType === 'telegram' ? 'bài Telegram' : 'bài thường'}`
   const selectedCount = form.popupIds.length
   // Options exclude inactive templates; retain their saved timing when editing an existing post.
   const editedPopup = posts.find(post => post.id === editingId)?.popup
@@ -276,18 +308,27 @@ export default function PostManager() {
   const previewDomain = domains.find(domain => (domain.kind === 'custom' ? domain.id : domain.kind === 'shared' ? `shared:${domain.domain}` : 'primary') === form.domainKey)?.domain || ''
 
   return <div className="mx-auto max-w-7xl space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={openBlocks} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={startCreate} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài viết</button></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p><p className="mt-1 text-xs text-gray-500">Loại ưu tiên của tài khoản: {telegramDefaults.enabled ? 'Bài Telegram' : 'Bài thường'}. Bạn vẫn có thể chọn một trong hai nút tạo bên cạnh.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={openBlocks} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={() => startCreate('standard')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Plus className="h-4 w-4" /> Tạo bài thường</button><button disabled={!optionsReady || busy} onClick={() => startCreate('telegram')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài Telegram</button></div></div>
+    <div role="group" aria-label="Lọc loại bài viết" className="flex flex-wrap gap-2">
+      {([{ value: 'all', label: 'Tất cả bài' }, { value: 'standard', label: 'Bài thường' }, { value: 'telegram', label: 'Bài Telegram' }] as const).map(type => <button key={type.value} type="button" aria-pressed={postType === type.value} onClick={() => { setPostType(type.value); setPage(1) }} className={`rounded-xl border px-4 py-2.5 text-sm font-semibold ${postType === type.value ? 'border-sky-600 bg-sky-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}>{type.label}</button>)}
+    </div>
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="Tìm tiêu đề, slug..." className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-sky-500" /></div><select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="all">Tất cả trạng thái</option><option value="published">Đã xuất bản</option><option value="draft">Bản nháp</option></select><select value={domainFilter} onChange={event => { setDomainFilter(event.target.value); setPage(1) }} className="max-w-48 rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Tất cả domain</option>{domains.map(domain => <option key={`filter:${domain.kind}:${domain.id || domain.domain}`} value={domain.domain}>{domain.domain}</option>)}</select><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="6">6 / trang</option><option value="10">10 / trang</option><option value="20">20 / trang</option><option value="25">25 / trang</option></select></div>
     <PopupClickSummary clicks={clickStats.data?.totals.today} error={clickStats.error} />
+    {listError && !showForm && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{listError}<button type="button" onClick={() => void load()} className="ml-3 font-semibold underline">Tải lại bài viết</button></p>}
     {error && !showForm && <p role="alert" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">{error}</p>}
     {showBlocks && <FixedContentManager canUseRawHtml={canUseRawHtml} onClose={closeBlocks} returnFocusTo={fixedContentTrigger.current} />}
     {showTelegramDefaults && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-3"><div role="dialog" aria-modal="true" aria-label="Cài đặt Telegram mặc định" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white"><div className="flex justify-end px-3 pt-3"><button type="button" onClick={() => setShowTelegramDefaults(false)} aria-label="Đóng cài đặt Telegram" className="rounded-full p-2 hover:bg-gray-100"><X className="h-5 w-5" /></button></div><TelegramSettingsSection onSaved={savedTelegramDefaults} /></div></div>}
-    {showForm && <div inert={showBlocks} aria-hidden={showBlocks || undefined} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-2 sm:p-4"><form onSubmit={save} className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal={!showBlocks} aria-label={editingId ? 'Sửa bài viết' : 'Tạo bài viết'}>
-      <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4 sm:px-7"><div><h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2><p className="mt-0.5 text-sm text-gray-500">Tạo bài viết, chọn popup và chuẩn bị ảnh chia sẻ Facebook.</p></div><button type="button" disabled={busy} onClick={reset} className="rounded-full p-2 text-gray-500 hover:bg-gray-100" aria-label="Đóng"><X className="h-5 w-5" /></button></div>
+    {showForm && <div inert={showBlocks} aria-hidden={showBlocks || undefined} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-2 sm:p-4"><form onSubmit={save} className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal={!showBlocks} aria-label={formTitle}>
+      <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4 sm:px-7"><div><h2 className="text-lg font-semibold text-gray-950">{formTitle}</h2><p className="mt-0.5 text-sm text-gray-500">Tạo bài viết, chọn popup và chuẩn bị ảnh chia sẻ Facebook.</p></div><button type="button" disabled={busy} onClick={reset} className="rounded-full p-2 text-gray-500 hover:bg-gray-100" aria-label="Đóng"><X className="h-5 w-5" /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-7">
       {error && <p role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</p>}
+      <fieldset disabled={busy || uploadingPreview || uploadingTelegram || uploadingEditor} className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 disabled:opacity-60">
+        <legend className="px-1 text-sm font-semibold text-gray-900">Loại bài viết</legend>
+        <div className="flex flex-wrap gap-5"><label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700"><input type="radio" name="postType" value="standard" checked={formType === 'standard'} onChange={() => changeFormType('standard')} className="accent-sky-600" />Bài thường (không Telegram)</label><label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700"><input type="radio" name="postType" value="telegram" checked={formType === 'telegram'} onChange={() => changeFormType('telegram')} className="accent-sky-600" />Bài Telegram</label></div>
+        <p className="mt-2 text-xs text-gray-500">{formType === 'telegram' ? 'Hiển thị nút Telegram, đoạn thông báo và video/ảnh. Link và chữ đã lưu sẵn để tạo bài nhanh.' : 'Bố cục bài viết thông thường, không hiển thị nút hay đoạn thông báo Telegram.'} Đổi loại vẫn giữ nguyên nội dung đã nhập.</p>
+      </fieldset>
       <FixedContentSection revision={fixedContentRevision} disabled={busy} onManage={openBlocks} />
-      <TelegramPostEditor key={`telegram:${formSession}`} value={form.telegramSettings} onChange={telegramSettings => setForm(current => ({ ...current, telegramSettings }))} content={form.content} onInsert={insertQuickMedia} onUpload={uploadFile} onUploadingChange={setUploadingTelegram} disabled={busy || uploadingPreview || uploadingEditor} />
+      {form.telegramSettings.enabled && <TelegramPostEditor fixedMode key={`telegram:${formSession}`} value={form.telegramSettings} onChange={telegramSettings => setForm(current => ({ ...current, telegramSettings }))} content={form.content} onInsert={insertQuickMedia} onUpload={uploadFile} onUploadingChange={setUploadingTelegram} disabled={busy || uploadingPreview || uploadingEditor} />}
       <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div><h3 className="text-base font-semibold text-gray-950">Preview link trên Facebook</h3><p className="mt-1 text-xs text-gray-500">Ảnh này dùng khi chia sẻ link, không tự chèn vào nội dung bài viết.</p></div>
@@ -320,6 +361,6 @@ export default function PostManager() {
       <div className="grid gap-4 lg:grid-cols-[1fr_240px]"><div className="grid gap-1.5 text-sm font-medium text-gray-700"><span>Nội dung bài viết</span>{form.contentFormat === 'rich' ? <RichEditor key={`rich:${formSession}`} disabled={busy || uploadingTelegram} onUploadingChange={setUploadingEditor} value={form.content} onChange={content => setForm(current => ({ ...current, content }))} onUpload={uploadFile} canUseRawHtml={canUseRawHtml} /> : <textarea disabled={busy || uploadingTelegram || uploadingEditor} required rows={16} value={form.content} onChange={event => setForm(current => ({ ...current, content: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm" placeholder={form.contentFormat === 'raw-html' ? '<p>HTML/Script...</p>' : 'Viết nội dung dạng văn bản...'} />}</div><div className="space-y-4"><label className="grid gap-1.5 text-sm font-medium text-gray-700">Định dạng<select disabled={busy || uploadingTelegram || uploadingEditor} value={form.contentFormat} onChange={event => setForm(current => ({ ...current, contentFormat: event.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2.5"><option value="plain">Plain text</option><option value="rich">Rich text / HTML đã lọc</option>{canUseRawHtml && <option value="raw-html">Raw HTML / Script (admin)</option>}</select></label><fieldset className="rounded-xl border border-gray-200 p-3"><legend className="px-1 text-xs font-semibold text-gray-700">Popup {selectedCount ? `(${selectedCount})` : ''}</legend><div className="max-h-56 space-y-2 overflow-y-auto">{popups.map(popup => { const timing = popupTiming(popup.settings); return <label key={popup.id} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.popupIds.includes(popup.id)} onChange={event => setForm(current => ({ ...current, popupIds: event.target.checked ? [...current.popupIds, popup.id] : current.popupIds.filter(id => id !== popup.id) }))} className="mt-1 h-4 w-4 accent-sky-600" /><span className="min-w-0"><span className="block">{popup.name}</span><span className="mt-0.5 block text-[11px] font-medium text-gray-500" aria-label={`Bộ đếm ${popupTimingLabel(popup.settings)}`}>S {timing.shopeeSeconds}s · T {timing.tiktokSeconds}s · Cooldown {timing.cooldownMinutes}m</span></span></label> })}{!popups.length && <p className="text-xs text-gray-500">Chưa có popup bật.</p>}</div></fieldset>{selectedPopup && <><PopupTimingPreview key={selectedPopup.id} settings={selectedPopup.settings} name="Bộ đếm bài viết" />{selectedPopup.isActive === false && <p className="text-xs text-amber-700">Popup đang tắt: bài viết hiển thị ngay, không chạy bộ đếm.</p>}</>}<label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium"><input type="checkbox" checked={form.isPublished} onChange={event => setForm(current => ({ ...current, isPublished: event.target.checked }))} className="h-4 w-4 accent-sky-600" /> Xuất bản ngay</label></div></div>
       </div><div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-3 sm:px-7"><button type="button" disabled={busy} onClick={reset} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700">Hủy</button><button disabled={busy || uploadingPreview || uploadingTelegram || uploadingEditor} className="rounded-lg bg-[#d61f51] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : uploadingTelegram || uploadingEditor || uploadingPreview ? 'Đang tải tệp...' : editingId ? 'Cập nhật bài' : form.popupIds.length > 1 ? `Tạo ${form.popupIds.length} bài` : 'Lưu bài viết'}</button></div>
     </form></div>}
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="divide-y divide-gray-100">{posts.map(post => { const timing = popupTiming(post.popup?.settings); return <article key={post.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 space-y-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span>{post.telegramSettings?.enabled && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">Telegram</span>}{post.isFakeVideo && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">Fake video</span>}</div><p className="truncate text-xs text-gray-500">{post.publicDomain}/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>{post.popup && <p className="text-[11px] font-medium text-gray-500" aria-label={`Bộ đếm ${popupTimingLabel(post.popup.settings)}`}>Chờ mở link: S {timing.shopeeSeconds}s · T {timing.tiktokSeconds}s · Cooldown {timing.cooldownMinutes}m</p>}{post.popup && <PopupClickBadge clicks={clickStats.data?.counts[post.id]?.today} />}{post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}</div><div className="flex shrink-0 flex-wrap gap-1">{post.isPublished && <><a href={post.publicUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Mở bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void copyLink(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}<button disabled={busy} onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button><button disabled={busy} onClick={() => void duplicate(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Nhân bản"><Copy className="h-4 w-4" /></button><button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button></div></article> })}{!posts.length && <div className="flex items-center gap-3 p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết.</div>}</div><div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 text-sm text-gray-600"><span>Trang {page}/{pages}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Trước</button><button disabled={page >= pages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sau</button></div></div></div>
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="divide-y divide-gray-100">{!loadingPosts && posts.map(post => { const timing = popupTiming(post.popup?.settings); return <article key={post.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 space-y-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-gray-950">{post.title}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{post.isPublished ? 'Đã xuất bản' : 'Bản nháp'}</span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${post.telegramSettings?.enabled === true ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>{post.telegramSettings?.enabled === true ? 'Bài Telegram' : 'Bài thường'}</span>{post.isFakeVideo && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">Fake video</span>}</div><p className="truncate text-xs text-gray-500">{post.publicDomain}/{post.slug} · Popup: {post.popup?.name || 'Không có'}</p>{post.popup && <p className="text-[11px] font-medium text-gray-500" aria-label={`Bộ đếm ${popupTimingLabel(post.popup.settings)}`}>Chờ mở link: S {timing.shopeeSeconds}s · T {timing.tiktokSeconds}s · Cooldown {timing.cooldownMinutes}m</p>}{post.popup && <PopupClickBadge clicks={clickStats.data?.counts[post.id]?.today} />}{post.excerpt && <p className="line-clamp-1 text-sm text-gray-600">{post.excerpt}</p>}</div><div className="flex shrink-0 flex-wrap gap-1">{post.isPublished && <><a href={post.publicUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Mở bài"><ExternalLink className="h-4 w-4" /></a><button onClick={() => void copyLink(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Sao chép link"><Copy className="h-4 w-4" /></button></>}<button disabled={busy} onClick={() => edit(post)} className="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Sửa"><Pencil className="h-4 w-4" /></button><button disabled={busy} onClick={() => void duplicate(post)} className="rounded-lg p-2 text-gray-600 hover:bg-gray-100" title="Nhân bản"><Copy className="h-4 w-4" /></button><button disabled={busy} onClick={() => void remove(post)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Xóa"><Trash2 className="h-4 w-4" /></button></div></article> })}{loadingPosts && <p role="status" className="p-8 text-sm text-gray-500">Đang tải bài viết...</p>}{!loadingPosts && !posts.length && <div className="flex items-center gap-3 p-8 text-sm text-gray-500"><FileText className="h-5 w-5" /> Chưa có bài viết.</div>}</div><div className="flex items-center justify-between border-t border-gray-100 px-5 py-3 text-sm text-gray-600"><span>{total} bài · Trang {page}/{pages}</span><div className="flex gap-2"><button disabled={loadingPosts || page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Trước</button><button disabled={loadingPosts || page >= pages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Sau</button></div></div></div>
   </div>
 }

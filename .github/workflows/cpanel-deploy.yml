@@ -61,6 +61,11 @@ jobs:
       - name: Fixed content composer regressions
         run: node scripts/test-fixed-content-composer.cjs
 
+      - name: Post type separation regressions
+        run: |
+          node scripts/test-post-types-api.cjs
+          node scripts/test-post-types-dashboard.cjs
+
       - name: Popup timing dashboard regressions
         run: |
           node scripts/test-popup-timing.cjs
@@ -89,6 +94,7 @@ jobs:
           app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
           scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs
           scripts/test-fixed-content-composer.cjs
+          scripts/test-post-types-api.cjs scripts/test-post-types-dashboard.cjs
 
       - name: Validate deployment scripts
         run: |

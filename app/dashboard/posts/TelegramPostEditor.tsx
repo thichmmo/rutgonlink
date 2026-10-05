@@ -15,9 +15,10 @@ type Props = {
   onUpload: (file: File) => Promise<string>
   onUploadingChange: (uploading: boolean) => void
   disabled: boolean
+  fixedMode?: boolean
 }
 
-export default function TelegramPostEditor({ value, onChange, content, onInsert, onUpload, onUploadingChange, disabled }: Props) {
+export default function TelegramPostEditor({ value, onChange, content, onInsert, onUpload, onUploadingChange, disabled, fixedMode = false }: Props) {
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [replace, setReplace] = useState(false)
@@ -73,12 +74,12 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
   }
 
   return <section className="my-4 space-y-4 rounded-2xl border border-sky-200 bg-sky-50/40 p-4 sm:p-5" aria-label="Bài viết Telegram">
-    <div><h3 className="flex items-center gap-2 font-semibold text-gray-950"><Send className="h-5 w-5 text-[#229ED9]" /> Bài viết Telegram</h3><p className="mt-1 text-xs leading-5 text-gray-600">Bài mới lấy mặc định tài khoản. Mọi chỉnh sửa ở đây chỉ lưu cho bài này; thay đổi mẫu không tự xóa nội dung đã nhập.</p></div>
+    <div><h3 className="flex items-center gap-2 font-semibold text-gray-950"><Send className="h-5 w-5 text-[#229ED9]" /> Bài viết Telegram</h3><p className="mt-1 text-xs leading-5 text-gray-600">Bài Telegram mới dùng link và chữ đã lưu của tài khoản. Mọi chỉnh sửa ở đây chỉ lưu cho bài này; đổi loại bài không xóa nội dung đã nhập.</p></div>
     <details open={settingsOpen} onToggle={event => setSettingsOpen(event.currentTarget.open)} className="rounded-xl border border-gray-200 bg-white p-3">
       <summary className="cursor-pointer text-sm font-semibold text-gray-800">{value.enabled ? 'Telegram đang bật' : 'Telegram đang tắt'} · Link, chữ trên nút và đoạn thông báo</summary>
-      <div className="mt-4"><TelegramSettingsFields value={value} onChange={onChange} disabled={disabled || uploading} /></div>
+      <div className="mt-4"><TelegramSettingsFields value={value} onChange={onChange} disabled={disabled || uploading} hideEnabledToggle={fixedMode} /></div>
     </details>
-    {!value.enabled && <button type="button" disabled={disabled || uploading} onClick={() => onChange({ ...value, enabled: true })} className="rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-sky-700 disabled:opacity-50">Dùng mẫu Telegram cho bài này</button>}
+    {!fixedMode && !value.enabled && <button type="button" disabled={disabled || uploading} onClick={() => onChange({ ...value, enabled: true })} className="rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-sky-700 disabled:opacity-50">Dùng mẫu Telegram cho bài này</button>}
     {value.enabled && <>
       <fieldset disabled={disabled || uploading} className="space-y-3 disabled:opacity-60">
         <label className="grid gap-1.5 text-sm font-medium text-gray-800">Tạo nhanh bằng URL video hoặc mã iframe

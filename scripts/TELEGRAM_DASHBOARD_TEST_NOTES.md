@@ -15,3 +15,8 @@ is stripped only inside the harness because Next normally compiles that marker.
 
 Also run `node scripts/test-content-media.cjs`, scoped ESLint, and TypeScript.
 API authorization/validation and both public renderers have separate Telegram suites.
+
+Separate-post-type update: creation uses the explicit `Tạo bài Telegram` entry.
+Editing a standard post now checks its selected standard radio and hidden Telegram
+fields rather than the removed per-editor enable toggle. Dedicated type switching,
+defaults override, filter races and upload locks live in `test-post-types-dashboard.cjs`.
