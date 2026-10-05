@@ -7,6 +7,8 @@ const { JSDOM } = require('jsdom')
 const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://fixture.example/dashboard/posts', pretendToBeVisual: true })
 global.window = dom.window
 global.document = dom.window.document
+// Node 20 has no global navigator; newer Node versions expose a read-only one.
+Object.defineProperty(global, 'navigator', { value: dom.window.navigator, configurable: true })
 global.HTMLElement = dom.window.HTMLElement
 global.FormData = dom.window.FormData
 global.IS_REACT_ACT_ENVIRONMENT = true

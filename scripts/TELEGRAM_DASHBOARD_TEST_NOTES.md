@@ -3,6 +3,7 @@
 Run `node scripts/test-telegram-dashboard.cjs` (35 deterministic assertions).
 The harness executes actual TSX components in JSDOM with in-memory fetch fixtures;
 it creates no production data, uploads no files, and follows no media requests.
+It installs the JSDOM navigator before React loads, including on Node 20 CI.
 
 Coverage: account-options loading gate; independent defaults and saved post
 snapshots; default saving never submits a post; stale options cannot undo newer
