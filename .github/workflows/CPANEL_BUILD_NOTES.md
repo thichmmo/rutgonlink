@@ -33,3 +33,6 @@ runtime. CI verifies account isolation/default snapshots, legacy compatibility,
 both public renderers and quick-editor UI. Run `node scripts/test-telegram-api.cjs`,
 `node scripts/test-telegram-render.cjs` and `node scripts/test-telegram-dashboard.cjs`.
 Rollback should retain additive columns/data and redeploy the prior runtime.
+# Fixed content in the post composer (2026-10-05)
+
+The focused `node scripts/test-fixed-content-composer.cjs` suite runs before packaging, and is included in scoped lint. It protects the create/edit dialog shortcut, account-wide block controls, and preservation of the unsaved post/Telegram draft while managing fixed content.

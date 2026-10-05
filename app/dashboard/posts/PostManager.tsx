@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Copy, ExternalLink, FileText, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import RichEditor from './RichEditor'
 import FixedContentManager from './FixedContentManager'
+import FixedContentSection from './FixedContentSection'
 import TelegramPostEditor from './TelegramPostEditor'
 import TelegramSettingsSection from '../settings/TelegramSettingsSection'
 import { defaultTelegramSettings, normalizeTelegramSettings, type TelegramSettings } from '@/lib/telegram-settings'
@@ -34,6 +35,7 @@ export default function PostManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [showBlocks, setShowBlocks] = useState(false)
+  const [fixedContentRevision, setFixedContentRevision] = useState(0)
   const [showTelegramDefaults, setShowTelegramDefaults] = useState(false)
   const [telegramDefaults, setTelegramDefaults] = useState<TelegramSettings>(defaultTelegramSettings)
   const [optionsReady, setOptionsReady] = useState(false)
@@ -53,6 +55,7 @@ export default function PostManager() {
   const previewPasteRef = useRef<HTMLDivElement>(null)
   const previewRequest = useRef(0)
   const defaultsRevision = useRef(0)
+  const fixedContentTrigger = useRef<HTMLButtonElement | null>(null)
 
   const load = useCallback(async () => {
     const revision = defaultsRevision.current
@@ -81,6 +84,18 @@ export default function PostManager() {
   function savedTelegramDefaults(settings: TelegramSettings) {
     defaultsRevision.current += 1
     setTelegramDefaults(settings)
+  }
+
+  function openBlocks(event: React.MouseEvent<HTMLButtonElement>) {
+    // Capture before inert blurs the composer; modal cleanup restores this exact opener.
+    fixedContentTrigger.current = event.currentTarget
+    setShowBlocks(true)
+  }
+
+  function closeBlocks() {
+    setShowBlocks(false)
+    // Blocks are global, not copied into the draft; refresh the automatic-apply summary.
+    setFixedContentRevision(current => current + 1)
   }
 
   function startCreate() {
@@ -261,16 +276,17 @@ export default function PostManager() {
   const previewDomain = domains.find(domain => (domain.kind === 'custom' ? domain.id : domain.kind === 'shared' ? `shared:${domain.domain}` : 'primary') === form.domainKey)?.domain || ''
 
   return <div className="mx-auto max-w-7xl space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={() => setShowBlocks(value => !value)} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={startCreate} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài viết</button></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={openBlocks} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={startCreate} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài viết</button></div></div>
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"><div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="Tìm tiêu đề, slug..." className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-sky-500" /></div><select value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="all">Tất cả trạng thái</option><option value="published">Đã xuất bản</option><option value="draft">Bản nháp</option></select><select value={domainFilter} onChange={event => { setDomainFilter(event.target.value); setPage(1) }} className="max-w-48 rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="">Tất cả domain</option>{domains.map(domain => <option key={`filter:${domain.kind}:${domain.id || domain.domain}`} value={domain.domain}>{domain.domain}</option>)}</select><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm"><option value="6">6 / trang</option><option value="10">10 / trang</option><option value="20">20 / trang</option><option value="25">25 / trang</option></select></div>
     <PopupClickSummary clicks={clickStats.data?.totals.today} error={clickStats.error} />
     {error && !showForm && <p role="alert" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">{error}</p>}
-    {showBlocks && <FixedContentManager canUseRawHtml={canUseRawHtml} onClose={() => setShowBlocks(false)} />}
+    {showBlocks && <FixedContentManager canUseRawHtml={canUseRawHtml} onClose={closeBlocks} returnFocusTo={fixedContentTrigger.current} />}
     {showTelegramDefaults && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-3"><div role="dialog" aria-modal="true" aria-label="Cài đặt Telegram mặc định" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white"><div className="flex justify-end px-3 pt-3"><button type="button" onClick={() => setShowTelegramDefaults(false)} aria-label="Đóng cài đặt Telegram" className="rounded-full p-2 hover:bg-gray-100"><X className="h-5 w-5" /></button></div><TelegramSettingsSection onSaved={savedTelegramDefaults} /></div></div>}
-    {showForm && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-2 sm:p-4"><form onSubmit={save} className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-label={editingId ? 'Sửa bài viết' : 'Tạo bài viết'}>
+    {showForm && <div inert={showBlocks} aria-hidden={showBlocks || undefined} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-2 sm:p-4"><form onSubmit={save} className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal={!showBlocks} aria-label={editingId ? 'Sửa bài viết' : 'Tạo bài viết'}>
       <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4 sm:px-7"><div><h2 className="text-lg font-semibold text-gray-950">{editingId ? 'Sửa bài viết' : 'Tạo bài viết'}</h2><p className="mt-0.5 text-sm text-gray-500">Tạo bài viết, chọn popup và chuẩn bị ảnh chia sẻ Facebook.</p></div><button type="button" disabled={busy} onClick={reset} className="rounded-full p-2 text-gray-500 hover:bg-gray-100" aria-label="Đóng"><X className="h-5 w-5" /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-7">
       {error && <p role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error}</p>}
+      <FixedContentSection revision={fixedContentRevision} disabled={busy} onManage={openBlocks} />
       <TelegramPostEditor key={`telegram:${formSession}`} value={form.telegramSettings} onChange={telegramSettings => setForm(current => ({ ...current, telegramSettings }))} content={form.content} onInsert={insertQuickMedia} onUpload={uploadFile} onUploadingChange={setUploadingTelegram} disabled={busy || uploadingPreview || uploadingEditor} />
       <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">

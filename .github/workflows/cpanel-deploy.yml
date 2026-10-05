@@ -58,6 +58,9 @@ jobs:
           node scripts/test-telegram-render.cjs
           node scripts/test-telegram-dashboard.cjs
 
+      - name: Fixed content composer regressions
+        run: node scripts/test-fixed-content-composer.cjs
+
       - name: Popup timing dashboard regressions
         run: |
           node scripts/test-popup-timing.cjs
@@ -85,6 +88,7 @@ jobs:
           app/api/settings/telegram app/dashboard/settings/TelegramSettingsSection.tsx
           app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
           scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs
+          scripts/test-fixed-content-composer.cjs
 
       - name: Validate deployment scripts
         run: |

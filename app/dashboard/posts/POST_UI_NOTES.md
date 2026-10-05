@@ -34,3 +34,28 @@ Verify: `node scripts/test-telegram-dashboard.cjs` (35 assertions),
 `node scripts/test-content-media.cjs` (6 cases), and scoped ESLint for this folder.
 Manual: configure account defaults, create using only a video URL, edit an older
 post, and confirm its Telegram snapshot remains unchanged after saving new defaults.
+
+## Fixed content inside the composer
+
+Create and edit forms show `FixedContentSection` before the Telegram editor. Its
+account-scoped GET summarizes active before/after blocks; inactive blocks are
+counted but never presented as applied. The shortcut opens the existing manager
+above the composer, not as a nested form. The composer stays mounted and inert,
+preserving title, media, Telegram settings and popup selections; closing the
+manager refreshes the summary and returns focus to the shortcut captured before
+the composer becomes inert.
+
+Blocks retain their existing global live-render behavior: saving a block changes
+all the account's posts, including Telegram posts, and never copies block HTML
+into a draft or submits the post form. Both surfaces explain this explicitly.
+Block requests and errors are independent of post saves; late summary responses
+after closing/reopening the composer are ignored. The block manager traps keyboard
+focus, handles Escape when idle and prevents closing/editing during mutations.
+Manager reads are revision/lifetime scoped: mutation start invalidates an initial
+pending GET so its older list or error cannot overwrite the post-save result.
+
+Verify: `node scripts/test-fixed-content-composer.cjs`,
+`node scripts/test-telegram-dashboard.cjs` and `pnpm exec eslint app/dashboard/posts`.
+Manual: enter a draft, open fixed content, add/enable a before/after block, close
+the manager and confirm the summary changes without losing the draft. Repeat
+with an existing Telegram post and a failed content-block GET.

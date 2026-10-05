@@ -59,6 +59,7 @@ global.fetch = async (url, init = {}) => {
     return response({ popups: [], domains: [{ id: null, domain: 'fixture.example', kind: 'primary' }], telegramDefaults: defaults })
   }
   if (url.startsWith('/api/posts?')) return response({ items: [savedPost], total: 1 })
+  if (url === '/api/content-blocks') return response([])
   if (url === '/api/settings/telegram') {
     if (init.method === 'PUT') defaults = JSON.parse(init.body)
     return response(defaults)
