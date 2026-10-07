@@ -60,3 +60,14 @@ Facebook confirmation and TikTok's shared-card→native PDP gesture. Countdown,
 return, cooldown-zero reload and two accepted fixture clicks per original trial
 passed; six tested source hashes matched. iOS remains automated-only. Pushing main
 triggers deployment; Actions/runtime and production analytics need separate checks.
+
+## Numeric Telegram links and media controls (2026-10-07)
+
+CI runs `node scripts/test-numeric-post-links.cjs` for numeric URL allocation,
+collision retries, existing links and host/publication isolation, plus
+`node scripts/test-rich-editor-video.cjs` for video selection/removal without
+persisting editor controls. The quick-form suite also verifies Telegram creation
+defaults, deleted-popup replacement and individual media removal. The new `/p7`
+route and link helpers are included in scoped lint. No schema migration is added.
+`node scripts/test-telegram-media-removal.cjs` additionally verifies individual
+quick-media deletion, signed sibling URLs and preservation of mixed article HTML.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createPopupClickToken } from '@/lib/popup-click-token'
+import { getPublicPostPath } from '@/lib/public-post-link'
 import { sendPopupClick } from '@/lib/popup-click-client'
 import { prisma } from '@/lib/prisma'
 import { UAParser } from 'ua-parser-js'
@@ -316,7 +317,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
   const safeDescription = escapeHtml(post.excerpt || plainText).replace(/\r?\n/g, ' ')
-  const canonical = `https://${hostname}/${encodeURIComponent(post.slug)}`
+  const canonical = `https://${hostname}${getPublicPostPath(post.slug)}`
   const chromeGateCss = '.managed-browser-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-browser-gate-card{width:min(480px,100%);padding:28px;border-radius:28px;background:#fff;color:#19181d;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-browser-gate-card h2{margin:0;font-size:24px}.managed-browser-gate-card p{margin:14px 0 0;font-size:14px;line-height:1.7;color:#4b5563}.managed-browser-gate-card a{display:block;margin-top:20px;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:18px;font-weight:700;text-decoration:none}.managed-browser-gate-card a[aria-disabled="true"]{opacity:.6}.managed-browser-gate-card small{display:block;margin-top:14px;color:#6b7280;font-size:12px;line-height:1.6}'
   // Embed the same guard used by the React alias before article markup. This catches
   // a pre-opened docked DevTools panel during the first synchronous page check.
@@ -605,6 +606,8 @@ export async function GET(
     })
   }
 
+  // Numeric article routes stop here; they never resolve/record short-link clicks.
+  if (req.nextUrl.pathname.startsWith('/p7/')) return new NextResponse('Not found', { status: 404 })
   const link = await getCachedLink(shortCode, hostname)
 
   const mainOrigin = getSiteUrl()

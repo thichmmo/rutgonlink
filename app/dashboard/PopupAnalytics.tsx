@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { ExternalLink, RefreshCw, MousePointerClick } from 'lucide-react'
 import { CLICK_WINDOWS, type ClickStatsList, type PlatformClicks, type PopupAnalyticsResponse } from '@/lib/popup-analytics'
 import { useLivePopupStats } from './PopupClickStats'
+import { getPublicPostPath } from '@/lib/public-post-link'
 
 function Breakdown({ counts }: { counts?: PlatformClicks }) {
   return <div className="whitespace-nowrap text-xs leading-5"><div className="text-orange-600">Shopee: <strong>{counts?.shopee ?? '...'}</strong></div><div className="text-gray-600">TikTok: <strong>{counts?.tiktok ?? '...'}</strong></div></div>
@@ -27,7 +28,7 @@ function StatsTable({ kind, list, query, sort, onQuery, onSort, onPage }: {
         <td className="max-w-sm p-4"><div className="flex items-center gap-3">
           {item.image ? <Image src={item.image} alt="" width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg object-cover" /> : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><MousePointerClick className="h-5 w-5" /></span>}
           <div className="min-w-0"><p className="truncate font-semibold text-gray-900">{item.title}</p>
-            {kind === 'post' ? <><p className="truncate text-xs text-gray-500">/{item.slug}</p><p className="text-xs text-gray-500">Popup: {item.popupName || 'Không có'}</p><a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-sky-700"><ExternalLink className="h-3 w-3" /> Mở bài viết</a></> : <p className="text-xs text-gray-500">Bài viết liên kết: {item.postCount}</p>}
+            {kind === 'post' ? <><p className="truncate text-xs text-gray-500">{getPublicPostPath(item.slug || '')}</p><p className="text-xs text-gray-500">Popup: {item.popupName || 'Không có'}</p><a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-sky-700"><ExternalLink className="h-3 w-3" /> Mở bài viết</a></> : <p className="text-xs text-gray-500">Bài viết liên kết: {item.postCount}</p>}
           </div></div></td>
         {CLICK_WINDOWS.map(w => <td key={w.key} className="p-4"><Breakdown counts={item.stats[w.key]} /></td>)}
       </tr>)}</tbody>

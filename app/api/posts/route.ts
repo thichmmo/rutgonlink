@@ -6,12 +6,14 @@ import {
   normalizeContent,
   normalizeContentFormat,
   ownsActivePopups,
-  postSchema,
+  createPostSchema,
   validatePublicationTarget,
 } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
 import { normalizeTelegramSettings } from '@/lib/telegram-settings'
+import { getPublicPostPath } from '@/lib/public-post-link'
+import { allocateNumericPostSlug, NumericPostLinkExhaustedError, retryNumericPostCreation } from '@/lib/numeric-post-link-server'
 
 const PAGE_SIZES = [6, 10, 20, 25] as const
 
@@ -29,7 +31,7 @@ function pageSizeValue(value: string | null) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serializePost(post: any) {
   const domain = post.domain?.domain || post.sharedDomain || getSiteHostname()
-  return { ...post, publicDomain: domain, publicUrl: `https://${domain}/${post.slug}` }
+  return { ...post, publicDomain: domain, publicUrl: `https://${domain}${getPublicPostPath(post.slug)}` }
 }
 
 export async function GET(req: NextRequest) {
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
   const actor = await getManagedContentActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const data = postSchema.parse(await req.json())
+    const data = createPostSchema.parse(await req.json())
     const popupIds = data.popupIds?.length ? [...new Set(data.popupIds)] : (data.popupId ? [data.popupId] : [])
     if (!(await ownsActivePopups(actor.id, popupIds))) {
       return NextResponse.json({ error: 'Popup không thuộc tài khoản hoặc đang tắt' }, { status: 400 })
@@ -93,15 +95,20 @@ export async function POST(req: NextRequest) {
       : null
     // Snapshot once per create request, including all popup variants; defaults never leak into old posts.
     const telegramSettings = data.telegramSettings ?? normalizeTelegramSettings(account?.telegramSettings)
-    const created = await prisma.$transaction(async (tx) => {
+    const numericLink = data.publicLinkMode === 'numeric'
+    if (numericLink && !telegramSettings.enabled) {
+      return NextResponse.json({ error: 'Mã link số chỉ dùng khi tạo bài Telegram' }, { status: 400 })
+    }
+    // Snapshots stay outside retries so all variants retain the same account defaults.
+    const createTransaction = () => prisma.$transaction(async (tx) => {
       const result = []
       for (let index = 0; index < Math.max(1, popupIds.length); index += 1) {
         const popupId = popupIds[index] || null
-        const baseSlug = data.slug
+        const baseSlug = data.slug || ''
         const candidate = index === 0 ? baseSlug : `${baseSlug}-popup-${index + 1}`
-        let slug = candidate
+        let slug = numericLink ? await allocateNumericPostSlug(tx.managedPost) : candidate
         let suffix = 2
-        while (index > 0 && await tx.managedPost.findUnique({ where: { slug }, select: { id: true } })) {
+        while (!numericLink && index > 0 && await tx.managedPost.findUnique({ where: { slug }, select: { id: true } })) {
           slug = `${candidate}-${suffix}`
           suffix += 1
         }
@@ -126,9 +133,11 @@ export async function POST(req: NextRequest) {
       }
       return result
     })
+    const created = numericLink ? await retryNumericPostCreation(createTransaction) : await createTransaction()
     return NextResponse.json({ items: created.map(serializePost), created: created.length }, { status: 201 })
   } catch (error) {
     if (error instanceof ZodError) return NextResponse.json({ error: error.issues[0]?.message }, { status: 400 })
+    if (error instanceof NumericPostLinkExhaustedError) return NextResponse.json({ error: error.message }, { status: 409 })
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return NextResponse.json({ error: 'Đường dẫn bài viết đã tồn tại' }, { status: 409 })
     }

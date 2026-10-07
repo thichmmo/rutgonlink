@@ -55,6 +55,13 @@ const mocks = {
   '@/lib/content-management': { getManagedContentActor: async () => state.actor },
   '@/lib/prisma': { prisma }, '@/lib/site-config': { getSiteHostname: () => 'rutgonlink.site' },
   '@/lib/telegram-settings': {},
+  '@/lib/public-post-link': (() => {
+    const code = ts.transpileModule(fs.readFileSync(path.join(root, 'lib/public-post-link.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
+    const loaded = { exports: {} }
+    new Function('module', 'exports', code)(loaded, loaded.exports)
+    return loaded.exports
+  })(),
+  '@/lib/numeric-post-link-server': {},
 }
 new Function('require', 'module', 'exports', code)(id => Object.hasOwn(mocks, id) ? mocks[id] : require(id), moduleFixture, moduleFixture.exports)
 const route = moduleFixture.exports

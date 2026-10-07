@@ -18,6 +18,7 @@ import { PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-p
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
+import { getPublicPostPath } from '@/lib/public-post-link'
 
 type Context = { params: Promise<{ slug: string }> }
 
@@ -34,7 +35,7 @@ async function findPost(slug: string) {
 
 function publicUrl(post: Awaited<ReturnType<typeof findPost>>) {
   const domain = post?.domain?.domain || post?.sharedDomain || getSiteHostname()
-  return `https://${domain}/${post?.slug || ''}`
+  return `https://${domain}${getPublicPostPath(post?.slug || '')}`
 }
 
 export async function generateMetadata({ params }: Context): Promise<Metadata> {

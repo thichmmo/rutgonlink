@@ -100,12 +100,13 @@ reuse the saved snapshot; their settings open automatically when a link is missi
 or validation fails. The media layout preview is collapsed until requested.
 
 Media insertion and save fill missing metadata, without replacing entered title,
-slug or stored content. Empty Telegram content gets a media-specific validation
+stored link or content. Empty Telegram content gets a media-specific validation
 message. Telegram disables native form validation because optional inputs may be
-collapsed: save explicitly validates generated title/slug and Telegram settings,
+collapsed: save explicitly validates title, existing editable slugs and Telegram settings,
 while server rejection opens the optional controls. Existing text/plain/raw posts
-remain intact on edit and mode switch; explicit confirmed replacement is still the
-only destructive media action. A legacy text-only post shows a preservation notice.
+remain intact on edit and mode switch. Replacing the entire body still requires
+explicit confirmation; individual deletion removes only the selected media.
+A legacy text-only post shows a preservation notice.
 Uploading continues to lock Save and the type selector.
 
 Verify: `node scripts/test-telegram-quick-form.cjs`, existing Telegram/post-type/
@@ -113,3 +114,30 @@ fixed-content dashboard suites, and `pnpm exec eslint app/dashboard/posts`.
 Manual: create with saved Telegram defaults using only video URL + popup; open
 optional settings to manage fixed content; switch both modes and edit a legacy
 plain/raw post without losing its stored body.
+
+## Telegram creation defaults and numeric links
+
+`Tạo bài Telegram` selects `honghotngay228.site` when present in permitted domain
+options, enables publishing, and selects the first active popup. The options API
+orders popups newest-first. Missing preferred domain falls back to the primary
+domain; missing popups remain empty. These defaults run once for a new form,
+without rewriting existing posts or draft fields when type/defaults change.
+
+Returning focus to the dashboard refreshes options before creation and during drafts. An automatic
+popup choice that disappeared falls back to the newest valid option; a still-valid
+choice stays selected. Checkbox interaction disables automatic selection for that
+draft, including an intentional empty selection. Removed manual IDs are discarded
+without choosing substitutes. Refresh never resets domain, publish state, media or
+metadata, and a late response cannot apply these defaults to an edit/standard form.
+
+New Telegram saves omit `slug` and request `publicLinkMode: 'numeric'`; the API
+allocates `/p7/<code>`. Slug inputs are hidden only during new Telegram creation.
+Standard posts and every edit retain the existing slug contract. List text, open
+and copy use the API's canonical `publicUrl`. Media removal updates content through
+`onContentChange`, preserving title/link and content format.
+
+Verify: `node scripts/test-telegram-quick-form.cjs` (162 assertions),
+`node scripts/test-telegram-dashboard.cjs` (35),
+`node scripts/test-post-types-dashboard.cjs` (78), and
+`node scripts/test-fixed-content-composer.cjs` (60). These are actual TSX/JSDOM tests
+with local API fixtures; backend allocation/routing has separate coverage.

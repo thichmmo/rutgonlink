@@ -2,16 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Send, Upload } from 'lucide-react'
+import { Send, Trash2, Upload } from 'lucide-react'
 import type { TelegramSettings } from '@/lib/telegram-settings'
 import TelegramSettingsFields from '../settings/TelegramSettingsFields'
-import { quickMediaHtml, telegramMediaPreview } from './telegram-media'
+import { quickMediaHtml, removeTelegramMedia, telegramMediaItems } from './telegram-media'
 
 type Props = {
   value: TelegramSettings
   onChange: (value: TelegramSettings) => void
   content: string
   onInsert: (html: string, replace: boolean, fileName?: string) => void
+  onContentChange?: (nextHtml: string) => void
   onUpload: (file: File) => Promise<string>
   onUploadingChange: (uploading: boolean) => void
   disabled: boolean
@@ -19,7 +20,7 @@ type Props = {
   showSettings?: boolean
 }
 
-export default function TelegramPostEditor({ value, onChange, content, onInsert, onUpload, onUploadingChange, disabled, fixedMode = false, showSettings = false }: Props) {
+export default function TelegramPostEditor({ value, onChange, content, onInsert, onContentChange, onUpload, onUploadingChange, disabled, fixedMode = false, showSettings = false }: Props) {
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [replace, setReplace] = useState(false)
@@ -28,7 +29,8 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const requestRef = useRef(0)
-  const preview = telegramMediaPreview(content)
+  const media = telegramMediaItems(content)
+  const previews = media.map(item => item.preview).filter(item => item !== null)
 
   useEffect(() => () => { requestRef.current += 1 }, [])
 
@@ -37,6 +39,7 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
   }
 
   function insertUrl() {
+    if (disabled || uploading) return
     const html = quickMediaHtml(input)
     if (!html) {
       setError('Dán URL video công khai hoặc iframe YouTube, Vimeo, TikTok, Facebook, Instagram, Google Drive; hoặc link MP4/WebM/OGG.')
@@ -46,10 +49,11 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
     onInsert(html, replace)
     setInput('')
     setError('')
-    setMessage('Đã chèn video. Chọn popup và lưu bài là xong.')
+    setMessage('Đã chèn video. Lưu bài để hoàn tất.')
   }
 
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
+    if (disabled || uploading) return
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || !confirmedReplace()) return
@@ -74,6 +78,13 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
     }
   }
 
+  function deleteMedia(index: number) {
+    if (disabled || uploading || !onContentChange) return
+    onContentChange(removeTelegramMedia(content, index))
+    setError('')
+    setMessage(`Đã xóa ${media[index]?.kind === 'image' ? 'ảnh' : 'video'} ${index + 1}. Nội dung còn lại được giữ nguyên.`)
+  }
+
   return <section className="my-4 space-y-4 rounded-2xl border border-sky-200 bg-sky-50/40 p-4 sm:p-5" aria-label="Bài viết Telegram">
     <div><h3 className="flex items-center gap-2 font-semibold text-gray-950"><Send className="h-5 w-5 text-[#229ED9]" /> Bài viết Telegram</h3><p className="mt-1 text-xs leading-5 text-gray-600">Bài Telegram mới dùng link và chữ đã lưu của tài khoản. Mọi chỉnh sửa ở đây chỉ lưu cho bài này; đổi loại bài không xóa nội dung đã nhập.</p></div>
     <details open={settingsOpen || showSettings} onToggle={event => setSettingsOpen(event.currentTarget.open)} className="rounded-xl border border-gray-200 bg-white p-3">
@@ -92,24 +103,31 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,video/mp4,video/webm,video/ogg" onChange={event => void upload(event)} className="hidden" />
         </div>
         {content.trim() && <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} className="mt-0.5 accent-sky-600" /> Thay toàn bộ nội dung bằng media mới (sẽ hỏi xác nhận). Mặc định chèn thêm và giữ nội dung hiện có.</label>}
-        <p className="text-xs text-gray-500">Ảnh tối đa 8 MB, video tối đa 50 MB. Nếu chưa điền, tiêu đề và slug sẽ được tạo tự động sau khi chèn.</p>
+        <p className="text-xs text-gray-500">Ảnh tối đa 8 MB, video tối đa 50 MB. Tiêu đề còn trống sẽ được tạo sau khi chèn; bài Telegram mới được cấp link số khi lưu.</p>
       </fieldset>
       {uploading && <p role="status" className="text-sm text-sky-700">Đang tải video/ảnh... Vui lòng chờ trước khi lưu bài.</p>}
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p role="status" className="text-sm text-emerald-700">{message}</p>}
-      {content.trim() && !preview && <p className="text-xs text-amber-800">Bài này đang có nội dung cũ và sẽ được giữ nguyên khi lưu. Bạn có thể thêm video/ảnh; nếu cần sửa phần chữ cũ, đổi tạm sang Bài thường.</p>}
+      {content.trim() && previews.length === 0 && <p className="text-xs text-amber-800">Bài này đang có nội dung cũ và sẽ được giữ nguyên khi lưu. Bạn có thể thêm video/ảnh; nếu cần sửa phần chữ cũ, đổi tạm sang Bài thường.</p>}
+      {media.length > 0 && <fieldset disabled={disabled || uploading || !onContentChange} className="space-y-2 rounded-xl border border-gray-200 bg-white p-3" aria-label="Video và ảnh đã chèn">
+        <legend className="px-1 text-sm font-semibold text-gray-800">Video và ảnh đã chèn ({media.length})</legend>
+        {media.map((item, index) => <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+          <span className="min-w-0 flex-1 truncate text-sm text-gray-700">{item.kind === 'image' ? 'Ảnh' : 'Video'} {index + 1} · {item.title}</span>
+          <button type="button" aria-label={`Xóa ${item.kind === 'image' ? 'ảnh' : 'video'} ${index + 1}`} onClick={() => deleteMedia(index)} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Xóa</button>
+        </div>)}
+      </fieldset>}
       <details className="rounded-xl border border-gray-200 bg-white p-3">
         <summary className="cursor-pointer text-sm font-semibold text-gray-700">Xem trước bố cục Telegram</summary>
         <div className="mx-auto mt-4 max-w-2xl space-y-5 py-2">
           <div className="text-center"><span className="inline-block max-w-full break-words rounded-full bg-[#229ED9] px-7 py-3 text-base font-bold text-white shadow-lg">{value.buttonText || '✈️ VÀO NHÓM TELEGRAM NGAY'}</span></div>
           {value.disclaimer && <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{value.disclaimer}</p>}
-          {preview?.kind === 'image' ? <Image src={preview.url} alt={preview.title} unoptimized width={960} height={540} className="h-auto w-full rounded-xl" />
-            : preview?.kind === 'video' ? <video key={preview.url} src={preview.url} controls preload="metadata" playsInline className="w-full rounded-xl bg-black" />
-              : preview?.kind === 'iframe' ? <iframe key={preview.url} src={preview.url} title={preview.title} loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen className={`mx-auto w-full rounded-xl border-0 ${preview.portrait ? 'aspect-[9/16] max-w-[380px]' : 'aspect-video'}`} />
-                : <div className="grid aspect-video place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">Video/ảnh sẽ hiển thị ở đây</div>}
+          {previews.length ? previews.map((preview, index) => preview.kind === 'image' ? <Image key={index} src={preview.url} alt={preview.title} unoptimized width={960} height={540} className="h-auto w-full rounded-xl" />
+            : preview.kind === 'video' ? <video key={index + ':' + preview.url} src={preview.url} controls preload="metadata" playsInline className="w-full rounded-xl bg-black" />
+              : <iframe key={index + ':' + preview.url} src={preview.url} title={preview.title} loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen className={`mx-auto w-full rounded-xl border-0 ${preview.portrait ? 'aspect-[9/16] max-w-[380px]' : 'aspect-video'}`} />)
+            : <div className="grid aspect-video place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">Video/ảnh sẽ hiển thị ở đây</div>}
           <p className="text-center text-xs text-gray-500 underline">Chính sách bảo mật</p>
         </div>
-        <p className="text-xs text-gray-500">Bản xem trước hiển thị media đầu tiên. Media và nội dung đã lưu được giữ nguyên; thêm mới chỉ thay thế khi bạn chọn và xác nhận.</p>
+        <p className="text-xs text-gray-500">Bản xem trước hiển thị các video/ảnh hợp lệ theo thứ tự đã chèn. Dùng nút Xóa ở danh sách phía trên để bỏ riêng từng video/ảnh; phần chữ còn lại được giữ nguyên.</p>
       </details>
     </>}
   </section>

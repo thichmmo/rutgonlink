@@ -1,17 +1,28 @@
 # Telegram quick-form regression coverage
 
-Run `node scripts/test-telegram-quick-form.cjs` (96 assertions). The harness
+Run `node scripts/test-telegram-quick-form.cjs` (162 assertions). The harness
 executes actual TSX in JSDOM against in-memory API fixtures; it creates no live
 posts, uploads no real files, and loads no remote media.
 
 Coverage: create/edit Telegram forms omit article-editor and format controls;
 popup and media controls stay immediately available; optional metadata,
 Facebook preview and fixed content remain reachable in collapsed settings;
-video or uploaded image plus popup saves without typing an article/title/slug.
+video or uploaded image plus the default popup saves without typing an article/title/slug.
 Empty media gets actionable feedback. Native save-button clicks exercise the
 Telegram/manual versus standard/native validation paths, including a hidden
 invalid Telegram URL and corrected retry. Metadata/API failures reveal settings
-and retain drafts; title/slug regeneration works after users clear those fields.
+and retain drafts; missing title regenerates, while edited legacy slugs still validate.
+
+New Telegram drafts prefer an available `honghotngay228.site`, publish immediately,
+and select the newest popup. Global focus refresh handles deletion before opening
+a composer and deletion/arrival during drafts without losing
+media, manual domain/publish choices, manual alternate popups or an explicitly
+empty selection. A late response cannot apply Telegram defaults to another form;
+edits retain their stored popup/link/domain/publish snapshot. Numeric creation sends
+only `publicLinkMode: 'numeric'`, omits slug, and hides the new-form slug input;
+standard posts and PUT keep their slug contract. A numeric fixture checks displayed,
+open and copied canonical `publicUrl` rather than the internal stored slug, plus
+the canonical numeric path in an existing post's preview.
 
 Mode changes may unmount the rich editor, but must retain the draft body and
 metadata in parent state. Tests round-trip mixed text/media, preserve legacy

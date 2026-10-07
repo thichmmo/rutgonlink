@@ -61,6 +61,7 @@ const contentManagement = {
   normalizeContentFormat: value => value || 'plain',
   validatePublicationTarget: async (userId, domainId, sharedDomain) => { record('validatePublicationTarget', { userId, domainId, sharedDomain }); return { domainId: domainId || null, sharedDomain: sharedDomain || null } },
   postSchema: { parse: value => value },
+  createPostSchema: { parse: value => value },
 }
 
 const moduleCache = new Map()
@@ -78,6 +79,8 @@ function load(file) {
     if (id === '@/lib/prisma') return { prisma }
     if (id === '@/lib/site-config') return { getSiteHostname: () => 'rutgonlink.site' }
     if (id === '@/lib/telegram-settings') return load('lib/telegram-settings.ts')
+    if (id === '@/lib/public-post-link') return load('lib/public-post-link.ts')
+    if (id === '@/lib/numeric-post-link-server') return load('lib/numeric-post-link-server.ts')
     if (id === '@prisma/client') return { Prisma: { PrismaClientKnownRequestError: class extends Error {} } }
     return require(id)
   }

@@ -12,3 +12,8 @@ An omitted `telegramSettings` field leaves the stored snapshot untouched for old
 clients. An explicit complete settings object is validated and updates only the
 actor-owned post. Account defaults are never read for edits.
 Verify with `node scripts/test-telegram-api.cjs`.
+
+Numeric-link serialization shares `getPublicPostPath` with create/list and the
+public renderers. PUT still validates/persists the supplied existing slug and
+never reads create-only `publicLinkMode` or allocates another code. Verify numeric
+edit/link stability with `node scripts/test-numeric-post-links.cjs`.

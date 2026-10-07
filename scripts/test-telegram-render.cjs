@@ -42,7 +42,7 @@ function load(file) {
     if (id.startsWith('@/lib/')) {
       const allowed = ['popup-settings', 'popup-link', 'popup-settings-server', 'popup-click-client',
         'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed',
-        'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render']
+        'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link']
       return allowed.includes(id.slice(6)) ? load(id.slice(2) + '.ts') : {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}

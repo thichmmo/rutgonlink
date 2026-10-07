@@ -116,3 +116,12 @@ page/replay. Countdown and cooldown-zero reload checks passed; each original
 trial recorded one Shopee and one TikTok click in the isolated receiver. All six
 tested source hashes matched. iOS was automated-only; this does not establish
 production analytics or deployment success.
+# Numeric article paths (2026-10-07)
+
+The `/p7/<five-digit code>` route reuses this renderer with internal slug
+`p7-<code>` and the same host/publication/account guards. A missing numeric article
+returns 404 before short-link lookup or click analytics. Canonicals and OG URLs
+use the shared public path helper; existing slug routes remain usable.
+
+Verification: `node scripts/test-numeric-post-links.cjs` and the existing popup
+runtime suite. Popup launch, timing and progress logic are unchanged.

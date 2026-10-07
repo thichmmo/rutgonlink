@@ -62,6 +62,12 @@ jobs:
           node scripts/test-telegram-dashboard.cjs
           node scripts/test-telegram-quick-form.cjs
 
+      - name: Numeric post links and video removal regressions
+        run: |
+          node scripts/test-numeric-post-links.cjs
+          node scripts/test-rich-editor-video.cjs
+          node scripts/test-telegram-media-removal.cjs
+
       - name: Fixed content composer regressions
         run: node scripts/test-fixed-content-composer.cjs
 
@@ -99,6 +105,9 @@ jobs:
           app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
           scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs
           scripts/test-telegram-quick-form.cjs
+          scripts/test-numeric-post-links.cjs scripts/test-rich-editor-video.cjs
+          scripts/test-telegram-media-removal.cjs
+          'app/p7/[code]' lib/public-post-link.ts lib/numeric-post-link-server.ts
           scripts/test-fixed-content-composer.cjs
           scripts/test-post-types-api.cjs scripts/test-post-types-dashboard.cjs
 

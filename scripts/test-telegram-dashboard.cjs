@@ -121,7 +121,7 @@ async function run() {
   await input(field('Tạo nhanh bằng URL video'), 'https://youtu.be/dQw4w9WgXcQ')
   await click(button('Chèn video'))
   check(() => assert.equal(field('Tiêu đề').value, 'Video Telegram'))
-  check(() => assert.match(field('Slug').value, /^video-telegram-[a-z0-9]+$/))
+  check(() => assert.equal(field('Slug'), undefined, 'New Telegram links use API-allocated numeric codes'))
   check(() => assert.match(dialog().querySelector('[aria-label="Bài viết Telegram"] iframe').src, /youtube-nocookie/))
 
   await input(field('Tiêu đề'), 'Title chosen by user')

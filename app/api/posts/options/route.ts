@@ -7,7 +7,8 @@ export async function GET() {
   const actor = await getManagedContentActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const [popups, domains, user] = await Promise.all([
-    prisma.popupTemplate.findMany({ where: { userId: actor.id, isActive: true }, select: { id: true, name: true, imageUrl: true, settings: true }, orderBy: { name: 'asc' } }),
+    // Creation defaults use the latest valid popup; ID breaks timestamp ties.
+    prisma.popupTemplate.findMany({ where: { userId: actor.id, isActive: true }, select: { id: true, name: true, imageUrl: true, settings: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
     getPublicationTargets(actor.id),
     prisma.user.findUnique({ where: { id: actor.id }, select: { telegramSettings: true } }),
   ])

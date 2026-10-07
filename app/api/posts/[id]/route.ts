@@ -11,6 +11,7 @@ import {
 } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
+import { getPublicPostPath } from '@/lib/public-post-link'
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -25,7 +26,7 @@ async function getPost(id: string, userId: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function serializePost(post: any) {
   const domain = post.domain?.domain || post.sharedDomain || getSiteHostname()
-  return { ...post, publicDomain: domain, publicUrl: `https://${domain}/${post.slug}` }
+  return { ...post, publicDomain: domain, publicUrl: `https://${domain}${getPublicPostPath(post.slug)}` }
 }
 
 export async function PUT(req: NextRequest, { params }: Context) {

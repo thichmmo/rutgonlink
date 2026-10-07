@@ -59,6 +59,16 @@ export const postSchema = z.object({
   telegramSettings: telegramSettingsSchema.optional(),
 })
 
+// Numeric links are a create-only opt-in; older clients and every edit keep slugs.
+export const createPostSchema = postSchema.extend({
+  slug: postSchema.shape.slug.optional(),
+  publicLinkMode: z.literal('numeric').optional(),
+}).superRefine((data, context) => {
+  if (data.publicLinkMode !== 'numeric' && !data.slug) {
+    context.addIssue({ code: 'custom', path: ['slug'], message: 'Vui lòng nhập đường dẫn bài viết' })
+  }
+})
+
 export const fixedContentSchema = z.object({
   title: z.string().trim().min(1).max(120),
   content: z.string().trim().min(1).max(200000),

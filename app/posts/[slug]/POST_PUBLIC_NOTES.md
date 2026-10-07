@@ -120,3 +120,9 @@ blocked early taps, and cooldown-zero reload restarted Shopee. Each original
 trial captured exactly one accepted click per affiliate in the isolated receiver.
 Six tested source hashes remained unchanged. iOS was automated-only; production
 analytics and deployment require their own verification.
+# Numeric canonical paths (2026-10-07)
+
+Metadata uses the shared `getPublicPostPath` helper so the React alias for an
+internal `p7-<five-digit code>` slug points to `/p7/<code>`. Existing slug aliases
+and Telegram/popup behavior remain intact. Verify with numeric-link and Telegram
+render regression suites.

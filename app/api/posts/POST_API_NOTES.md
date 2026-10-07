@@ -18,3 +18,17 @@ NULL, JSON null, absent enabled, false, and non-boolean values; a separate
 The filter is ANDed with owner, text, publication status and domain filters.
 No schema migration or account-default lookup is involved. Verify with
 `node scripts/test-post-types-api.cjs`, including installed Prisma MySQL SQL compilation.
+
+## Numeric links for new Telegram posts
+
+POST accepts the create-only opt-in `publicLinkMode: "numeric"` and permits an
+omitted slug in that mode. An enabled Telegram snapshot is required. It creates
+an internal globally unique `p7-<five-digit code>` slug, exposing
+`https://<selected-domain>/p7/<code>` through `publicUrl`. Clients without the flag
+keep their submitted slug; standard posts and PUT do not allocate codes.
+
+Each bulk popup variant gets its own code in one transaction. A concurrent
+unique-key collision rolls back the complete batch before a bounded retry;
+account snapshots and content normalization remain outside the retries.
+No schema/migration or stored settings changes are required. Verify with
+`node scripts/test-numeric-post-links.cjs` and existing Telegram/type suites.

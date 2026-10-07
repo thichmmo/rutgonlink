@@ -20,6 +20,8 @@ function load(file, mocks = {}) {
 }
 
 const telegram = load('lib/telegram-settings.ts')
+const publicLinks = load('lib/public-post-link.ts')
+const numericLinks = load('lib/numeric-post-link-server.ts')
 const enabled = { ...telegram.defaultTelegramSettings(), enabled: true, url: 'https://t.me/+fixtureInvite' }
 const disabled = { ...enabled, enabled: false }
 const userA = { id: 'owner-a', email: 'a@example.test', isAdmin: false }
@@ -73,8 +75,11 @@ const schemaModule = load('lib/content-management.ts', {
 const mocks = {
   '@/lib/prisma': { prisma }, '@/lib/telegram-settings': telegram,
   '@/lib/site-config': { getSiteHostname: () => 'rutgonlink.site' },
+  '@/lib/public-post-link': publicLinks,
+  '@/lib/numeric-post-link-server': numericLinks,
   '@/lib/content-management': {
     postSchema: schemaModule.postSchema,
+    createPostSchema: schemaModule.createPostSchema,
     getManagedContentActor: async () => state.actor,
     getPublicationTargets: async userId => { record('targets', userId); return [] },
     ownsActivePopups: async () => true,
@@ -167,6 +172,7 @@ scenario('options exposes account defaults and tenant-scoped options', async () 
   assert.equal(response.status, 200)
   assert.deepEqual(response.body.telegramDefaults, enabled)
   assert.deepEqual(calls('popup.findMany')[0].args.where, { userId: userA.id, isActive: true })
+  assert.deepEqual(calls('popup.findMany')[0].args.orderBy, [{ createdAt: 'desc' }, { id: 'desc' }])
   assert.equal(calls('user.findUnique')[0].args.where.id, userA.id)
 })
 

@@ -7,7 +7,7 @@ It installs the JSDOM navigator before React loads, including on Node 20 CI.
 
 Coverage: account-options loading gate; independent defaults and saved post
 snapshots; default saving never submits a post; stale options cannot undo newer
-default saves; video-only auto-title/slug creation; 200-character and non-Latin
+default saves; video-only auto-title creation and hidden numeric-create slug; 200-character and non-Latin
 slug inputs; preserving existing content/title; safe media previews; explicit
 replacement helper; quick-media and rich-editor upload lifetimes; disabled save,
 format selection and embed drawer while uploads are pending. Styled-jsx's marker

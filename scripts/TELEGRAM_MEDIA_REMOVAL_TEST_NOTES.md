@@ -1,0 +1,3 @@
+# Telegram media deletion checks
+
+`node scripts/test-telegram-media-removal.cjs` mounts the actual TelegramPostEditor and exercises its helpers using original HTML byte comparisons. Eight scenarios cover loaded mixed media/all previews, repeated insertion, uploaded video sources, invalid legacy embeds, fake media in raw script/comment/textarea text, removal of the last item, disabled or disconnected callbacks, upload locking and confirmed replacement. Deletion must call only the content callback and retain sibling signed URLs, text, format and existing HTML. This uses JSDOM and local upload fixtures; live playback and integrated desktop-browser controls need a browser check.

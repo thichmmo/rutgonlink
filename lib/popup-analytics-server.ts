@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
+import { getPublicPostPath } from '@/lib/public-post-link'
 import { popupClickStats, popupClickWindows, type ClickGroup, type ClickStatsList } from '@/lib/popup-analytics'
 
 function aggregates(now: Date) {
@@ -59,6 +60,6 @@ export async function getPopupClickList(userId: string, group: ClickGroup, query
     ${joins} WHERE ${filter} ORDER BY ${order} m.createdAt DESC, m.id ASC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`)
   return { total, page, pageSize, items: rows.map(row => ({
     id: row.id, title: row.title, image: row.image, createdAt: row.createdAt.toISOString(), stats: popupClickStats(row),
-    ...(isPost ? { slug: row.slug, publicUrl: `https://${row.customDomain || row.sharedDomain || getSiteHostname()}/${row.slug}`, popupName: row.popupName } : { postCount: Number(row.postCount) }),
+    ...(isPost ? { slug: row.slug, publicUrl: `https://${row.customDomain || row.sharedDomain || getSiteHostname()}${getPublicPostPath(row.slug)}`, popupName: row.popupName } : { postCount: Number(row.postCount) }),
   })) }
 }
