@@ -24,6 +24,7 @@ const preopenedBaseline = process.argv.includes('--preopened-baseline')
 const preopenedCheck = process.argv.includes('--preopened-check')
 const androidBaseline = process.argv.includes('--android-baseline')
 const androidCheck = process.argv.includes('--android-check')
+const androidPromptBaseline = process.argv.includes('--android-prompt-baseline')
 const cache = new Map()
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
@@ -242,6 +243,8 @@ async function mount(kind, options = {}) {
     async back() { visibility = 'visible'; await fire(doc, 'visibilitychange'); await fire(win, 'pageshow'); await fire(win, 'focus') },
     async blur() { await fire(win, 'blur') },
     async focus() { await fire(win, 'focus') },
+    async pagehide() { await fire(win, 'pagehide') },
+    async pageshow() { await fire(win, 'pageshow') },
     async close() { if (root) await React.act(async () => root.unmount()); dom.window.close(); Date.now = realNow; delete global.window; delete global.document; delete global.HTMLElement },
   }
 }
@@ -281,7 +284,7 @@ async function androidScenarios() {
       assert.match(launchUrl, /;scheme=https;/)
       assert.equal(fallbackUrl(launchUrl), url, 'Fallback must preserve the signed source without URLSearchParams serialization')
       if (platform === 'SHOPEE') assert.match(launchUrl, /;package=com\.shopee\.vn;/)
-      else assert.doesNotMatch(launchUrl, /;package=/, 'Let Android choose the installed TikTok regional app')
+      else assert.match(launchUrl, /;package=com\.ss\.android\.ugc\.trill;/, 'Use the standard Vietnam TikTok package published by the vendor')
     }
   })
   await scenario('Android intent preserves long affiliate URLs without truncation', async () => {
@@ -327,6 +330,55 @@ async function androidScenarios() {
     assert.equal(JSON.stringify(settings), saved)
   })
   for (const kind of ['route', 'react']) {
+    await scenario(kind + ' Android native confirmation never advances on blur or prompt cancellation', async () => {
+      for (const ua of [android, androidChrome]) await using(kind, { ua, cooldownMinutes: 0 }, async h => {
+        await h.click()
+        assert.equal(h.calls[0].state, 'Shopee')
+        assert.equal(h.state(), 'Shopee')
+        assert.equal(h.button().disabled, true)
+        assert.equal(h.doc.querySelector('[data-popup-web-fallback]'), null, 'Do not offer a second action while launch is pending')
+        await h.blur(); await h.tick(2600); await h.focus()
+        assert.equal(h.state(), 'Shopee', 'Canceling the native prompt is not an app return')
+        assert.equal(h.button().disabled, false)
+        assert.ok(h.doc.querySelector('[data-popup-web-fallback]'))
+        await h.focus(); await h.tick(5000)
+        assert.equal(h.state(), 'Shopee')
+        assert.equal(h.calls.length, 1, 'Prompt events and timers must never launch again automatically')
+        assert.equal(h.clickEvents.length, 1)
+        await h.click()
+        assert.equal(h.calls[1].url, h.calls[0].url)
+        assert.equal(h.calls[1].state, 'Shopee')
+        await h.away(); await h.back()
+        assert.equal(h.state(), 'TikTok')
+        await h.click()
+        assert.equal(h.calls[2].state, 'TikTok')
+        assert.equal(h.state(), 'TikTok', 'The second pending confirmation must keep the article covered')
+        const marker = 'post-popup:post1:2026-09-27T00:00:00.000Z:android-return'
+        const pendingMarker = h.storage.session.get(marker)
+        assert.match(pendingMarker, /^2\|\d+$/)
+        await h.blur(); await h.tick(2600); await h.focus()
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.storage.session.get(marker), pendingMarker, 'Prompt focus must not consume the history-return marker')
+        assert.equal(h.calls.length, 3)
+        assert.equal(h.clickEvents.length, 3)
+        await h.away(); await h.back()
+        assert.equal(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' Android pagehide and pageshow confirm handoff without blur', async () => {
+      await using(kind, { ua: android }, async h => {
+        await h.click()
+        assert.equal(h.state(), 'Shopee')
+        await h.pagehide(); await h.tick(2600); await h.pageshow()
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.button().disabled, false)
+        await h.click()
+        assert.equal(h.state(), 'TikTok')
+        await h.pagehide(); await h.pageshow()
+        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(h.calls.length, 2)
+      })
+    })
     await scenario(kind + ' Android Chrome and Facebook use attached foreground links in order', async () => {
       for (const ua of [android, androidChrome]) await using(kind, { ua, androidUrl: shortTikTok, iosUrl: 'https://example.test/ios-only', handle: 'throw' }, async h => {
         await h.click(); await h.click()
@@ -337,14 +389,14 @@ async function androidScenarios() {
         assert.equal(first.attached, true)
         assert.equal(first.hidden, true)
         assert.equal(first.url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE'))
-        assert.equal(first.state, 'TikTok', 'Next popup renders before the external handoff')
+        assert.equal(first.state, 'Shopee', 'Native confirmation keeps the clicked popup visible')
         assert.match(first.session[0][1], /^1\|/)
         assert.equal(h.doc.querySelector('a[target="_self"]'), null)
         assert.equal(h.clickEvents.length, 1)
         await h.away(2000); await h.back(); await h.click()
         assert.equal(h.calls[1].mode, 'anchor-same-tab')
         assert.equal(h.calls[1].url, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK'))
-        assert.equal(h.calls[1].state, 'ARTICLE')
+        assert.equal(h.calls[1].state, 'TikTok', 'The article stays covered until a confirmed departure and return')
         assert.deepEqual(h.clickEvents.map(event => event.platform), ['SHOPEE', 'TIKTOK'])
         await h.away(); await h.back(); await h.focus()
         assert.equal(h.state(), 'ARTICLE')
@@ -411,12 +463,12 @@ async function androidScenarios() {
         assert.equal(h.state(), 'TikTok')
       })
     })
-    await scenario(kind + ' Android blocked second launch restores TikTok retry after article render', async () => {
+    await scenario(kind + ' Android blocked second launch keeps TikTok visible until departure', async () => {
       await using(kind, { ua: android, androidUrl: shortTikTok }, async h => {
         await h.click(); await h.away(); await h.back(); await h.click()
-        assert.equal(h.state(), 'ARTICLE')
+        assert.equal(h.state(), 'TikTok')
         await h.tick(2600)
-        assert.equal(h.state(), 'TikTok', 'The removed second-step overlay must be reattached for retry')
+        assert.equal(h.state(), 'TikTok', 'An unconfirmed launch must not flash article content')
         assert.equal(h.button().disabled, false)
         assert.equal(h.calls.length, 2, 'A timeout does not itself launch a web fallback')
         const fallback = h.doc.querySelector('[data-popup-web-fallback]')
@@ -439,7 +491,7 @@ async function androidScenarios() {
     })
     await scenario(kind + ' Android cookie-only return and zero cooldown preserve sequence', async () => {
       const state = await using(kind, { ua: android, cooldownMinutes: 0, session: false, local: false, androidUrl: shortTikTok }, async h => {
-        await h.click(); await h.blur(); await h.focus()
+        await h.click(); await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.button().disabled, false)
         return h.snapshot()
@@ -508,7 +560,7 @@ async function androidScenarios() {
         await h.click(); await h.away(); await h.tick(1000); await h.back()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.button().disabled, false)
-        await h.click(); await h.blur(); await h.focus(); await h.tick(1000)
+        await h.click(); await h.away(); await h.back(); await h.tick(1000)
         assert.equal(h.state(), 'ARTICLE')
         assert.equal(h.calls.length, 2)
       })
@@ -517,6 +569,26 @@ async function androidScenarios() {
 }
 
 async function main() {
+  if (androidPromptBaseline) {
+    const launchUrl = load('lib/popup-link.ts').buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK')
+    assert.doesNotMatch(launchUrl, /;package=/)
+    console.log('BASELINE TikTok intent package=absent')
+    for (const kind of ['route', 'react']) await using(kind, { ua: android }, async h => {
+      await h.click()
+      assert.equal(h.calls[0].state, 'TikTok')
+      await h.tick(2600)
+      assert.equal(h.state(), 'Shopee')
+      await h.blur(); await h.focus()
+      assert.equal(h.state(), 'TikTok', 'Old blur-only prompt flow advances without actual departure')
+      await h.click()
+      assert.equal(h.calls[1].state, 'ARTICLE')
+      await h.tick(2600)
+      assert.equal(h.state(), 'TikTok')
+      console.log(`BASELINE ${kind} Shopee=TikTok->Shopee prompt-focus=TikTok TikTok=ARTICLE->TikTok`)
+    })
+    console.log('RESULT=ANDROID_PROMPT_BASELINE_CONFIRMED')
+    return
+  }
   if (androidBaseline) {
     for (const kind of ['route', 'react']) {
       for (const ua of [android, androidChrome]) await using(kind, { ua, androidUrl: shortTikTok }, async h => {
@@ -1097,7 +1169,7 @@ async function main() {
         assert.equal(h.calls.length, 0)
         await h.click(); await h.tick(1000)
         assert.equal(await h.mouse('contextmenu'), false)
-        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.state(), ua === android ? 'Shopee' : 'TikTok')
         assert.equal(h.calls.filter(call => call.mode === 'devtools-redirect').length, 0)
       })
     })

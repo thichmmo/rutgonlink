@@ -18,8 +18,9 @@ export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPla
       || !ANDROID_APP_HOSTS[platform].includes(parsed.hostname)
       || !value.startsWith('https://') || /[#\s\\]/.test(value)) return value
     // Keep the signed URL byte-for-byte; never rebuild query parameters with URLSearchParams.
-    // TikTok has multiple regional packages, so let Android resolve its verified handler.
-    const appPackage = platform === 'SHOPEE' ? 'package=com.shopee.vn;' : ''
+    // Pin the vendor's Vietnam Android app; a package-less HTTPS intent can resolve
+    // back to the browser instead of TikTok. Keep the source URL as the web fallback.
+    const appPackage = platform === 'SHOPEE' ? 'package=com.shopee.vn;' : 'package=com.ss.android.ugc.trill;'
     return `intent://${value.slice('https://'.length)}#Intent;scheme=https;${appPackage}S.browser_fallback_url=${encodeURIComponent(value)};end`
   } catch {
     return value

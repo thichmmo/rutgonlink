@@ -52,8 +52,8 @@ keeps the original affiliate `url` separate from its Android `launchUrl`; saved
 Android/iOS settings are never changed by public-page rendering. Verified vendor
 hosts use an HTTPS Android intent with an encoded original web fallback.
 
-A quiet webview after 2.5 seconds shows the original popup with explicit native
-retry and “Mở liên kết web”. This is not proof of failure: persisted progress stays
+Android holds the clicked popup while waiting for browser confirmation.
+A quiet webview after 2.5 seconds enables explicit native retry and “Mở liên kết web”. This is not proof of failure: persisted progress stays
 at the next step so a delayed pagehide/app return still resumes correctly. Only
 thrown navigation restores persisted progress. No timer launches another URL.
 The direct web fallback also stays in the current tab to preserve back history.
@@ -66,3 +66,15 @@ return events; real Android app opening requires Facebook/Chrome device testing.
 For zero cooldown, a separate one-use session marker restores Android completion
 only on `back_forward` navigation after a same-tab fallback without BFCache.
 Fresh visits/reloads clear it; expiry remains bounded by the handoff TTL.
+
+## Android consent-dialog correction (2026-10-07)
+
+Android persists the next step before a tap-triggered launch but keeps the clicked
+popup visible, including step two. Timeout enables retry in place; it does not
+flash the article or another popup and never launches automatically. Native
+Facebook confirmation may only blur/focus: those events neither finish the step
+nor consume the zero-cooldown history marker. Actual hidden/pagehide followed by
+return shows the next step. iOS keeps its existing blur/focus snapshot behavior.
+Shopee's launch URL is unchanged (confirmed on the user's device after Continue).
+Verify `node scripts/test-popup-runtime.cjs --android-check` and full runtime;
+`--android-prompt-baseline` reproduces the prior flash/prompt-focus regression.

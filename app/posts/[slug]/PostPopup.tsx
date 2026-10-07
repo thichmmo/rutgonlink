@@ -130,6 +130,9 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
         return
       }
       if (document.visibilityState !== 'visible') return
+      // Android consent dialogs can blur/focus without opening an app. Keep the
+      // clicked popup and its history-return hint until the document really leaves.
+      if (isAndroid && pending && !pending.leftPage) return
 
       const stored = readStoredStep()
       // Missing/expired storage must never rewind progress already committed in this document.
@@ -146,21 +149,22 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
     const markPageHidden = () => {
       if (pendingOpenRef.current) pendingOpenRef.current.leftPage = true
     }
+    const markPageBlurred = () => { if (!isAndroid) markPageHidden() }
     const markPageVisible = () => syncAfterReturn()
     document.addEventListener('visibilitychange', syncAfterReturn)
     window.addEventListener('pagehide', markPageHidden)
     window.addEventListener('pageshow', markPageVisible)
     // Some mobile webviews keep visibilityState=visible while a new tab is foregrounded.
-    window.addEventListener('blur', markPageHidden)
+    window.addEventListener('blur', markPageBlurred)
     window.addEventListener('focus', markPageVisible)
     return () => {
       document.removeEventListener('visibilitychange', syncAfterReturn)
       window.removeEventListener('pagehide', markPageHidden)
       window.removeEventListener('pageshow', markPageVisible)
-      window.removeEventListener('blur', markPageHidden)
+      window.removeEventListener('blur', markPageBlurred)
       window.removeEventListener('focus', markPageVisible)
     }
-  }, [applies, commitStep, readStoredStep, ready])
+  }, [applies, commitStep, isAndroid, readStoredStep, ready])
 
   useEffect(() => {
     if (!applies || !ready || step >= steps.length) return
@@ -185,10 +189,11 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
     const pending = { fromStep, nextStep, leftPage: false, timedOut: false }
     pendingOpenRef.current = pending
     sendPopupClick(tracking, current.platform)
-    // Commit the DOM before iOS snapshots/suspends this page, without losing the click gesture.
+    // Persist before navigation; Android keeps the clicked popup visible while
+    // the browser asks for consent. iOS still snapshots the next popup immediately.
     flushSync(() => {
       setOpening(true)
-      setRetryStep(null)
+      setRetryStep(current.openMode === 'anchor-same-tab' ? fromStep : null)
       commitStep(nextStep)
       setError('')
     })
@@ -245,7 +250,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
         pending.timedOut = true
         setOpening(false)
         setRetryStep(fromStep)
-        setError(`Nếu ${current.platform} chưa mở, hãy thử lại hoặc mở liên kết web.`)
+        setError(`Nếu trình duyệt hỏi mở ${current.platform}, chọn Tiếp tục. Nếu đã hủy hoặc app chưa mở, hãy thử lại.`)
         return
       }
       pendingOpenRef.current = null
@@ -265,7 +270,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
   const current = steps[displayStep]
   const displayRemaining = retryStep === null ? remaining : 0
   const image = current.imageUrl || popup.imageUrl || ''
-  const forceMessage = current.forceBrowser ? `Nếu Facebook chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
+  const forceMessage = current.forceBrowser ? isAndroid ? 'Nếu Facebook hỏi mở ứng dụng, chọn Tiếp tục.' : `Nếu Facebook chặn tab mới, hãy mở trang này bằng ${current.forceBrowser}.` : ''
   const progress = `Bạn cần đóng ${displayStep + 1}/${steps.length} popup để xem được nội dung`
   const buttonLabel = displayRemaining > 0 ? `Chờ ${displayRemaining}s` : opening ? 'Đang mở...' : retryStep !== null ? `Thử mở ${current.platform}` : 'Đóng để xem'
   const delay = Math.max(0, Number(current.delaySeconds || 0))

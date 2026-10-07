@@ -336,7 +336,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const ios = /iphone|ipad|ipod/i.test(ua);
   const android = /android/i.test(ua);
   const mobile = ios || android;
-  const browserHint = android && popup.settings.forceChromeAndroid ? 'Nếu Facebook chặn tab mới, hãy mở bằng Chrome.' : ios && popup.settings.forceSafariIos ? 'Nếu Facebook chặn tab mới, hãy mở bằng Safari.' : '';
+  const browserHint = android && popup.settings.forceChromeAndroid ? 'Nếu Facebook hỏi mở ứng dụng, chọn Tiếp tục.' : ios && popup.settings.forceSafariIos ? 'Nếu Facebook chặn tab mới, hãy mở bằng Safari.' : '';
   const overlay = document.createElement('div'); overlay.className = 'managed-popup'; document.body.appendChild(overlay);
   let readyAt = 0;
   let timer = 0;
@@ -402,6 +402,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const syncAfterReturn = () => {
     if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
     if (document.visibilityState !== 'visible') return;
+    // Consent focus changes are not an Android app departure and must not consume resume state.
+    if (android && pendingOpen && !pendingOpen.leftPage) return;
     const stored = readStoredStep();
     // Missing/expired storage must never rewind progress already committed in this document.
     if (stored > step) commitStep(stored, false);
@@ -410,11 +412,12 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   };
   document.addEventListener('visibilitychange', syncAfterReturn);
   const markPageHidden = () => { if (pendingOpen) pendingOpen.leftPage = true; };
+  const markPageBlurred = () => { if (!android) markPageHidden(); };
   const markPageVisible = () => syncAfterReturn();
   window.addEventListener('pagehide', markPageHidden);
   window.addEventListener('pageshow', syncAfterReturn);
   // Mobile webviews may not update visibilityState when a new tab takes focus.
-  window.addEventListener('blur', markPageHidden);
+  window.addEventListener('blur', markPageBlurred);
   window.addEventListener('focus', markPageVisible);
   const render = () => {
     window.clearInterval(timer);
@@ -446,7 +449,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       if (timerBadge) timerBadge.textContent = left ? 'Sau ' + left + 's' : 'Sẵn sàng';
       if (timerLabel) timerLabel.textContent = timerText;
       if (timerFill) timerFill.style.width = percent + '%';
-      if (message) message.textContent = retryStep !== null ? 'Nếu ' + name + ' chưa mở, hãy thử lại hoặc mở liên kết web.' : left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
+      if (message) message.textContent = retryStep !== null && !opening ? 'Nếu trình duyệt hỏi mở ' + name + ', chọn Tiếp tục. Nếu đã hủy hoặc app chưa mở, hãy thử lại.' : left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
       if (!left && !opening) window.clearInterval(timer);
     };
     const open = (useWebUrl = false) => {
@@ -458,7 +461,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       const pending = { fromStep, nextStep, leftPage: false, timedOut: false };
       pendingOpen = pending;
       opening = true;
-      retryStep = null;
+      // Keep the clicked Android popup visible underneath a browser consent prompt.
+      retryStep = platform.openMode === 'anchor-same-tab' ? fromStep : null;
       recordPopupClick(tracking, platform.platform);
       // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
@@ -524,7 +528,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       }, platform.openMode === 'anchor-same-tab' ? 2500 : 900);
     };
     if (button) button.addEventListener('click', () => open());
-    if (retryStep !== null) {
+    if (retryStep !== null && !opening) {
       const fallback = document.createElement('button');
       fallback.type = 'button';
       fallback.setAttribute('data-popup-web-fallback', '');
