@@ -63,8 +63,14 @@ function productIdFromUrl(parsed: URL) {
   return isProductPath ? parsed.pathname.match(/\/(\d{15,25})\/?$/)?.[1] : undefined
 }
 
-export async function resolveTikTokUrl(inputUrl: string, options: { signal?: AbortSignal; stopAtProduct?: boolean } = {}) {
+export async function resolveTikTokUrl(inputUrl: string, options: { signal?: AbortSignal; stopAtProduct?: boolean; maxUrlLength?: number } = {}) {
+  const checkLength = (url: string) => {
+    if (options.maxUrlLength !== undefined && url.length > options.maxUrlLength) {
+      throw new TikTokLinkError(`Link TikTok không được vượt quá ${options.maxUrlLength} ký tự`)
+    }
+  }
   let currentUrl = parseTikTokUrl(inputUrl).href
+  checkLength(currentUrl)
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     // The signed product redirect is enough for a popup OneLink. Loading its web
@@ -100,6 +106,9 @@ export async function resolveTikTokUrl(inputUrl: string, options: { signal?: Abo
         throw new TikTokLinkError('TikTok chuyển hướng tới domain không hợp lệ', 502)
       }
 
+      // The editor's optional URL budget applies before the next network request.
+      // Runtime app-launch resolution keeps its existing behavior when omitted.
+      checkLength(nextUrl.href)
       currentUrl = nextUrl.href
       continue
     }
@@ -152,8 +161,8 @@ export function convertTikTokProductUrl(shortUrl: string, officialUrl: string): 
   }
 }
 
-export async function expandAndConvertTikTokLink(inputUrl: string) {
+export async function expandAndConvertTikTokLink(inputUrl: string, options: { maxUrlLength?: number } = {}) {
   const normalizedInput = parseTikTokUrl(inputUrl).href
-  const officialUrl = await resolveTikTokUrl(normalizedInput)
+  const officialUrl = await resolveTikTokUrl(normalizedInput, options)
   return convertTikTokProductUrl(normalizedInput, officialUrl)
 }

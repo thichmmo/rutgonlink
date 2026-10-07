@@ -68,6 +68,7 @@ const schemaModule = load('lib/content-management.ts', {
   '@/lib/intermediate-image': { MAX_INTERMEDIATE_IMAGE_LENGTH: 8000000, isValidIntermediateImage: () => true },
   '@/lib/shared-domains': { SHARED_DOMAINS: [] }, '@/lib/site-config': { getSiteHostname: () => 'rutgonlink.site' },
   '@/lib/popup-settings': {}, '@/lib/video-embed': {}, '@/lib/telegram-settings': telegram,
+  '@/lib/popup-affiliate-url': load('lib/popup-affiliate-url.ts'),
 })
 const mocks = {
   '@/lib/prisma': { prisma }, '@/lib/telegram-settings': telegram,

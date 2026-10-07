@@ -44,3 +44,7 @@ Run `node scripts/test-post-types-api.cjs` and `node scripts/test-post-types-das
 ## Compact Telegram composer (2026-10-05)
 
 `node scripts/test-telegram-quick-form.cjs` runs with the Telegram suites and scoped lint. It protects media/popup-only creation, hidden optional metadata validation, existing-content preservation, and the unchanged normal-post editor. The UI change adds no migration.
+
+## TikTok affiliate URL isolation (2026-10-07)
+
+`node scripts/test-popup-affiliate.cjs` covers Android-source preservation, iOS-only conversion, shared 8192-character input/output/persistence validation, warnings and stale UI requests. Run it before packaging; scoped lint includes the URL validator and harness. No schema migration is required because popup destinations already use TEXT/JSON storage.

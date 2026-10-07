@@ -1,6 +1,15 @@
 # Content management helpers
 
-Shared validation normalizes popup settings (including the default Shopee/TikTok creatives), infers TikTok iOS OneLink mode from an `onelink.me` URL, preserves signed iOS OneLinks up to 8192 characters, keeps a separately configured iOS URL when Android/general TikTok URLs are resolved, enforces active-popup ownership for new posts, validates primary/shared/verified custom publication targets, sanitizes rich HTML/video embeds with an allowlist, validates uploaded media URLs, and gates raw HTML/Script to owner/ops actors.
+Shared validation normalizes popup settings (including the default Shopee/TikTok creatives), infers TikTok iOS OneLink mode from an `onelink.me` URL, preserves signed popup/affiliate URLs up to 8192 characters on every platform, retains separate Android/iOS destinations, enforces active-popup ownership for new posts, validates primary/shared/verified custom publication targets, sanitizes rich HTML/video embeds with an allowlist, validates uploaded media URLs, and gates raw HTML/Script to owner/ops actors.
+
+`popup-affiliate-url.ts` owns the shared 8192-character limit and Vietnamese URL
+validation messages used by popup persistence, affiliate resolution and the editor.
+Validation accepts only credential-free HTTP(S) URLs, without reserializing their
+query strings. General/Android fields no longer fall back at 2048 characters while
+iOS accepts the same signed link. New writes reject overlong nested platform links
+with field-specific messages before normalization; other invalid legacy settings
+retain the existing fallback behavior. No stored links or runtime OneLink rules
+are migrated.
 
 `sanitizeRichHtml` now shares the provider iframe allowlist with `lib/video-embed.ts`; supported YouTube, TikTok player, Vimeo, Facebook and Instagram embeds survive server sanitization while arbitrary iframe hosts are removed. `normalizeVideoEmbedUrl` converts share links into provider embed URLs before the editor inserts them, and rejects TikTok product pages that cannot render as video embeds. Clipboard image paste accepts both `DataTransfer.files` and Safari's `DataTransfer.items`, so screenshots copied from iPhone and desktop apps work in the Facebook preview card.
 
@@ -27,4 +36,4 @@ standalone cPanel releases detect both the live `.next/standalone` tree and the
 `.deploy/<id>/unpacked/.next/standalone` preflight tree, while local development
 continues to use `uploads/content` below the current working directory.
 
-Verify with `node scripts/test-popup-runtime.cjs`, `node scripts/test-content-media.cjs`, `pnpm exec eslint lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts lib/video-embed.ts` and `pnpm exec tsc --noEmit --pretty false`.
+Verify with `node scripts/test-popup-affiliate.cjs`, `node scripts/test-popup-runtime.cjs`, `node scripts/test-content-media.cjs`, `pnpm exec eslint lib/content-management.ts lib/popup-affiliate-url.ts lib/popup-settings.ts lib/popup-link.ts lib/video-embed.ts` and `pnpm exec tsc --noEmit --pretty false`.

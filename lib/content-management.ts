@@ -9,13 +9,10 @@ import { getSiteHostname } from '@/lib/site-config'
 import { defaultPopupSettings, normalizePopupSettings, type PopupSettings } from '@/lib/popup-settings'
 import { getAllowedIframeHostnames, normalizeVideoEmbedUrl } from '@/lib/video-embed'
 import { telegramSettingsSchema } from '@/lib/telegram-settings'
+import { isValidPopupAffiliateUrl, MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_INVALID, POPUP_AFFILIATE_URL_TOO_LONG } from '@/lib/popup-affiliate-url'
 
-const externalUrl = z.url().max(2048).refine((value) => {
-  try {
-    const url = new URL(value)
-    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
-  } catch { return false }
-}, 'Chỉ chấp nhận URL HTTP(S) hợp lệ')
+const externalUrl = z.string().max(MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_TOO_LONG)
+  .refine(isValidPopupAffiliateUrl, POPUP_AFFILIATE_URL_INVALID)
 
 export const popupSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -25,6 +22,24 @@ export const popupSchema = z.object({
   firstUrl: externalUrl,
   secondUrl: externalUrl,
   settings: z.unknown().optional(),
+}).superRefine((data, context) => {
+  if (!data.settings || typeof data.settings !== 'object') return
+  const settings = data.settings as Record<string, unknown>
+  const fields = [
+    ['shopee', 'url', 'Link Shopee'],
+    ['tiktok', 'url', 'Link TikTok'],
+    ['tiktok', 'androidUrl', 'Link TikTok Android'],
+    ['tiktok', 'iosUrl', 'Link TikTok iOS'],
+  ] as const
+  for (const [platform, field, label] of fields) {
+    const values = settings[platform]
+    if (!values || typeof values !== 'object') continue
+    const value = (values as Record<string, unknown>)[field]
+    // Reject excess length before normalization can silently replace a signed link.
+    if (typeof value === 'string' && value.length > MAX_POPUP_AFFILIATE_URL_LENGTH) {
+      context.addIssue({ code: 'custom', path: ['settings', platform, field], message: `${label}: ${POPUP_AFFILIATE_URL_TOO_LONG}` })
+    }
+  }
 })
 
 export const postSchema = z.object({
@@ -98,19 +113,12 @@ export async function ownsActivePopups(userId: string, popupIds: string[]) {
 
 export function normalizeSettings(settings: unknown, firstUrl: string, secondUrl: string): PopupSettings {
   const normalized = normalizePopupSettings(settings, firstUrl, secondUrl)
-  const safe = (value: string, fallback: string, maxLength = 2048) => {
-    try {
-      const url = new URL(value)
-      return value.length <= maxLength && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : fallback
-    } catch {
-      return fallback
-    }
-  }
+  const safe = (value: string, fallback: string) => isValidPopupAffiliateUrl(value) ? value : fallback
   normalized.shopee.url = safe(normalized.shopee.url, firstUrl)
   normalized.tiktok.url = safe(normalized.tiktok.url, secondUrl)
   normalized.tiktok.androidUrl = safe(normalized.tiktok.androidUrl, secondUrl)
-  // TikTok OneLinks can carry a signed deep-link payload longer than a normal web URL.
-  normalized.tiktok.iosUrl = safe(normalized.tiktok.iosUrl, secondUrl, 8192)
+  // All platform fields share the same limit; never truncate signed affiliate payloads.
+  normalized.tiktok.iosUrl = safe(normalized.tiktok.iosUrl, secondUrl)
   const safeImage = (value: string | null) => value && value.length <= MAX_INTERMEDIATE_IMAGE_LENGTH && isValidIntermediateImage(value) ? value : null
   normalized.shopee.imageUrl = safeImage(normalized.shopee.imageUrl)
   normalized.tiktok.imageUrl = safeImage(normalized.tiktok.imageUrl)

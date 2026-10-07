@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getManagedContentUserId } from '@/lib/content-management'
 import { expandAndConvertTikTokLink, TikTokLinkError } from '@/lib/tiktok-link'
+import { isValidPopupAffiliateUrl, MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_INVALID, POPUP_AFFILIATE_URL_TOO_LONG } from '@/lib/popup-affiliate-url'
 
-const schema = z.object({ url: z.string().trim().url().max(2048) })
+const schema = z.object({ url: z.string().trim()
+  .max(MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_TOO_LONG)
+  .refine(isValidPopupAffiliateUrl, POPUP_AFFILIATE_URL_INVALID) })
 const allowedHosts = ['shopee.vn', 'shopee.co.th', 'shopee.sg', 'shopee.com.my', 'shopee.ph', 'shopee.co.id', 'tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com']
 
 function allowed(hostname: string) {
@@ -19,6 +22,16 @@ function metadata(html: string) {
   return { title: read('og:title'), image: read('og:image') }
 }
 
+function unusableResult(url: string) {
+  if (url.length > MAX_POPUP_AFFILIATE_URL_LENGTH) return POPUP_AFFILIATE_URL_TOO_LONG
+  return isValidPopupAffiliateUrl(url) ? null : POPUP_AFFILIATE_URL_INVALID
+}
+
+function keepOriginal(url: string, warning: string) {
+  // A warning tells the editor to keep its existing platform-specific destination.
+  return NextResponse.json({ url, originalUrl: url, warning })
+}
+
 export async function POST(req: NextRequest) {
   if (!(await getManagedContentUserId())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   let originalUrl: string | null = null
@@ -26,13 +39,17 @@ export async function POST(req: NextRequest) {
     const { url } = schema.parse(await req.json())
     originalUrl = url
     const input = new URL(url)
-    if (!['http:', 'https:'].includes(input.protocol) || !allowed(input.hostname)) return NextResponse.json({ url }, { status: 200 })
+    if (!allowed(input.hostname)) return NextResponse.json({ url }, { status: 200 })
     if (input.hostname.toLowerCase().endsWith('tiktok.com')) {
       try {
-        const result = await expandAndConvertTikTokLink(url)
-        return NextResponse.json({ url: result.convertedUrl || url, title: result.title, image: null, originalUrl: url })
+        const result = await expandAndConvertTikTokLink(url, { maxUrlLength: MAX_POPUP_AFFILIATE_URL_LENGTH })
+        const destination = result.convertedUrl || url
+        const warning = unusableResult(destination)
+        if (warning) return keepOriginal(url, warning)
+        return NextResponse.json({ url: destination, title: result.title, image: null, originalUrl: url })
       } catch (error) {
-        if (error instanceof TikTokLinkError) return NextResponse.json({ url, originalUrl: url, warning: error.message })
+        // Do not fall through to a second network resolver after a failed TikTok lookup.
+        return keepOriginal(url, error instanceof TikTokLinkError ? error.message : 'Không thể lấy metadata, giữ URL gốc')
       }
     }
     let current = url
@@ -44,6 +61,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ url: current, originalUrl: url, ...metadata(html) })
       }
       const next = new URL(location, current)
+      const warning = unusableResult(next.href)
+      if (warning) return keepOriginal(url, warning)
       if (!allowed(next.hostname)) break
       current = next.href
     }

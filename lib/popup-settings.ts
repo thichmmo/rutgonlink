@@ -141,7 +141,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
 }
 
 export function updateTikTokPopupUrl(settings: PopupTikTokSettings, url: string): PopupTikTokSettings {
-  // Resolving the general/Android URL must not overwrite a separately configured iOS link.
+  // Manual Android/general URL edits must not overwrite a separately configured iOS link.
   const iosUrl = settings.iosUrl && settings.iosUrl !== settings.url ? settings.iosUrl : url
   return { ...settings, url, androidUrl: url, iosUrl, iosMode: isTikTokOneLinkUrl(iosUrl) ? 'onelink' : settings.iosMode }
 }

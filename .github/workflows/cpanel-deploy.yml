@@ -52,6 +52,9 @@ jobs:
       - name: Popup click analytics regressions
         run: node scripts/test-popup-clicks.cjs
 
+      - name: Popup affiliate URL regressions
+        run: node scripts/test-popup-affiliate.cjs
+
       - name: Telegram template regressions
         run: |
           node scripts/test-telegram-api.cjs
@@ -83,6 +86,7 @@ jobs:
           app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
           lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts lib/public-post-guard.ts
+          lib/popup-affiliate-url.ts lib/tiktok-link.ts scripts/test-popup-affiliate.cjs
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
           scripts/test-popup-timing.cjs scripts/test-popup-timing-api.cjs

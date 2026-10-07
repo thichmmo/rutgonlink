@@ -44,7 +44,7 @@ function load(file) {
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
