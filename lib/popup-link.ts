@@ -1,9 +1,30 @@
 export type PopupLinkPlatform = 'SHOPEE' | 'TIKTOK'
-export type PopupLinkOpenMode = 'new-tab' | 'anchor-new-tab' | 'same-tab'
+export type PopupLinkOpenMode = 'new-tab' | 'anchor-new-tab' | 'anchor-same-tab' | 'same-tab'
 
 const FACEBOOK_IN_APP_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid/i
 const TIKTOK_HOST_PATTERN = /(^|\.)tiktok\.com$/i
 const TIKTOK_DEEP_LINK_LABEL = 'click_wap_p_product_detail_t_launch_pop_up_s_product_detail_e__f_product_detail_fp__fps_affiliate_links_rf_product_detail'
+
+// These vendor hosts publish Android assetlinks. Unknown shorteners stay HTTPS.
+const ANDROID_APP_HOSTS = {
+  SHOPEE: ['shopee.vn', 'www.shopee.vn', 's.shopee.vn'],
+  TIKTOK: ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com'],
+}
+
+export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform) {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port
+      || !ANDROID_APP_HOSTS[platform].includes(parsed.hostname)
+      || !value.startsWith('https://') || /[#\s\\]/.test(value)) return value
+    // Keep the signed URL byte-for-byte; never rebuild query parameters with URLSearchParams.
+    // TikTok has multiple regional packages, so let Android resolve its verified handler.
+    const appPackage = platform === 'SHOPEE' ? 'package=com.shopee.vn;' : ''
+    return `intent://${value.slice('https://'.length)}#Intent;scheme=https;${appPackage}S.browser_fallback_url=${encodeURIComponent(value)};end`
+  } catch {
+    return value
+  }
+}
 
 export function isTikTokOneLinkUrl(value: string) {
   try {
@@ -86,6 +107,7 @@ export function getPopupLinkOpenMode(
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
+  if (/android/i.test(options.userAgent)) return 'anchor-same-tab'
   const isIosFacebook = isIosFacebookUserAgent(options.userAgent)
 
   // Let Facebook handle the link action before allocating a script-opened blank webview.

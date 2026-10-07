@@ -1,4 +1,4 @@
-import { getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
 
 export type PopupPlatformSettings = {
   enabled: boolean
@@ -122,6 +122,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
+      launchUrl: isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(settings.shopee.url, 'SHOPEE') : settings.shopee.url,
       openMode: getPopupLinkOpenMode(settings.shopee.url, 'SHOPEE', { userAgent }),
       imageUrl: settings.shopee.imageUrl,
       delaySeconds: settings.shopee.delaySeconds,
@@ -133,6 +134,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   return {
     platform: 'TikTok',
     url,
+    launchUrl: isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(url, 'TIKTOK') : url,
     openMode: getPopupLinkOpenMode(url, 'TIKTOK', { userAgent }),
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,

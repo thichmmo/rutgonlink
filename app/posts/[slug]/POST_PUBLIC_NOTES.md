@@ -47,3 +47,26 @@ never looked up during rendering; old/null snapshots keep the original article.
 Title and Facebook metadata remain even when visual title is hidden. Existing
 fixed blocks stay before/after content, and popup runtime stays unchanged.
 Verify `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.
+
+## Android app handoff (2026-10-07)
+
+Android Facebook and Chrome use an attached `_self` anchor, synchronously within
+one user tap, rather than `window.open` or `location.replace`. `getPopupStep`
+keeps the original affiliate `url` separate from its Android `launchUrl`; saved
+Android/iOS settings are never changed by public-page rendering. Verified vendor
+hosts use an HTTPS Android intent with an encoded original web fallback.
+
+A quiet webview after 2.5 seconds shows the original popup with explicit native
+retry and “Mở liên kết web”. This is not proof of failure: persisted progress stays
+at the next step so a delayed pagehide/app return still resumes correctly. Only
+thrown navigation restores persisted progress. No timer launches another URL.
+The direct web fallback also stays in the current tab to preserve back history.
+The iOS handoff paths, cooldown and accepted-click analytics remain unchanged.
+
+Verify `node scripts/test-popup-runtime.cjs --android-check`, then the full runtime
+and affiliate suites. These tests verify URLs, gesture timing, DOM/storage and
+return events; real Android app opening requires Facebook/Chrome device testing.
+
+For zero cooldown, a separate one-use session marker restores Android completion
+only on `back_forward` navigation after a same-tab fallback without BFCache.
+Fresh visits/reloads clear it; expiry remains bounded by the handoff TTL.

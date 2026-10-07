@@ -74,3 +74,31 @@ not create extra clicks. Tests only write to in-memory event stores.
 Telegram render helpers are included in the source loader so ordinary and Telegram
 post changes still exercise the existing popup/inspection runtime unchanged.
 Verify: `node scripts/test-popup-runtime.cjs`.
+
+## Android foreground handoff
+
+Run `node scripts/test-popup-runtime.cjs --android-check` for the focused Android
+Chrome/Facebook checks. Known Shopee/TikTok HTTPS destinations use an attached
+`_self` intent link with the untouched affiliate URL encoded as browser fallback;
+unknown hosts and fragment-bearing URLs remain unchanged HTTPS links. Tests check
+independent Android/iOS fields, long signed queries, invalid/unsupported hosts,
+DOM/storage commit before handoff, countdowns, one count per accepted tap,
+cookie-only reload, zero cooldown, navigation exceptions and denied storage.
+
+A 2500 ms wait without departure offers an explicit app retry or original-web-link
+fallback for the same platform, rather than silently proceeding. The persisted
+next step remains intact for slow app launches; a later blur/hidden round trip
+clears retry UI and resumes the next popup. No timeout launches another URL.
+A separate expiring Android session marker covers zero-cooldown browser Back
+when the article remounts without BFCache after the web fallback. Tests assert
+that only a `back_forward` navigation consumes this completion once; fresh
+navigation, reload and expiry remove it and still start with Shopee. Native
+launch exceptions must also expose the explicit HTTPS fallback on both routes.
+The harness mocks anchor navigation, not Android's IntentResolver: these checks
+verify URI and state contracts, not whether a physical device has the target app
+installed or whether Facebook permits external app launches.
+
+For baseline/rollback evidence, set `POPUP_TEST_ROOT` to the original source
+snapshot and run `node scripts/test-popup-runtime.cjs --android-baseline`. It
+asserts the previous `window.open(..., '_blank')` path for both popup stages on
+Android Chrome and Facebook. Clear `POPUP_TEST_ROOT` before modified/full tests.

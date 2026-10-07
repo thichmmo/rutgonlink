@@ -341,9 +341,20 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   let readyAt = 0;
   let timer = 0;
   let opening = false;
+  let retryStep = null;
   let pendingOpen = null;
   const readStoredStep = () => {
     const values = [];
+    // A one-use history-return hint is not a repeat cooldown: fresh visits clear it.
+    if (android && cooldownMs === 0) {
+      try {
+        const raw = sessionStorage.getItem(key + ':android-return');
+        sessionStorage.removeItem(key + ':android-return');
+        const navigation = window.performance?.getEntriesByType?.('navigation')[0];
+        const parts = raw && raw.split('|');
+        if (navigation?.type === 'back_forward' && parts?.[0] === '2' && Number(parts[1]) > Date.now()) values.push(2);
+      } catch (_) {}
+    }
     const addValue = (raw, source) => {
       if (!raw) return;
       const parts = String(raw).split('|');
@@ -377,6 +388,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     try {
       if (saved) sessionStorage.setItem(key, saved);
       else sessionStorage.removeItem(key);
+      if (android && cooldownMs === 0 && step === 2) sessionStorage.setItem(key + ':android-return', '2|' + (Date.now() + handoffTtlMs));
+      else sessionStorage.removeItem(key + ':android-return');
     } catch (_) {}
     // Each fallback is independent, including completion after the TikTok handoff.
     try {
@@ -392,7 +405,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     const stored = readStoredStep();
     // Missing/expired storage must never rewind progress already committed in this document.
     if (stored > step) commitStep(stored, false);
-    if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; }
+    if (pendingOpen && pendingOpen.leftPage) { pendingOpen = null; opening = false; retryStep = null; }
     render();
   };
   document.addEventListener('visibilitychange', syncAfterReturn);
@@ -405,16 +418,17 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   window.addEventListener('focus', markPageVisible);
   const render = () => {
     window.clearInterval(timer);
-    if (step >= 2) { overlay.remove(); document.body.classList.remove('managed-locked'); return; }
+    const displayStep = retryStep === null ? step : retryStep;
+    if (displayStep >= 2) { overlay.remove(); document.body.classList.remove('managed-locked'); return; }
     if (!overlay.isConnected) document.body.appendChild(overlay);
     document.body.classList.add('managed-locked');
-    const renderedStep = step;
-    const platform = steps[step];
+    const renderedStep = displayStep;
+    const platform = steps[displayStep];
     const name = platform.platform;
     const url = platform.url;
     const delay = Math.max(0, Number(platform.delaySeconds || 0));
     const image = platform.imageUrl || popup.imageUrl || '';
-    overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><div><small>MỞ LIÊN KẾT</small><b>' + name + ' · lượt ' + (step + 1) + '/2</b></div><span></span></div><div class="managed-popup-media"></div><div class="managed-popup-timer"><div class="managed-popup-timer-label"><span role="timer" aria-live="off" aria-label="Thời gian chờ ' + name + '"></span><b>' + delay + 's</b></div><div class="managed-popup-timer-track" role="progressbar" aria-label="Bộ đếm ' + name + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div><button class="managed-popup-open" type="button">Đóng để xem</button><p class="managed-popup-progress">Bạn cần đóng ' + (step + 1) + '/2 popup để xem được nội dung</p><p class="managed-popup-message"></p></div>';
+    overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><div><small>MỞ LIÊN KẾT</small><b>' + name + ' · lượt ' + (displayStep + 1) + '/2</b></div><span></span></div><div class="managed-popup-media"></div><div class="managed-popup-timer"><div class="managed-popup-timer-label"><span role="timer" aria-live="off" aria-label="Thời gian chờ ' + name + '"></span><b>' + delay + 's</b></div><div class="managed-popup-timer-track" role="progressbar" aria-label="Bộ đếm ' + name + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div><button class="managed-popup-open" type="button">Đóng để xem</button><p class="managed-popup-progress">Bạn cần đóng ' + (displayStep + 1) + '/2 popup để xem được nội dung</p><p class="managed-popup-message"></p></div>';
     const media = overlay.querySelector('.managed-popup-media');
     if (image && media) media.style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
     const button = overlay.querySelector('.managed-popup-open');
@@ -424,26 +438,27 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     const timerFill = overlay.querySelector('.managed-popup-timer-track i');
     const message = overlay.querySelector('.managed-popup-message');
     const update = () => {
-      const left = Math.max(0, Math.ceil((readyAt - Date.now()) / 1000));
-      if (button) { button.disabled = left > 0 || opening; button.textContent = left > 0 ? 'Chờ ' + left + 's' : opening ? 'Đang mở...' : 'Đóng để xem'; }
+      const left = retryStep === null ? Math.max(0, Math.ceil((readyAt - Date.now()) / 1000)) : 0;
+      if (button) { button.disabled = left > 0 || opening; button.textContent = left > 0 ? 'Chờ ' + left + 's' : opening ? 'Đang mở...' : retryStep !== null ? 'Thử mở ' + name : 'Đóng để xem'; }
       const percent = delay ? Math.min(100, Math.max(0, ((delay - left) / delay) * 100)) : 100;
       const timerText = left ? 'Còn ' + left + ' giây' : 'Sẵn sàng';
       if (timerBox) { timerBox.setAttribute('aria-valuenow', String(Math.round(percent))); timerBox.setAttribute('aria-valuetext', timerText); }
       if (timerBadge) timerBadge.textContent = left ? 'Sau ' + left + 's' : 'Sẵn sàng';
       if (timerLabel) timerLabel.textContent = timerText;
       if (timerFill) timerFill.style.width = percent + '%';
-      if (message) message.textContent = left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
+      if (message) message.textContent = retryStep !== null ? 'Nếu ' + name + ' chưa mở, hãy thử lại hoặc mở liên kết web.' : left > 0 ? 'Vui lòng chờ ' + left + ' giây...' + (browserHint ? ' ' + browserHint : '') : (browserHint || '');
       if (!left && !opening) window.clearInterval(timer);
     };
-    const open = () => {
+    const open = (useWebUrl = false) => {
       if (document.documentElement.hasAttribute('data-post-guard-blocked')) return;
-      if (opening || step !== renderedStep) return;
-      if (Date.now() < readyAt || !url) { if (message) message.textContent = 'Chưa có link ' + name + ' hợp lệ.'; return; }
-      const fromStep = step;
+      if (opening || (retryStep === null ? step : retryStep) !== renderedStep) return;
+      if ((retryStep === null && Date.now() < readyAt) || !url) { if (message) message.textContent = 'Chưa có link ' + name + ' hợp lệ.'; return; }
+      const fromStep = renderedStep;
       const nextStep = fromStep + 1;
-      const pending = { fromStep, nextStep, leftPage: false };
+      const pending = { fromStep, nextStep, leftPage: false, timedOut: false };
       pendingOpen = pending;
       opening = true;
+      retryStep = null;
       recordPopupClick(tracking, platform.platform);
       // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
@@ -460,11 +475,11 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       }
       let tab = null;
       try {
-        if (platform.openMode === 'anchor-new-tab') {
-          // Use a link action so Facebook/iOS can hand off before creating an empty child webview.
+        if (platform.openMode === 'anchor-new-tab' || platform.openMode === 'anchor-same-tab') {
+          // Android intents stay synchronous with this tap and never allocate a blank child.
           const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.target = '_blank';
+          anchor.href = useWebUrl ? url : platform.launchUrl;
+          anchor.target = platform.openMode === 'anchor-same-tab' ? '_self' : '_blank';
           anchor.rel = 'noopener noreferrer';
           anchor.hidden = true;
           document.body.appendChild(anchor);
@@ -476,6 +491,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         pendingOpen = null;
         opening = false;
         commitStep(fromStep);
+        if (platform.openMode === 'anchor-same-tab') retryStep = fromStep;
         render();
         return;
       }
@@ -488,6 +504,14 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       }
       window.setTimeout(() => {
         if (pendingOpen !== pending || pending.leftPage || document.visibilityState === 'hidden') return;
+        if (platform.openMode === 'anchor-same-tab') {
+          // Keep saved progress for slow pagehide/app returns; retry changes only the displayed step.
+          pending.timedOut = true;
+          opening = false;
+          retryStep = fromStep;
+          render();
+          return;
+        }
         pendingOpen = null;
         opening = false;
         // A mobile webview may return null even though the external tab opened.
@@ -497,9 +521,18 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         render();
         const retryMessage = overlay.querySelector('.managed-popup-message');
         if (retryMessage) retryMessage.textContent = 'Hãy cho phép tab mới rồi thử lại.';
-      }, 900);
+      }, platform.openMode === 'anchor-same-tab' ? 2500 : 900);
     };
-    if (button) button.addEventListener('click', open);
+    if (button) button.addEventListener('click', () => open());
+    if (retryStep !== null) {
+      const fallback = document.createElement('button');
+      fallback.type = 'button';
+      fallback.setAttribute('data-popup-web-fallback', '');
+      fallback.textContent = 'Mở liên kết web';
+      fallback.style.cssText = 'display:block;margin:12px auto 0;border:0;background:none;color:#d61f51;cursor:pointer';
+      fallback.addEventListener('click', () => open(true));
+      overlay.querySelector('.managed-popup-card').appendChild(fallback);
+    }
     timer = window.setInterval(update, 250); update();
   };
   if (step >= 2) { document.body.classList.remove('managed-locked'); overlay.remove(); return; }
