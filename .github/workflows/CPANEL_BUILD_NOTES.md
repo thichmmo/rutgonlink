@@ -50,5 +50,13 @@ Run `node scripts/test-post-types-api.cjs` and `node scripts/test-post-types-das
 `node scripts/test-popup-affiliate.cjs` covers Android-source preservation, iOS-only conversion, shared 8192-character input/output/persistence validation, warnings and stale UI requests. Run it before packaging; scoped lint includes the URL validator and harness. No schema migration is required because popup destinations already use TEXT/JSON storage.
 
 
-## Android native launch (2026-10-07)
-The existing full popup runtime/affiliate suites cover the Android native PDP and raw Shopee handoff. Scoped CI lint now includes `lib/popup-settings-server.ts`, whose request-only short-link preparation must remain separate from saved Android/iOS URLs. Verify local focused native checks before the full deployment workflow.
+## Android browser handoff verification (2026-10-07)
+
+Production lint includes `lib/popup-browser-gate.ts` and the iOS-only request
+preparation helper. Runtime checks cover raw Android HTTPS actions, gate isolation
+and legacy native-builder syntax. Four isolated HTTPS real-phone trials passed:
+standalone/React through Facebook→Chrome and directly in Chrome, retaining human
+Facebook confirmation and TikTok's shared-card→native PDP gesture. Countdown,
+return, cooldown-zero reload and two accepted fixture clicks per original trial
+passed; six tested source hashes matched. iOS remains automated-only. Pushing main
+triggers deployment; Actions/runtime and production analytics need separate checks.

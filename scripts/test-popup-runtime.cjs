@@ -49,7 +49,7 @@ function load(file) {
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -82,7 +82,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 
 async function mount(kind, options = {}) {
   const dom = new JSDOM('<!doctype html><html><body><main>Article</main><div id="root"></div></body></html>', {
-    url: 'https://fixture.example/post', pretendToBeVisual: true,
+    url: options.currentHref || 'https://fixture.example/post', pretendToBeVisual: true,
   })
   const doc = dom.window.document
   const ua = options.ua ?? facebookIos
@@ -104,6 +104,7 @@ async function mount(kind, options = {}) {
   } })
   const storage = { session: new Map(options.session || []), local: new Map(options.local || []) }
   const storageReads = []
+  const storageWrites = []
   const cookieJar = new Map(String(options.cookie || '').split(';').map(value => value.trim()).filter(Boolean).map(value => {
     const index = value.indexOf('=')
     return [value.slice(0, index), { value: value.slice(index + 1), expires: Infinity }]
@@ -111,13 +112,14 @@ async function mount(kind, options = {}) {
   const cookieWrites = []
   const cookies = () => [...cookieJar].filter(([, item]) => item.expires > now).map(([key, item]) => `${key}=${item.value}`).join('; ')
   const state = () => {
+    if (doc.querySelector('[data-popup-browser-gate]')) return 'CHROME_GATE'
     const overlay = doc.querySelector(kind === 'route' ? '.managed-popup' : '[role="dialog"]')
     return !overlay ? 'ARTICLE' : overlay.textContent.includes('TikTok') ? 'TikTok' : 'Shopee'
   }
   const storageApi = name => ({
     getItem(key) { storageReads.push([name, key]); if (options[name] === false) throw new Error('Storage denied'); return storage[name].get(key) ?? null },
-    setItem(key, value) { if (options[name] === false) throw new Error('Storage denied'); storage[name].set(key, value) },
-    removeItem(key) { if (options[name] === false) throw new Error('Storage denied'); storage[name].delete(key) },
+    setItem(key, value) { storageWrites.push([name, 'set', key, value]); if (options[name] === false) throw new Error('Storage denied'); storage[name].set(key, value) },
+    removeItem(key) { storageWrites.push([name, 'remove', key]); if (options[name] === false) throw new Error('Storage denied'); storage[name].delete(key) },
   })
   Object.defineProperty(doc, 'visibilityState', { get: () => visibility })
   Object.defineProperty(doc, 'cookie', {
@@ -145,7 +147,7 @@ async function mount(kind, options = {}) {
     innerHeight: options.innerHeight ?? 768,
     outerHeight: options.outerHeight ?? 768,
     performance: { getEntriesByType: type => type === 'navigation' ? [{ type: options.navType || 'navigate' }] : [] },
-    location: { hostname: options.hostname || 'fixture.example', replace(url) {
+    location: { href: dom.window.location.href, hostname: options.hostname || dom.window.location.hostname, replace(url) {
       calls.push({ mode: url === 'https://mesale.vn' ? 'devtools-redirect' : 'same-tab', url, state: state(), session: [...storage.session] })
       if (options.replaceThrows) throw new Error('Navigation failed')
     } },
@@ -161,7 +163,8 @@ async function mount(kind, options = {}) {
   })
   dom.window.HTMLAnchorElement.prototype.click = function clickAnchor() {
     const nativeAction = this.hasAttribute('data-popup-native-link')
-    if (nativeAction) {
+    const browserGateAction = this.hasAttribute('data-popup-chrome-link')
+    if (nativeAction || browserGateAction) {
       // Run the real handler, observing its default-action decision at the end of
       // propagation. Only this test listener cancels external JSDOM navigation.
       let allowed = false
@@ -179,6 +182,7 @@ async function mount(kind, options = {}) {
       hidden: this.hidden,
       attached: this.isConnected,
       nativeAction,
+      browserGateAction,
       state: state(),
       session: [...storage.session],
     })
@@ -191,15 +195,21 @@ async function mount(kind, options = {}) {
   global.document = doc
   global.HTMLElement = dom.window.HTMLElement
   const settings = defaultPopupSettings(shopee, product)
+  // Existing Facebook fixtures exercise affiliate sequencing independently of the opt-in browser gate.
+  settings.forceChromeAndroid = options.forceChromeAndroid ?? false
   if (options.cooldownMinutes !== undefined) settings.cooldownMinutes = options.cooldownMinutes
   settings.shopee.delaySeconds = options.firstDelay || 0
   settings.tiktok.delaySeconds = options.secondDelay || 0
   if (options.iosUrl) settings.tiktok.iosUrl = options.iosUrl
-  if (options.androidUrl) settings.tiktok.androidUrl = options.androidUrl
+  if (options.androidUrl !== undefined) settings.tiktok.androidUrl = options.androidUrl
+  if (options.tiktokUrl !== undefined) settings.tiktok.url = options.tiktokUrl
   if (options.shopeeUrl) settings.shopee.url = options.shopeeUrl
-  const popup = { id: 'popup1', isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: product, settings }
+  if (options.tiktokEnabled !== undefined) settings.tiktok.enabled = options.tiktokEnabled
+  if (options.androidEnabled !== undefined) settings.tiktok.androidEnabled = options.androidEnabled
+  if (options.androidLaunchUrl !== undefined) settings.tiktok.androidLaunchUrl = options.androidLaunchUrl
+  const popup = { id: 'popup1', isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: options.tiktokUrl ?? product, settings }
   const preparationRequests = []
-  // Android short links resolve before mounting. Fixtures never request a live affiliate URL.
+  // Spy on Android preparation: it must preserve the source without fetching a live affiliate URL.
   const prepareMount = async fn => {
     if (!/android/i.test(ua) || !/^https:\/\/(vt|vm)\.tiktok\.com\//.test(settings.tiktok.androidUrl)) return fn()
     return withFetch((url, requestOptions) => {
@@ -245,10 +255,10 @@ async function mount(kind, options = {}) {
     )))
     await tick()
   }
-  const button = () => doc.querySelector(kind === 'route' ? '.managed-popup-open' : '[role="dialog"] [data-popup-native-link], [role="dialog"] button')
+  const button = () => doc.querySelector(kind === 'route' ? '[data-popup-chrome-link], .managed-popup-open' : '[data-popup-chrome-link], [role="dialog"] [data-popup-native-link], [role="dialog"] button')
   const fire = async (target, type) => React.act(async () => target.dispatchEvent(new dom.window.Event(type)))
   return {
-    state, calls, clickEvents, storage, storageReads, button, doc, tick, cookieWrites, preparationRequests,
+    state, calls, clickEvents, storage, storageReads, storageWrites, button, doc, tick, cookieWrites, preparationRequests,
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
     async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
@@ -301,7 +311,7 @@ async function withFetch(handler, fn) {
 async function androidScenarios() {
   const helper = load('lib/popup-link.ts')
   const fallbackUrl = launchUrl => decodeURIComponent(/;S\.browser_fallback_url=([^;]+);/.exec(launchUrl)?.[1] || '')
-  await scenario('Android native PDP exactly matches the physically confirmed diagnostic construction', async () => {
+  await scenario('Legacy Android native builder preserves the seven-field URI syntax only', async () => {
     const values = { biz_type: '0', enter_method: 'web', is_commerce: '1', need_mall: '1', needlaunchlog: '1', page_name: 'reflow_pdp', params_url: product }
     const expected = `intent://ec/pdp?${new URLSearchParams(values)}#Intent;scheme=snssdk1180;package=com.ss.android.ugc.trill;S.browser_fallback_url=${encodeURIComponent(shortTikTok)};end`
     assert.equal(helper.buildTikTokAndroidLaunchUrl(product, shortTikTok), expected)
@@ -310,9 +320,9 @@ async function androidScenarios() {
     assert.equal(fallbackUrl(expected), shortTikTok)
     assert.equal(helper.buildAndroidPopupLaunchUrl(product, 'TIKTOK'), helper.buildTikTokAndroidLaunchUrl(product))
     assert.equal(helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK'), shortTikTok, 'An unresolved short link stays usable HTTPS, never a broken HTTPS intent')
-    assert.equal(helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE'), shopee, 'Shopee reproduces the physically confirmed raw-HTTPS control')
+    assert.equal(helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE'), shopee, 'Shopee keeps its original HTTPS source')
   })
-  await scenario('Android native PDP and Shopee preserve long affiliate URLs without truncation', async () => {
+  await scenario('Legacy Android URI builder and raw Shopee preserve long affiliate URLs without truncation', async () => {
     const url = product + '&signed=' + 'A'.repeat(2100)
     assert.ok(url.length > 2048)
     assert.ok(url.length < 8192)
@@ -360,133 +370,170 @@ async function androidScenarios() {
     assert.equal(iosStep.openMode, 'same-tab')
     assert.equal(JSON.stringify(settings), saved)
   })
-  await scenario('Android server preparation resolves only its source and never writes the iOS field', async () => {
-    const source = shortTikTok + '?android=separate'
-    const settings = defaultPopupSettings(shopee, 'https://example.test/general-unused')
-    settings.tiktok.androidUrl = source
-    settings.tiktok.iosUrl = 'https://vt.tiktok.com/ios-must-not-be-read/'
-    const saved = JSON.stringify(settings)
-    await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
-      const result = await prepareSettings(settings, android)
-      assert.equal(requests.length, 1)
-      assert.equal(requests[0].url, source)
-      assert.equal(requests[0].options.redirect, 'manual')
-      assert.ok(requests[0].options.signal instanceof AbortSignal)
-      assert.equal(result.tiktok.androidUrl, source)
-      assert.equal(result.tiktok.url, settings.tiktok.url)
-      assert.equal(result.tiktok.iosUrl, settings.tiktok.iosUrl)
-      assert.equal(result.tiktok.androidLaunchUrl, helper.buildTikTokAndroidLaunchUrl(product, source))
-      assert.equal(getPopupStep(result, 1, android).url, source)
-      assert.equal(getPopupStep(result, 1, android).launchUrl, result.tiktok.androidLaunchUrl)
-      assert.equal(JSON.stringify(settings), saved, 'Request-only preparation must not change persisted settings')
-    })
+  await scenario('Android preparation strips stale launch metadata without fetching or changing either source', async () => {
+    const source = shortTikTok + "?token=a'b+A%2fB&repeat=1&repeat=2"
+    for (const ua of [android, androidChrome]) {
+      const settings = defaultPopupSettings(shopee, 'https://example.test/general-unused')
+      settings.tiktok.androidUrl = source
+      settings.tiktok.iosUrl = 'https://vt.tiktok.com/ios-must-not-be-read/'
+      settings.tiktok.androidLaunchUrl = helper.buildTikTokAndroidLaunchUrl(product, source)
+      const saved = JSON.stringify(settings)
+      await withFetch(() => { throw new Error('Android preparation must not resolve either source') }, async requests => {
+        const result = await prepareSettings(settings, ua)
+        assert.equal(requests.length, 0)
+        assert.equal(result.tiktok.androidUrl, source)
+        assert.equal(result.tiktok.url, settings.tiktok.url)
+        assert.equal(result.tiktok.iosUrl, settings.tiktok.iosUrl)
+        assert.equal(result.tiktok.androidLaunchUrl, undefined)
+        assert.equal(getPopupStep(result, 1, ua).url, source)
+        assert.equal(getPopupStep(result, 1, ua).launchUrl, source)
+        assert.equal(JSON.stringify(settings), saved, 'Preparation must not mutate persisted settings')
+      })
+    }
   })
-  await scenario('Android request-only launch metadata is validated and stripped during normalization', async () => {
+  await scenario('Android source selection ignores valid and malicious legacy metadata and normalization drops it', async () => {
     const settings = defaultPopupSettings(shopee, shortTikTok)
     const valid = helper.buildTikTokAndroidLaunchUrl(product, shortTikTok)
-    settings.tiktok.androidLaunchUrl = valid
-    assert.equal(getPopupStep(settings, 1, android).launchUrl, valid)
-    assert.equal(normalizeSettings(settings, shopee, shortTikTok).tiktok.androidLaunchUrl, undefined)
-    for (const value of [valid.replace('com.ss.android.ugc.trill', 'evil.app'), helper.buildTikTokAndroidLaunchUrl(product, 'https://example.test/wrong-fallback'), 'javascript:alert(1)', valid + ';evil=1']) {
+    for (const value of [valid, valid.replace('com.ss.android.ugc.trill', 'evil.app'), 'javascript:alert(1)', valid + ';evil=1']) {
       settings.tiktok.androidLaunchUrl = value
-      assert.equal(getPopupStep(settings, 1, android).launchUrl, shortTikTok)
+      for (const ua of [android, androidChrome]) assert.equal(getPopupStep(settings, 1, ua).launchUrl, shortTikTok)
+      assert.equal(normalizeSettings(settings, shopee, shortTikTok).tiktok.androidLaunchUrl, undefined)
     }
   })
-  await scenario('Android preparation preserves relative signed queries and rejects unsafe redirects', async () => {
-    const rawQuery = "?token=a'b+A%2fB&encoded=%252F&case=%2f&repeat=1&repeat=2"
-    for (const [name, location, expected] of [
-      ['relative', '/view/product/1729605979383696179' + rawQuery, 'https://vt.tiktok.com/view/product/1729605979383696179' + rawQuery],
-      ['protocol-relative', '//www.tiktok.com/view/product/1729605979383696179' + rawQuery, 'https://www.tiktok.com/view/product/1729605979383696179' + rawQuery],
-    ]) {
-      const source = shortTikTok + '?android=signed-' + name
-      await withFetch(() => new Response(null, { status: 302, headers: { location } }), async requests => {
-        const prepared = await prepareSettings(defaultPopupSettings(shopee, source), android)
-        assert.equal(requests.length, 1, 'Stop at the signed PDP instead of fetching its web page')
-        const launch = prepared.tiktok.androidLaunchUrl
-        assert.equal(new URL(launch.split('#Intent;')[0]).searchParams.get('params_url'), expected)
-        assert.equal(fallbackUrl(launch), source)
-      })
-    }
-    for (const [name, location] of [
-      ['credentials', 'https://user:pass@www.tiktok.com/view/product/1729605979383696179'],
-      ['host', 'https://www.tiktok.com.evil.test/view/product/1729605979383696179'],
-      ['fragment', product + '#injected'],
-    ]) {
-      const source = shortTikTok + '?android=unsafe-' + name
-      await withFetch(() => new Response(null, { status: 302, headers: { location } }), async requests => {
-        const prepared = await prepareSettings(defaultPopupSettings(shopee, source), android)
-        assert.equal(requests.length, 1, 'Never request a rejected redirect destination')
-        assert.equal(getPopupStep(prepared, 1, android).launchUrl, source)
-      })
-    }
-  })
-  await scenario('Android direct products prepare locally and disabled devices perform no lookup', async () => {
+  await scenario('Repeated and concurrent Android preparation never resolves short or signed product sources', async () => {
+    const signed = product + '&signed=' + 'A+B%2f'.repeat(650)
     await withFetch(() => { throw new Error('Unexpected Android network request') }, async requests => {
-      const direct = defaultPopupSettings(shopee, product)
-      const prepared = await prepareSettings(direct, android)
-      assert.equal(getPopupStep(prepared, 1, android).launchUrl, helper.buildTikTokAndroidLaunchUrl(product))
-      for (const ua of [safariIos, desktop]) {
-        const settings = defaultPopupSettings(shopee, shortTikTok)
-        assert.equal(await prepareSettings(settings, ua), settings)
+      for (const source of [shortTikTok, signed]) {
+        const settings = defaultPopupSettings(shopee, source)
+        const saved = JSON.stringify(settings)
+        const prepared = await Promise.all([prepareSettings(settings, android), prepareSettings(settings, androidChrome)])
+        for (const result of prepared) {
+          assert.equal(getPopupStep(result, 1, android).launchUrl, source)
+          assert.equal(result.tiktok.androidLaunchUrl, undefined)
+        }
+        await prepareSettings(settings, android)
+        settings.tiktok.androidEnabled = false
+        await prepareSettings(settings, android)
+        settings.tiktok.androidEnabled = true
+        assert.equal(JSON.stringify(settings), saved)
       }
-      const disabled = defaultPopupSettings(shopee, shortTikTok + '?android=disabled')
-      disabled.tiktok.androidEnabled = false
-      assert.equal(await prepareSettings(disabled, android), disabled)
       assert.equal(requests.length, 0)
     })
   })
-  await scenario('Android short-link cache coalesces and expires while preserving the original source', async () => {
-    const source = shortTikTok + '?android=cache'
-    const settings = defaultPopupSettings(shopee, source)
-    const realNow = Date.now
-    let now = realNow()
-    Date.now = () => now
-    try {
-      await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
-        const [first, second] = await Promise.all([prepareSettings(settings, android), prepareSettings(settings, androidChrome)])
-        assert.equal(requests.length, 1)
-        assert.equal(first.tiktok.androidLaunchUrl, second.tiktok.androidLaunchUrl)
-        assert.equal(first.tiktok.androidUrl, source)
-        await prepareSettings(settings, android)
-        assert.equal(requests.length, 1)
-        now += 5 * 60_000 + 1
-        await prepareSettings(settings, android)
-        assert.equal(requests.length, 2)
-      })
-    } finally { Date.now = realNow }
-  })
-  await scenario('Android timeout and non-product redirects retain original URL and retry after brief caching', async () => {
-    for (const mode of ['timeout', 'non-product', 'oversized']) {
-      const source = shortTikTok + '?android=failure-' + mode
-      const settings = defaultPopupSettings(shopee, source)
-      const realNow = Date.now
-      let now = realNow()
-      let fail = true
-      Date.now = () => now
-      try {
-        await withFetch(url => {
-          if (!fail) return new Response(null, { status: 302, headers: { location: product } })
-          if (mode === 'timeout') throw new DOMException('Timeout', 'TimeoutError')
-          if (mode === 'oversized') return new Response(null, { status: 302, headers: { location: product + '&x=' + 'a'.repeat(8192) } })
-          return url === source ? new Response(null, { status: 302, headers: { location: 'https://www.tiktok.com/@creator/video/1729605979383696179' } }) : new Response(null, { status: 200 })
-        }, async requests => {
-          const failed = await prepareSettings(settings, android)
-          assert.equal(getPopupStep(failed, 1, android).launchUrl, source)
-          assert.equal(failed.tiktok.androidUrl, source)
-          const attempts = requests.length
-          fail = false
-          await prepareSettings(settings, android)
-          assert.equal(requests.length, attempts)
-          now += 15_001
-          const recovered = await prepareSettings(settings, android)
-          assert.equal(recovered.tiktok.androidLaunchUrl, helper.buildTikTokAndroidLaunchUrl(product, source))
-          assert.equal(requests.length, attempts + 1)
-        })
-      } finally { Date.now = realNow }
+  const gateHelper = load('lib/popup-browser-gate.ts')
+  await scenario('Chrome gate preserves the real article scheme, alias, signed query and fragment without a fallback', async () => {
+    for (const href of [
+      'https://alias.example/nam-tay?token=A+B%2f&repeat=1&repeat=2#section%23detail',
+      'http://alias.example:8080/post?next=https%3A%2F%2Ffixture.example%2Fp#part#nested',
+    ]) {
+      const url = new URL(href)
+      const expected = 'intent://' + url.href.slice(url.protocol.length + 2) + '#Intent;scheme=' + url.protocol.slice(0, -1) + ';action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.android.chrome;end'
+      const launch = gateHelper.buildChromeBrowserLaunchUrl(href)
+      assert.equal(launch, expected)
+      assert.doesNotMatch(launch, /browser_fallback_url/)
+      // AOSP Intent.parseUri finds the final # delimiter, retaining an earlier article hash in its data.
+      const marker = launch.lastIndexOf('#Intent;')
+      assert.equal(url.protocol + launch.slice('intent:'.length, marker), url.href)
+    }
+    for (const href of ['', '/relative', 'javascript:alert(1)', 'intent://host/post', 'https://user:pass@alias.example/post']) {
+      assert.equal(gateHelper.buildChromeBrowserLaunchUrl(href), '')
     }
   })
   for (const kind of ['route', 'react']) {
-    await scenario(kind + ' Android native confirmation never advances on blur or prompt cancellation', async () => {
+    await scenario(kind + ' opt-in Android Facebook Chrome gate never starts or advances affiliate state', async () => {
+      const marker = 'post-popup:post1:2026-09-27T00:00:00.000Z'
+      const href = 'https://alternate.example/actual-slug?token=A+B%2f&repeat=1&repeat=2#part#nested'
+      await using(kind, { ua: android, forceChromeAndroid: true, currentHref: href, firstDelay: 2, secondDelay: 7,
+        session: [[marker, '1|999999999'], ['unrelated-session', 'keep']],
+        local: [[marker, '2|999999999|1800000'], ['unrelated-local', 'keep']],
+        cookie: 'unrelated_cookie=keep',
+      }, async h => {
+        const saved = { session: [...h.storage.session], local: [...h.storage.local], cookie: h.cookie() }
+        const isolated = () => {
+          assert.equal(h.state(), 'CHROME_GATE')
+          assert.deepEqual({ session: [...h.storage.session], local: [...h.storage.local], cookie: h.cookie() }, saved)
+          assert.deepEqual(h.storageReads, [])
+          assert.deepEqual(h.storageWrites, [])
+          assert.deepEqual(h.cookieWrites, [])
+          assert.deepEqual(h.clickEvents, [])
+          assert.equal(h.preparationRequests.length, 0)
+          assert.equal(h.timerCount(), 0, 'Browser transfer must not start countdown or retry timers')
+          assert.equal(h.doc.querySelector('[data-popup-native-link]'), null)
+        }
+        isolated()
+        await h.tick(12000)
+        assert.equal(h.calls.length, 0, 'No automatic browser transfer or affiliate launch')
+        const anchor = h.button()
+        assert.equal(anchor.tagName, 'A')
+        assert.equal(anchor.isConnected, true)
+        assert.equal(anchor.hidden, false)
+        assert.equal(anchor.target, '_self')
+        assert.equal(anchor.href, gateHelper.buildChromeBrowserLaunchUrl(href))
+        assert.doesNotMatch(anchor.href, /browser_fallback_url/)
+        await h.click(anchor)
+        assert.equal(h.calls.length, 1)
+        assert.equal(h.calls[0].browserGateAction, true)
+        assert.equal(h.calls[0].nativeAction, false)
+        assert.equal(h.calls[0].url, anchor.href)
+        assert.equal(h.calls[0].attached, true)
+        assert.equal(h.button(), anchor)
+        isolated()
+        await h.blur(); await h.tick(12000); await h.focus()
+        isolated()
+        assert.equal(h.calls.length, 1, 'Canceling the external prompt cannot launch another URL')
+        await h.away(8000); await h.back(); await h.pagehide(); await h.pageshow()
+        isolated()
+        assert.equal(h.calls.length, 1, 'Browser departure/return cannot complete an affiliate step')
+        await h.click(anchor)
+        assert.equal(h.calls.length, 2, 'A second explicit browser-transfer tap stays available')
+        isolated()
+      })
+    })
+    await scenario(kind + ' Chrome gate scope leaves disabled flag, ordinary Chrome, iOS and inactive popups unchanged', async () => {
+      for (const options of [
+        { ua: android, forceChromeAndroid: false },
+        { ua: androidChrome, forceChromeAndroid: true },
+        { ua: facebookIos, forceChromeAndroid: true },
+        { ua: safariIos, forceChromeAndroid: true },
+        { ua: android, forceChromeAndroid: true, active: false, article: true },
+        { ua: android, forceChromeAndroid: true, noPopup: true, article: true },
+        { ua: android, forceChromeAndroid: true, tiktokEnabled: false, article: true },
+        { ua: android, forceChromeAndroid: true, androidEnabled: false, article: true },
+        { ua: android, forceChromeAndroid: true, androidUrl: '', tiktokUrl: '' },
+      ]) await using(kind, options, async h => {
+        assert.equal(h.doc.querySelector('[data-popup-browser-gate]'), null, JSON.stringify(options))
+        assert.equal(h.doc.querySelector('[data-popup-chrome-link]'), null)
+        if (options.article) assert.equal(h.state(), 'ARTICLE')
+        else assert.equal(h.state(), 'Shopee')
+        assert.equal(h.calls.length, 0)
+        assert.equal(h.clickEvents.length, 0)
+      })
+    })
+    await scenario(kind + ' Chrome continuation starts countdown and raw HTTPS affiliate sequence only after user taps', async () => {
+      await using(kind, { ua: androidChrome, forceChromeAndroid: true, androidUrl: shortTikTok, cooldownMinutes: 0, firstDelay: 2, secondDelay: 3 }, async h => {
+        assert.equal(h.state(), 'Shopee')
+        assert.equal(h.doc.querySelector('[data-popup-browser-gate]'), null)
+        await h.click(); await h.tick(2000)
+        assert.equal(h.calls.length, 0)
+        assert.equal(h.clickEvents.length, 0)
+        await h.click()
+        assert.equal(h.calls[0].url, shopee)
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        await h.away(3500); await h.back()
+        assert.equal(h.state(), 'TikTok')
+        assert.equal(h.calls.length, 1)
+        assert.equal(h.button().href, shortTikTok)
+        await h.click()
+        assert.equal(h.calls[1].url, shortTikTok)
+        assert.equal(h.calls[1].mode, 'anchor-same-tab')
+        await h.blur(); await h.focus()
+        assert.equal(h.state(), 'TikTok')
+        await h.away(); await h.back()
+        assert.equal(h.state(), 'ARTICLE')
+        assert.deepEqual(h.clickEvents.map(event => event.platform), ['SHOPEE', 'TIKTOK'])
+      })
+    })
+    await scenario(kind + ' Android pending handoff never advances on blur or prompt cancellation', async () => {
       for (const ua of [android, androidChrome]) await using(kind, { ua, cooldownMinutes: 0 }, async h => {
         await h.click()
         assert.equal(h.calls[0].state, 'Shopee')
@@ -548,13 +595,13 @@ async function androidScenarios() {
         assert.equal(first.nativeAction, true)
         assert.equal(h.button(), originalAnchor, 'Do not detach the tapped link before its default action')
         assert.equal(first.url, shopee)
-        assert.equal(first.state, 'Shopee', 'Native confirmation keeps the clicked popup visible')
+        assert.equal(first.state, 'Shopee', 'Pending app handoff keeps the clicked popup visible')
         assert.match(first.session[0][1], /^1\|/)
         assert.equal(h.doc.querySelector('a[hidden]'), null)
         assert.equal(h.clickEvents.length, 1)
         await h.away(2000); await h.back(); await h.click()
         assert.equal(h.calls[1].mode, 'anchor-same-tab')
-        assert.equal(h.calls[1].url, helper.buildTikTokAndroidLaunchUrl(product, shortTikTok))
+        assert.equal(h.calls[1].url, shortTikTok)
         assert.equal(h.calls[1].nativeAction, true)
         assert.equal(h.calls[1].hidden, false)
         assert.equal(h.calls[1].state, 'TikTok', 'The article stays covered until a confirmed departure and return')
@@ -565,16 +612,17 @@ async function androidScenarios() {
         assert.equal(h.clickEvents.length, 2)
       })
     })
-    await scenario(kind + ' Android short links are prepared before taps with no navigation-time lookup', async () => {
-      for (const lookupFails of [false, true]) {
-        const source = shortTikTok + '?android=mount-' + kind + '-' + lookupFails
-        await using(kind, { ua: android, androidUrl: source, androidLookupFails: lookupFails }, async h => {
-          assert.equal(h.preparationRequests.length, 1)
+    await scenario(kind + ' Android short-link anchors preserve the exact source with no preparation or tap lookup', async () => {
+      for (const ua of [android, androidChrome]) {
+        const source = shortTikTok + "?token=a'b+A%2fB&repeat=1&repeat=2"
+        await using(kind, { ua, androidUrl: source, androidLaunchUrl: helper.buildTikTokAndroidLaunchUrl(product, source) }, async h => {
+          assert.equal(h.preparationRequests.length, 0)
           await withFetch(() => { throw new Error('Unexpected navigation-time lookup') }, async requests => {
             await h.click(); await h.away(); await h.back()
             const anchor = h.button()
             assert.equal(anchor.tagName, 'A')
-            assert.equal(anchor.href, lookupFails ? source : helper.buildTikTokAndroidLaunchUrl(product, source))
+            assert.equal(anchor.getAttribute('href'), source)
+            assert.equal(anchor.href, new URL(source).href, 'Only the browser URL serializer may escape an unencoded quote')
             await h.click()
             assert.equal(h.calls[1].url, anchor.href)
             assert.equal(h.calls[1].nativeAction, true)
@@ -678,7 +726,7 @@ async function androidScenarios() {
       const complete = await using(kind, { ...state, ua: android, cooldownMinutes: 0, session: false, local: false, androidUrl: shortTikTok }, async h => {
         assert.equal(h.state(), 'TikTok')
         await h.click()
-        assert.equal(h.calls[0].url, helper.buildTikTokAndroidLaunchUrl(product, shortTikTok))
+        assert.equal(h.calls[0].url, shortTikTok)
         await h.away(); await h.back(); await h.tick(1000)
         assert.equal(h.state(), 'ARTICLE')
         assert.equal(h.cookie(), '')

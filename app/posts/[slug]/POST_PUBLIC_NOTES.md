@@ -48,7 +48,7 @@ Title and Facebook metadata remain even when visual title is hidden. Existing
 fixed blocks stay before/after content, and popup runtime stays unchanged.
 Verify `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.
 
-## Android app handoff (2026-10-07)
+## Android app handoff (historical implementation, 2026-10-07)
 
 Android Facebook and Chrome use an attached `_self` anchor, synchronously within
 one user tap, rather than `window.open` or `location.replace`. `getPopupStep`
@@ -86,7 +86,37 @@ Verify `node scripts/test-popup-runtime.cjs --android-check` and full runtime;
 
 ## Android native launch parity (2026-10-07)
 
+Historical native-intent implementation; superseded for the public Android TikTok
+action by the Chrome gate and original HTTPS selection below.
+
 - React popup uses a visible real anchor for Android primary actions, matching the phone-confirmed diagnostic: Shopee original HTTPS in `_blank`; TikTok native PDP intent in `_self`. The handler persists progress and records the accepted click synchronously, then lets the anchor navigate normally.
 - Countdown, repeated taps and blocked guards cancel default navigation. Android keeps the current popup pending regardless of anchor target; blur alone does not advance. A genuine departure/return resumes the next step; retries retain the original web URL. iOS launch paths remain unchanged.
 - The inline renderer updates the existing anchor instead of detaching it before default navigation. React retains the same anchor while holding the clicked step.
 - Verification: `node scripts/test-popup-runtime.cjs --android-native-check`, the full runtime suite, click/affiliate regressions, ESLint and TypeScript. Physical user confirmed the isolated native TikTok link opens the correct product in Chrome Android and original Shopee HTTPS opens the app directly in Facebook. Integrated production flow still needs its own deployment check.
+
+## Android Facebook Chrome gate (2026-10-07)
+
+With the existing `forceChromeAndroid` setting enabled, an active applicable
+Android Facebook popup with a TikTok source mounts the Chrome gate instead of
+`PostPopupSequence`. No sequence hook, countdown, progress storage or affiliate
+click runs in that gate. Its visible `_self` anchor opens the actual article URL
+in Chrome, preserving `/posts/slug`, query and fragment. Canceling consent or
+returning to Facebook leaves the gate available; no Chrome transfer is counted
+as either affiliate step.
+
+The new Chrome document owns its normal Shopee→TikTok sequence. Android TikTok
+uses the original Android HTTPS source; iOS and Shopee selection are unchanged.
+No cross-browser progress is claimed or encoded in the link. Verify both renderer
+gate isolation and existing countdown/return/cooldown/analytics behavior with
+`node scripts/test-popup-runtime.cjs` (143 scenarios), focused
+`--android-native-check` (42 scenarios), scoped ESLint and TypeScript.
+
+Physical isolated HTTPS tests passed on 2026-10-07 for React and standalone,
+each from Facebook→same-article Chrome and directly from Chrome. The human
+approved Facebook's retained Chrome confirmation. Shopee opened its native
+offers landing; TikTok opened the correct T20 shared card, then a separate native
+**Xem mặt hàng** tap opened the full PDP. Both steps returned correctly, countdown
+blocked early taps, and cooldown-zero reload restarted Shopee. Each original
+trial captured exactly one accepted click per affiliate in the isolated receiver.
+Six tested source hashes remained unchanged. iOS was automated-only; production
+analytics and deployment require their own verification.

@@ -1,29 +1,28 @@
-import { buildTikTokAndroidLaunchUrl, buildTikTokOneLinkUrl, isIosFacebookUserAgent, isTikTokOneLinkUrl, isTikTokShortUrl, TIKTOK_ANDROID_HOSTS } from '@/lib/popup-link'
-import { isAndroidUserAgent, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
+import { buildTikTokOneLinkUrl, isIosFacebookUserAgent, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
+import { popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
 const shortLinkCache = new Map<string, { value: Promise<string>; expiresAt: number }>()
 const CACHE_LIMIT = 200
 
-async function resolvePopupShortLink(url: string, platform: 'ios' | 'android' = 'ios') {
-  const cacheKey = `${platform}:${url}`
+async function resolvePopupShortLink(url: string) {
+  const cacheKey = `ios:${url}`
   const cached = shortLinkCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
   shortLinkCache.delete(cacheKey)
   if (shortLinkCache.size >= CACHE_LIMIT) shortLinkCache.delete(shortLinkCache.keys().next().value!)
 
   // Resolve before rendering, not inside the click handler: awaiting network on
-  // the click loses the user gesture needed for app handoff. Coalesce readers,
-  // but isolate Android's native PDP result from iOS OneLink results.
+  // the click loses the user gesture needed for app handoff. Android uses its
+  // unchanged source URL and must not resolve or reuse this iOS launch link.
   const entry = { value: Promise.resolve(url), expiresAt: Date.now() + 5 * 60_000 }
   entry.value = resolveTikTokUrl(url, {
     stopAtProduct: true,
     signal: AbortSignal.timeout(4000),
-    ...(platform === 'android' ? { maxUrlLength: 8192, preserveRawUrl: true, allowedHosts: TIKTOK_ANDROID_HOSTS } : {}),
   })
-    .then(productUrl => platform === 'android' ? buildTikTokAndroidLaunchUrl(productUrl, url) : buildTikTokOneLinkUrl(productUrl))
+    .then(productUrl => buildTikTokOneLinkUrl(productUrl))
     .then(launchUrl => {
-      if (platform === 'android' ? launchUrl !== url : isTikTokOneLinkUrl(launchUrl)) return launchUrl
+      if (isTikTokOneLinkUrl(launchUrl)) return launchUrl
       entry.expiresAt = Date.now() + 15_000
       return url
     })
@@ -42,16 +41,6 @@ export async function preparePopupSettingsForRequest(settings: PopupSettings, us
   if (settings.tiktok.androidLaunchUrl !== undefined) {
     settings = { ...settings, tiktok: { ...settings.tiktok } }
     delete settings.tiktok.androidLaunchUrl
-  }
-  if (isAndroidUserAgent(userAgent) && popupAppliesToDevice(settings, userAgent)) {
-    const url = settings.tiktok.androidUrl || settings.tiktok.url
-    const launchUrl = isTikTokShortUrl(url)
-      ? await resolvePopupShortLink(url, 'android')
-      : buildTikTokAndroidLaunchUrl(url)
-    return launchUrl === url ? settings : {
-      ...settings,
-      tiktok: { ...settings.tiktok, androidLaunchUrl: launchUrl },
-    }
   }
   if (!isIosFacebookUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent)) return settings
   const url = settings.tiktok.iosUrl || settings.tiktok.url

@@ -12,7 +12,7 @@ failure, cookie-only reloads, completed handoffs, expiry, suspended countdowns,
 desktop popup bypass, navigation exceptions, signed OneLinks and iOS field
 preservation. The iPhone/Facebook Shopee case also verifies an attached hidden
 `_blank` anchor is present during the click, removed afterward, and rolls back on a
-click exception. Blur/focus-only return must unlock TikTok without a Back action,
+click exception. On iOS, blur/focus-only return must unlock TikTok without a Back action,
 while repeated taps during handoff remain blocked. It also verifies zero cooldown
 reopens the popup on a fresh load, nonzero cooldown expiry across session/local/cookie
 fallbacks, ignored legacy completion, and unchanged unrelated storage. It validates
@@ -25,7 +25,7 @@ Tests mock the redirect to a signed product URL and assert it becomes the same
 OneLink as a full product URL, without another network request on the click. They
 also cover redirect validation, one deadline for the chain, cache coalescing/expiry,
 failed lookup retry, unchanged Safari/custom iOS URLs, and Shopee return. Android
-preparation has a separate source/cache and native-PDP contract below.
+preparation preserves its original source without a lookup; see the Android checks below.
 Run `node scripts/test-popup-runtime.cjs`; no external link is contacted by these tests.
 Use `POPUP_TEST_ROOT` with `--shortlink-baseline` to reproduce the previous short
 TikTok `new-tab` branch on a source snapshot.
@@ -76,68 +76,55 @@ Telegram render helpers are included in the source loader so ordinary and Telegr
 post changes still exercise the existing popup/inspection runtime unchanged.
 Verify: `node scripts/test-popup-runtime.cjs`.
 
-## Android native links and foreground handoff
+## Android HTTPS links, browser transfer and foreground handoff
 
 Run `node scripts/test-popup-runtime.cjs --android-native-check` (or
-`--android-check`) for the focused Android Chrome/Facebook checks. The 2026-10-07
-device diagnostic confirmed TikTok's `snssdk1180://ec/pdp` intent with package
-`com.ss.android.ugc.trill` and Shopee's original HTTPS link in `_blank`. Regression
-tests require the exact seven-field native construction and raw signed
-`params_url`, with the original Android source encoded as browser fallback.
-Shopee must remain raw HTTPS without wrapping in an HTTPS intent.
+`--android-check`) for the focused suite. Both renderer fixtures explicitly keep
+`forceChromeAndroid=false` for ordinary affiliate sequencing. Android TikTok uses
+the exact saved Android HTTPS source in `_self`; Shopee stays raw HTTPS in
+`_blank`. Android preparation performs no network lookup, strips stale
+`androidLaunchUrl` metadata without mutating settings, and preserves independent
+iOS fields. Legacy native builders remain syntax/byte-preservation compatibility
+checks; a passing builder test does not establish a successful device PDP.
 
-Android primary CTAs are visible real anchors: Shopee `_blank`, TikTok `_self`.
-The harness dispatches the click through actual runtime handlers, then observes
-whether default navigation remained permitted. It checks attachment, visibility,
-same-anchor identity, persisted progress before navigation, and cancellation for
-countdown/pending taps. Only the test observer prevents external JSDOM navigation.
-This is not a trusted native-device click or evidence that an app opened.
+The opt-in Android Facebook gate is tested separately in both renderers. Its
+visible attached anchor transfers the actual article alias, scheme, query and
+fragment to Chrome without a fallback URL. Loading it, tapping it, canceling a
+prompt, blur/focus or departure/return must not read/write affiliate progress,
+start countdown/retry timers or record affiliate clicks. Ordinary Chrome, iOS,
+inactive/disabled popups and the disabled flag retain their existing flows. A
+separate Chrome continuation test verifies that the article starts its own
+countdowns and Shopee → TikTok sequence only on subsequent user taps.
 
-Android short links resolve before rendering, not from a click handler. Tests
-check independent Android/iOS fields and cache keys, coalescing, five-minute cache
-expiry, brief failed-lookup caching, timeout/non-product fallback, direct products
-without fetch, no network request on taps, request-only metadata validation and
-normalization stripping. Absolute, relative and protocol-relative signed query
-bytes survive unchanged. Invalid redirects, malformed UTF-16 and oversized native
-links fall back without truncating the original source. Other coverage includes
-countdowns, one count per accepted tap, cookie-only reload, zero cooldown, explicit
-web-fallback exceptions and denied storage.
+The harness dispatches real DOM handlers before observing whether default anchor
+navigation remained permitted. Its observer alone suppresses external JSDOM
+navigation; these are not trusted native-device clicks. It verifies visibility,
+attachment, pending-tap suppression, raw query preservation, analytics counts,
+countdown, retry and cooldown zero, while preserving the existing iOS regression
+coverage. No live affiliate link is fetched or opened by this suite.
 
-A pending Android launch keeps the clicked popup visible while native app-opening
-confirmation is displayed. A 2500 ms wait without departure offers an explicit
-app retry or original-web-link fallback on that same popup, without briefly
-showing the next popup/article. The persisted next step remains intact for slow
-launches. Only `visibilitychange` to hidden or `pagehide`, followed by return,
-clears pending UI and resumes the next popup. Android blur/focus alone can be a
-canceled native prompt and must not advance or consume the history-return marker.
-iOS still supports blur/focus-only returns. No timeout launches another URL.
-A separate expiring Android session marker covers zero-cooldown browser Back
-when the article remounts without BFCache after the web fallback. Tests assert
-that only a `back_forward` navigation consumes this completion once; fresh
-navigation, reload and expiry remove it and still start with Shopee. Native
-explicit web-fallback exceptions restore progress on both routes. The harness
-mocks navigation, not Android's IntentResolver: these checks verify URI and state
-contracts, not installed apps or Facebook's external-app confirmation. Physical
-production verification remains separate from these deterministic checks.
+A pending Android affiliate launch keeps its current popup until hidden/pagehide
+and return. Blur/focus alone cannot advance it. The 2500 ms timeout offers an
+explicit retry/web fallback without automatically launching another URL. An
+expiring session marker covers cooldown-zero browser Back without BFCache;
+fresh navigation, reload and expiry must still start with Shopee.
 
-Verification: `node scripts/test-popup-runtime.cjs --android-native-check` passed
-38 scenarios; `node scripts/test-popup-runtime.cjs` passed 139 scenarios.
-`--export-fixture <directory>` also emits `route-android.html` with a direct product
-fixture and no external resolver request for trusted-browser default-action QA.
+Verification commands: `node scripts/test-popup-runtime.cjs --android-native-check`
+passed 42 scenarios; `node scripts/test-popup-runtime.cjs` passed 143 scenarios.
+These results are runtime/URI checks;
+physical Facebook confirmation, app product loading and hosting deployment need
+separate evidence.
 
-Use `POPUP_TEST_ROOT` with `--android-native-baseline` against commit `bc9fbd8` to
-reproduce the old HTTPS-intent/hidden-anchor `_self` path for both platforms.
-It is also the rollback assertion; `--android-native-check` validates the changed
-construction. Baseline output and focused output explicitly retain native-device
-status `UNVERIFIED` because Node mocks cannot establish a physical app launch.
+Separate real-phone evidence on 2026-10-07 passed four isolated HTTPS trials:
+standalone/React from Facebook→same-article Chrome and directly in Chrome.
+The human approved the retained Facebook Chrome prompt; native Shopee offers and
+the correct TikTok T20 shared card/PDP opened (PDP required native **Xem mặt hàng**).
+Return, countdown and cooldown-zero reload passed, with one accepted click per
+affiliate in each original trial. This does not turn synthetic events into
+trusted gestures or establish production database/commission results; iOS was
+automated-only.
 
-For baseline/rollback evidence, set `POPUP_TEST_ROOT` to the original source
-snapshot and run `node scripts/test-popup-runtime.cjs --android-baseline`. It
-asserts the previous `window.open(..., '_blank')` path for both popup stages on
-Android Chrome and Facebook. Clear `POPUP_TEST_ROOT` before modified/full tests.
-
-Use `--android-prompt-baseline` against commit `3104b2d` to reproduce the previous
-package-less TikTok URI, Android next-popup/article flash and mistaken
-blur/focus-only confirmation.
-The focused suite covers delayed acceptance, prompt cancellation, repeated focus,
-explicit retry, real hidden/pagehide return and a preserved zero-cooldown marker.
+Historical reproductions still use `POPUP_TEST_ROOT` plus `--android-baseline`,
+`--android-native-baseline` (commit `bc9fbd8`) or `--android-prompt-baseline`
+(commit `3104b2d`). Clear `POPUP_TEST_ROOT` for current-source verification.
+The historical flags do not describe the new HTTPS or Chrome-gate behavior.

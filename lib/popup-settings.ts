@@ -1,4 +1,4 @@
-import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokAndroidLaunchUrl, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
 
 export type PopupPlatformSettings = {
   enabled: boolean
@@ -136,7 +136,9 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   return {
     platform: 'TikTok',
     url,
-    launchUrl: isAndroidUserAgent(userAgent) ? getTikTokAndroidLaunchUrl(url, settings.tiktok.androidLaunchUrl) : url,
+    // The original Android HTTPS link works through TikTok's own shared-item
+    // screen; the derived ec/pdp URI can open TikTok with a product-load error.
+    launchUrl: url,
     openMode: getPopupLinkOpenMode(url, 'TIKTOK', { userAgent }),
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,

@@ -17,3 +17,13 @@ The TikTok affiliate action reads the Android source and writes only `tiktok.ios
 Resolver warnings/errors leave the previous destination intact. Pending requests are invalidated/aborted on source, iOS or mode edits and dialog lifecycle changes; a stale response cannot overwrite a newer draft or unlock a newer request. Saving is disabled while resolving. Errors appear inside the dialog. URL inputs do not truncate pasted signed links: the shared 8192-character validation returns an explicit message rather than cutting tracking parameters.
 
 Verification: `node scripts/test-popup-affiliate.cjs`, existing popup runtime/timing/API suites, scoped ESLint and TypeScript. Regression fixtures cover Android preservation, long signed URLs, repeated conversion, failures and stale responses.
+
+## Android Chrome setting (2026-10-07)
+
+The existing `forceChromeAndroid` toggle now gates applicable Android Facebook
+articles before their affiliate sequence. Its description names that behavior;
+it stays disabled by default and does not change the Safari setting. Scoped
+ESLint and shared runtime checks passed. Four isolated HTTPS phone trials on
+2026-10-07 passed for standalone/React through Facebook→Chrome and directly in
+Chrome; the user chose to retain the Chrome button and Facebook confirmation.
+iOS remained automated-only. Production deployment is verified separately.

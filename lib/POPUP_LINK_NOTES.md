@@ -1,32 +1,26 @@
 # Popup app link selection
 
-Android launch URLs are ephemeral; original popup Android/iOS affiliate fields
-remain independent and unchanged. TikTok uses the native `snssdk1180://ec/pdp`
-intent, pinned to `com.ss.android.ugc.trill`, with exactly seven documented fields:
-`biz_type`, `enter_method`, `is_commerce`, `need_mall`, `needlaunchlog`, `page_name`,
-and `params_url`. Decoding `params_url` returns the complete signed product URL
-byte-for-byte; the browser fallback is the original saved Android source.
+Original popup Android/iOS affiliate fields remain independent and unchanged.
+Android Shopee uses the original HTTPS `_blank` anchor. Android TikTok uses the
+original Android HTTPS `_self` anchor, with no click-time or request-time Android
+resolution. Request preparation strips legacy `androidLaunchUrl` metadata.
 
-The user confirmed this native candidate opens the correct product on Chrome
-Android (2026-10-07). The prior `scheme=https` TikTok intent failed on the same
-device, despite the correct package. Shopee now uses the original HTTPS anchor
-with `_blank`, matching the separately confirmed Facebook test without its
-previous intent confirmation. Embedding browsers can still ask for consent.
+Fresh physical tests on 2026-10-07 found the derived `snssdk1180://ec/pdp`
+candidate could open TikTok but show a product-load error, despite an earlier
+successful user test. The original Android HTTPS link opened the correct shared
+product card on Chrome; the native **Xem mặt hàng** button opened the complete
+PDP. This is a two-gesture path, not proof of a direct native PDP fix.
 
-`preparePopupSettingsForRequest` resolves Android short URLs before rendering,
-never inside the click handler. Its request-only `androidLaunchUrl` does not
-replace saved `androidUrl`, `url`, or `iosUrl`. Normalization strips supplied
-metadata, preparation discards old metadata, and the consumer checks the exact
-canonical intent and matching original-source fallback. Direct product URLs need
-no fetch. Failed, nonproduct or unsupported results keep the original HTTPS URL.
-Short-link resolution has one 4-second deadline, 8192-character input/redirect
-and final intent limits, a 200-entry coalescing cache, 5-minute success and
-15-second failure lifetimes. Android and iOS cache keys are independent.
+When `forceChromeAndroid` is enabled, Android Facebook transfers the actual
+article to Chrome before either affiliate step. See
+[browser gate notes](POPUP_BROWSER_GATE_NOTES.md) for the consent and state
+contract. Ordinary Android launch links are never replaced by an iOS URL.
 
-Exact vendor host allowlists and per-redirect validation reject unrelated hosts,
-credentials, nonstandard ports, raw fragments, whitespace, backslashes and malformed
-UTF-16. Only Android requests opt into raw signed-URL preservation; iOS modes and
-the existing resolver's iOS user agent remain unchanged.
+Native intent builders remain available as compatibility helpers and preserve
+the complete signed `params_url` plus the original-source fallback. They are no
+longer selected by popup runtime. Their syntax tests do not prove app success.
+Existing iOS Facebook short-link preparation, OneLink mode, timeout and cache
+behavior remain unchanged; Android no longer shares that resolution path.
 
 Evidence checked 2026-10-07: `/.well-known/assetlinks.json` on shopee.vn,
 www.shopee.vn, s.shopee.vn; tiktok.com, www.tiktok.com, vt.tiktok.com,
@@ -44,8 +38,13 @@ establish native-device success.
 
 ## Facebook confirmation follow-up
 
-The user first confirmed Shopee opens after Facebook's native “Tiếp tục” prompt,
-then confirmed the original HTTPS `_blank` link opens it directly. The latter
-is now the launch mode; no browser consent mechanism is suppressed.
-Verify `node scripts/test-popup-runtime.cjs --android-check` plus physical regular
-TikTok on Android. Tests prove target selection, not OS/app behavior.
+The original Shopee HTTPS `_blank` link remains unchanged. Four isolated HTTPS
+trials on 2026-10-07 passed on a real Android 16 phone: standalone/React through
+Facebook→Chrome and both renderers directly in Chrome. The user explicitly chose
+to keep the Chrome button and Facebook's native **Tiếp tục** confirmation. Shopee
+opened its offers landing; the exact original Android TikTok source opened the
+correct T20 shared card, followed by the native **Xem mặt hàng** gesture to the
+full PDP. Article return, countdown, cooldown-zero reload and two accepted local
+affiliate clicks per original trial passed. Six tested source hashes matched.
+iOS is automated-only; production deployment, database counts and commission
+attribution are separate checks.
