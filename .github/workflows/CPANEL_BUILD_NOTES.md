@@ -71,3 +71,13 @@ defaults, deleted-popup replacement and individual media removal. The new `/p7`
 route and link helpers are included in scoped lint. No schema migration is added.
 `node scripts/test-telegram-media-removal.cjs` additionally verifies individual
 quick-media deletion, signed sibling URLs and preservation of mixed article HTML.
+
+## Admin daily popup clicks (2026-10-07)
+
+CI runs the admin popup-click API and UI suites before release. Counts use the
+Vietnam-day boundary and accepted `PopupClick` events, separate from lifetime
+short-link clicks. Coverage includes authorization, page/user isolation, midnight,
+platform breakdowns, zero values, manual refresh and existing user actions.
+Scoped lint includes both admin user endpoints/pages and the aggregation helper.
+After deployment, both admin read endpoints must still return 403 without an
+authorized session. No database migration is required.

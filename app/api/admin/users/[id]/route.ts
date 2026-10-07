@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { ADMIN_ROLES, hasAdminPermission, requireAdmin } from '@/lib/admin-auth'
 import { recordAdminAudit } from '@/lib/admin-audit'
 import { computePlanEndDate, type BillingPeriod } from '@/lib/billing'
+import { ADMIN_POPUP_CLICKS_TIMEZONE, getAdminUserPopupClicksToday } from '@/lib/admin-popup-clicks'
 
 const PLANS = ['free', 'pro', 'ultra', 'ultra_plus'] as const
 const PERIODS = ['1m', '6m', '1y', 'lifetime'] as const
@@ -47,6 +48,7 @@ export async function GET(
 ) {
   const access = await requireAdmin('users.read')
   if (!access.ok) return access.response
+  const now = new Date()
   const { id } = await params
 
   const user = await prisma.user.findUnique({
@@ -70,7 +72,7 @@ export async function GET(
   })
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const [links, domains, payments, subscriptions, workspaces, recentActivity] = await Promise.all([
+  const [links, domains, payments, subscriptions, workspaces, recentActivity, popupClicksToday] = await Promise.all([
     prisma.link.findMany({
       where: { userId: id },
       take: 10,
@@ -113,11 +115,12 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
       select: { id: true, method: true, path: true, ip: true, country: true, createdAt: true },
     }),
+    getAdminUserPopupClicksToday([id], now),
   ])
 
   const { apiKey, ...safeUser } = user
   return NextResponse.json({
-    user: { ...safeUser, hasApiKey: Boolean(apiKey) },
+    user: { ...safeUser, hasApiKey: Boolean(apiKey), popupClicksToday: popupClicksToday[id] },
     links,
     domains,
     payments,
@@ -125,7 +128,9 @@ export async function GET(
     workspaces,
     recentActivity,
     currentAdmin: { role: access.admin.role, permissions: access.admin.permissions },
-  })
+    popupClicksTodayAsOf: now.toISOString(),
+    popupClicksTimezone: ADMIN_POPUP_CLICKS_TIMEZONE,
+  }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 export async function PATCH(

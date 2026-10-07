@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft, Ban, KeyRound, RefreshCw, Shield, Trash2, UserCheck } from 'lucide-react'
@@ -12,6 +12,7 @@ type UserDetail = {
     plan: string; planExpiresAt: string | null; lastLoginAt: string | null; createdAt: string
     suspendedAt: string | null; suspensionReason: string | null; deletedAt: string | null
     googleDriveEmail: string | null; hasApiKey: boolean
+    popupClicksToday?: { total: number; shopee: number; tiktok: number }
     _count: { links: number; domains: number; notes: number; ownedWorkspaces: number; payments: number }
   }
   links: Array<{ id: string; shortCode: string; title: string | null; originalUrl: string; isActive: boolean; disabledByAdmin: boolean; createdAt: string; _count: { clicks: number } }>
@@ -21,6 +22,8 @@ type UserDetail = {
   workspaces: Array<{ id: string; name: string; slug: string; createdAt: string }>
   recentActivity: Array<{ id: number; method: string; path: string; ip: string | null; country: string | null; createdAt: string }>
   currentAdmin: { role: string; permissions: string[] }
+  popupClicksTodayAsOf?: string
+  popupClicksTimezone?: 'Asia/Ho_Chi_Minh'
 }
 
 type PendingAction = { action: string; label: string; danger?: boolean } | null
@@ -30,26 +33,50 @@ export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>()
   const [data, setData] = useState<UserDetail | null>(null)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const [pending, setPending] = useState<PendingAction>(null)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [plan, setPlan] = useState('pro')
   const [period, setPeriod] = useState('1m')
   const [role, setRole] = useState('')
+  const loadRequest = useRef(0)
 
-  const load = useCallback(async () => {
-    setError('')
-    const response = await fetch(`/api/admin/users/${params.id}`, { cache: 'no-store' })
-    const json = await response.json()
-    if (!response.ok) { setError(json.error || 'Không tải được user'); return }
-    setData(json)
-    setRole(json.user.adminRole || '')
+  const load = useCallback(async (initializeRole = false) => {
+    const request = ++loadRequest.current
+    setRefreshing(true)
+    setLoadError('')
+    try {
+      const response = await fetch(`/api/admin/users/${params.id}`, { cache: 'no-store' })
+      const json = await response.json()
+      if (request !== loadRequest.current) return
+      if (!response.ok) throw new Error(json.error || 'Không tải được user')
+      setData(json)
+      // A metrics refresh must retain unsaved role/plan/action fields.
+      if (initializeRole) setRole(json.user.adminRole || '')
+    } catch (cause) {
+      if (request === loadRequest.current) setLoadError(cause instanceof Error ? cause.message : 'Không tải được user')
+    } finally {
+      if (request === loadRequest.current) setRefreshing(false)
+    }
   }, [params.id])
 
-  useEffect(() => { queueMicrotask(() => void load()) }, [load])
+  useEffect(() => {
+    let active = true
+    queueMicrotask(() => {
+      if (!active) return
+      // An ID change starts a distinct account/action session, unlike a metrics refresh.
+      setData(null); setPending(null); setReason(''); setRole(''); setPlan('pro'); setPeriod('1m'); setError(''); setLoadError(''); setSaving(false)
+      void load(true)
+    })
+    return () => { active = false; loadRequest.current += 1 }
+  }, [load])
 
   const execute = async (action: string, extra: Record<string, unknown> = {}) => {
+    if (data?.user.id !== params.id) return
     if (reason.trim().length < 3) { setError('Lý do phải có ít nhất 3 ký tự'); return }
+    const request = loadRequest.current
     setSaving(true)
     setError('')
     const response = await fetch(`/api/admin/users/${params.id}`, {
@@ -58,14 +85,19 @@ export default function AdminUserDetailPage() {
       body: JSON.stringify({ action, reason, ...extra }),
     })
     const json = await response.json()
+    // A completed action for the previous account cannot reload it after navigation.
+    if (request !== loadRequest.current) return
     setSaving(false)
     if (!response.ok) { setError(json.error || 'Thao tác thất bại'); return }
-    setPending(null); setReason(''); await load()
+    setPending(null); setReason(''); await load(true)
   }
 
-  if (!data && !error) return <AdminLoading />
-  if (!data) return <div className="text-red-300">{error}</div>
+  if (data && data.user.id !== params.id) return <AdminLoading />
+  if (!data && !loadError) return <AdminLoading />
+  if (!data) return <div className="space-y-3"><p role="alert" className="text-red-300">{loadError}</p><button disabled={refreshing} onClick={() => void load(true)} className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 disabled:opacity-50">Thử lại</button></div>
   const { user } = data
+  const popupAsOf = new Date(data.popupClicksTodayAsOf || '')
+  const popupAsOfLabel = Number.isNaN(popupAsOf.getTime()) ? 'Chưa có thời điểm cập nhật' : popupAsOf.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
   const canWrite = data.currentAdmin.permissions.includes('users.write')
   const canManagePlan = canWrite || data.currentAdmin.permissions.includes('billing.write')
   const canManageRoles = data.currentAdmin.permissions.includes('users.roles')
@@ -88,6 +120,13 @@ export default function AdminUserDetailPage() {
       </div>
 
       {error && <div className="rounded-xl border border-red-900 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>}
+      {loadError && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/30 p-3 text-sm text-red-300">{loadError}</div>}
+
+      <section aria-label="Click popup hôm nay" className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-white">Click popup hôm nay</h2><p className="mt-1 text-xs text-gray-500">Lượt bấm nút mở Shopee/TikTok trên popup bài viết, từ 00:00 giờ Việt Nam (UTC+7).</p><p className="mt-1 text-xs text-gray-500">Số liệu lúc {popupAsOfLabel}</p></div><button type="button" disabled={refreshing || saving} onClick={() => void load()} className="inline-flex items-center gap-1 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />{refreshing ? 'Đang cập nhật...' : 'Cập nhật'}</button></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">{([{ key: 'total', label: 'Tổng click popup' }, { key: 'shopee', label: 'Shopee' }, { key: 'tiktok', label: 'TikTok' }] as const).map(({ key, label }) => <div key={key} className="rounded-xl border border-gray-800 bg-gray-950/40 p-4"><div className="text-xs text-gray-500">{label}</div><div className="mt-1 text-2xl font-bold text-white">{typeof user.popupClicksToday?.[key] === 'number' ? user.popupClicksToday[key].toLocaleString('vi-VN') : '—'}</div></div>)}</div>
+        {!user.popupClicksToday && <p className="mt-3 text-xs text-amber-300">Chưa có số liệu click popup hôm nay.</p>}
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {Object.entries({ Links: user._count.links, Domains: user._count.domains, Notes: user._count.notes, Workspaces: user._count.ownedWorkspaces, Payments: user._count.payments }).map(([label, value]) => <div key={label} className="rounded-xl border border-gray-800 bg-gray-900 p-4"><div className="text-xs text-gray-500">{label}</div><div className="mt-1 text-xl font-bold text-white">{value}</div></div>)}
@@ -118,7 +157,7 @@ export default function AdminUserDetailPage() {
       {canManageRoles && <section className="rounded-2xl border border-gray-800 bg-gray-900 p-5"><h2 className="mb-3 flex items-center gap-2 font-semibold text-white"><Shield className="h-4 w-4" />Phân quyền admin</h2><div className="flex flex-col gap-3 sm:flex-row"><select value={role} onChange={(event) => setRole(event.target.value)} className="rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm"><option value="">Không phải admin</option><option value="support">Support</option><option value="finance">Finance</option><option value="ops">Operations</option><option value="viewer">Viewer</option></select><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Lý do phân quyền" className="flex-1 rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm" /><button onClick={() => execute('set-admin-role', { adminRole: role || null })} className="rounded-lg border border-red-700 px-4 py-2 text-sm text-red-300">Lưu role</button></div></section>}
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <DataSection title="Links gần đây" empty="User chưa có link">{data.links.map((link) => <div key={link.id} className="flex items-center justify-between border-b border-gray-800 py-3 last:border-0"><div className="min-w-0"><div className="truncate text-sm text-white">/{link.shortCode} · {link.title || 'Không tiêu đề'}</div><div className="max-w-md truncate text-xs text-gray-500">{link.originalUrl}</div></div><div className="ml-3 text-right text-xs text-gray-500">{link._count.clicks} clicks<br/><AdminBadge value={link.disabledByAdmin ? 'disabled' : link.isActive ? 'active' : 'cancelled'} /></div></div>)}</DataSection>
+        <DataSection title="Links gần đây" empty="User chưa có link">{data.links.map((link) => <div key={link.id} className="flex items-center justify-between border-b border-gray-800 py-3 last:border-0"><div className="min-w-0"><div className="truncate text-sm text-white">/{link.shortCode} · {link.title || 'Không tiêu đề'}</div><div className="max-w-md truncate text-xs text-gray-500">{link.originalUrl}</div></div><div className="ml-3 text-right text-xs text-gray-500">{link._count.clicks.toLocaleString('vi-VN')} click link<br/>Tổng từ trước đến nay<br/><AdminBadge value={link.disabledByAdmin ? 'disabled' : link.isActive ? 'active' : 'cancelled'} /></div></div>)}</DataSection>
         <DataSection title="Domains" empty="User chưa có domain">{data.domains.map((domain) => <div key={domain.id} className="flex items-center justify-between border-b border-gray-800 py-3 last:border-0"><span className="text-sm text-white">{domain.domain}</span><AdminBadge value={domain.disabledAt ? 'disabled' : domain.verified ? 'verified' : 'pending'} /></div>)}</DataSection>
         <DataSection title="Payment gần đây" empty="Chưa có payment">{data.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-b border-gray-800 py-3 last:border-0"><div><div className="text-sm text-white">{currency.format(payment.amount)}</div><div className="text-xs text-gray-500">{payment.content}</div></div><AdminBadge value={payment.status} /></div>)}</DataSection>
         <DataSection title="Hoạt động gần đây" empty="Chưa có request log">{data.recentActivity.map((item) => <div key={item.id} className="border-b border-gray-800 py-2 text-xs last:border-0"><span className="text-gray-300">{item.method} {item.path}</span><span className="float-right text-gray-600">{new Date(item.createdAt).toLocaleString('vi-VN')}</span></div>)}</DataSection>

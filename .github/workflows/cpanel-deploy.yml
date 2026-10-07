@@ -68,6 +68,11 @@ jobs:
           node scripts/test-rich-editor-video.cjs
           node scripts/test-telegram-media-removal.cjs
 
+      - name: Admin daily popup click regressions
+        run: |
+          node scripts/test-admin-popup-clicks.cjs
+          node scripts/test-admin-popup-clicks-ui.cjs
+
       - name: Fixed content composer regressions
         run: node scripts/test-fixed-content-composer.cjs
 
@@ -107,6 +112,8 @@ jobs:
           scripts/test-telegram-quick-form.cjs
           scripts/test-numeric-post-links.cjs scripts/test-rich-editor-video.cjs
           scripts/test-telegram-media-removal.cjs
+          app/api/admin/users app/admin/users lib/admin-popup-clicks.ts
+          scripts/test-admin-popup-clicks.cjs scripts/test-admin-popup-clicks-ui.cjs
           'app/p7/[code]' lib/public-post-link.ts lib/numeric-post-link-server.ts
           scripts/test-fixed-content-composer.cjs
           scripts/test-post-types-api.cjs scripts/test-post-types-dashboard.cjs
@@ -207,6 +214,8 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
           curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/chinh-sach-bao-mat >/dev/null
           dashboard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
           test "$dashboard_status" = 302 || test "$dashboard_status" = 307

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/lib/admin-auth'
+import { ADMIN_POPUP_CLICKS_TIMEZONE, getAdminUserPopupClicksToday } from '@/lib/admin-popup-clicks'
 
 const PAGE_SIZE = 20
 
 export async function GET(req: NextRequest) {
   const access = await requireAdmin('users.read')
   if (!access.ok) return access.response
+  const now = new Date()
 
   const { searchParams } = req.nextUrl
   const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
@@ -67,12 +69,15 @@ export async function GET(req: NextRequest) {
   ])
 
   const userIds = users.map((user) => user.id)
-  const links = userIds.length
-    ? await prisma.link.findMany({
-        where: { userId: { in: userIds } },
-        select: { userId: true, _count: { select: { clicks: true } } },
-      })
-    : []
+  const [links, popupClicksToday] = await Promise.all([
+    userIds.length
+      ? prisma.link.findMany({
+          where: { userId: { in: userIds } },
+          select: { userId: true, _count: { select: { clicks: true } } },
+        })
+      : Promise.resolve([]),
+    getAdminUserPopupClicksToday(userIds, now),
+  ])
 
   const clickCountByUser = new Map<string, number>()
   for (const link of links) {
@@ -90,13 +95,16 @@ export async function GET(req: NextRequest) {
       domainCount: _count.domains,
       paymentCount: _count.payments,
       clickCount: clickCountByUser.get(user.id) || 0,
+      popupClicksToday: popupClicksToday[user.id],
     })),
     total,
     page,
     pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    popupClicksTodayAsOf: now.toISOString(),
+    popupClicksTimezone: ADMIN_POPUP_CLICKS_TIMEZONE,
     summary: {
       statuses: Object.fromEntries(statusCounts.map((item) => [item.status, item._count.id])),
       plans: Object.fromEntries(planCounts.map((item) => [item.plan, item._count.id])),
     },
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

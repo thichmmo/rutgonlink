@@ -1,9 +1,9 @@
 'use client'
 
-import { Suspense, useCallback, useDeferredValue, useEffect, useState } from 'react'
+import { Suspense, useCallback, useDeferredValue, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Search, UserRoundCog } from 'lucide-react'
+import { RefreshCw, Search, UserRoundCog } from 'lucide-react'
 import { AdminBadge, AdminEmpty, AdminLoading, AdminPagination } from '../_components/AdminUi'
 
 type UserRow = {
@@ -22,6 +22,7 @@ type UserRow = {
   domainCount: number
   paymentCount: number
   clickCount: number
+  popupClicksToday?: { shopee: number; tiktok: number; total: number }
 }
 
 type ResponseData = {
@@ -30,6 +31,8 @@ type ResponseData = {
   page: number
   pages: number
   summary: { statuses: Record<string, number>; plans: Record<string, number> }
+  popupClicksTodayAsOf: string
+  popupClicksTimezone: 'Asia/Ho_Chi_Minh'
 }
 
 const PLAN_LABEL: Record<string, string> = { free: 'Free', pro: 'Pro', ultra: 'Ultra', ultra_plus: 'Ultra+' }
@@ -48,8 +51,12 @@ function UsersContent() {
   const [loginType, setLoginType] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [popupClicksTodayAsOf, setPopupClicksTodayAsOf] = useState('')
+  const requestRef = useRef(0)
 
   const load = useCallback(async () => {
+    // Filter changes and refresh can overlap; only the latest snapshot may win.
+    const request = ++requestRef.current
     setLoading(true)
     setError('')
     const params = new URLSearchParams({ page: String(page) })
@@ -60,20 +67,27 @@ function UsersContent() {
 
     try {
       const response = await fetch(`/api/admin/users?${params}`, { cache: 'no-store' })
+      if (request !== requestRef.current) return
       const data = await response.json()
+      if (request !== requestRef.current) return
       if (!response.ok) throw new Error(data.error || 'Không tải được user')
       setUsers(data.users)
       setTotal(data.total)
       setPages(data.pages)
       setSummary(data.summary)
+      setPopupClicksTodayAsOf(data.popupClicksTodayAsOf || '')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được user')
+      if (request === requestRef.current) setError(err instanceof Error ? err.message : 'Không tải được user')
     } finally {
-      setLoading(false)
+      if (request === requestRef.current) setLoading(false)
     }
   }, [deferredSearch, loginType, page, plan, status])
 
-  useEffect(() => { queueMicrotask(() => void load()) }, [load])
+  useEffect(() => {
+    let active = true
+    queueMicrotask(() => { if (active) void load() })
+    return () => { active = false; requestRef.current += 1 }
+  }, [load])
 
   return (
     <div className="space-y-6">
@@ -81,11 +95,13 @@ function UsersContent() {
         <div>
           <h1 className="text-2xl font-bold text-white">Người dùng</h1>
           <p className="mt-1 text-sm text-gray-500">{total.toLocaleString()} tài khoản theo bộ lọc hiện tại.</p>
+          <p className="mt-1 text-xs text-gray-500">Click popup hôm nay: lượt bấm Shopee/TikTok từ 00:00 giờ Việt Nam (UTC+7).{popupClicksTodayAsOf && <> Cập nhật lúc {new Date(popupClicksTodayAsOf).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.</>}</p>
         </div>
-        <div className="flex gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <AdminBadge value="active" label={`Active ${summary.statuses.active || 0}`} />
           <AdminBadge value="suspended" label={`Khóa ${summary.statuses.suspended || 0}`} />
           <AdminBadge value="deleted" label={`Đã xóa ${summary.statuses.deleted || 0}`} />
+          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1 rounded-lg border border-gray-700 px-3 py-2 text-gray-300 hover:bg-gray-800 disabled:opacity-40"><RefreshCw className="h-3.5 w-3.5" />Cập nhật</button>
         </div>
       </div>
 
@@ -110,9 +126,9 @@ function UsersContent() {
           <div className="p-5 text-red-300">{error}</div>
         ) : users.length === 0 ? <AdminEmpty /> : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-[1200px] text-left text-sm">
               <thead className="border-b border-gray-800 bg-gray-950/50 text-xs uppercase text-gray-500">
-                <tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Gói</th><th className="px-4 py-3">Hoạt động</th><th className="px-4 py-3">Đăng nhập cuối</th><th className="px-4 py-3" /></tr>
+                <tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Gói</th><th className="px-4 py-3">Hoạt động</th><th className="px-4 py-3">Click popup hôm nay</th><th className="px-4 py-3">Đăng nhập cuối</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {users.map((user) => (
@@ -120,7 +136,8 @@ function UsersContent() {
                     <td className="px-4 py-3"><div className="font-medium text-white">#{user.numericId} · {user.name || 'Chưa đặt tên'}</div><div className="text-xs text-gray-500">{user.email}</div><div className="mt-1 text-[11px] text-gray-600">{user.loginType}{user.adminRole ? ` · ${user.adminRole}` : ''}</div></td>
                     <td className="px-4 py-3"><AdminBadge value={user.status} /></td>
                     <td className="px-4 py-3"><AdminBadge value={user.plan} label={PLAN_LABEL[user.plan] || user.plan} />{user.planExpiresAt && <div className="mt-1 text-xs text-gray-500">đến {new Date(user.planExpiresAt).toLocaleDateString('vi-VN')}</div>}</td>
-                    <td className="px-4 py-3 text-xs text-gray-400"><div>{user.linkCount} links · {user.clickCount.toLocaleString()} clicks</div><div>{user.domainCount} domains · {user.paymentCount} payments</div></td>
+                    <td className="px-4 py-3 text-xs text-gray-400"><div>{user.linkCount} links · {user.clickCount.toLocaleString()} click link toàn thời gian</div><div>{user.domainCount} domains · {user.paymentCount} payments</div></td>
+                    <td className="px-4 py-3 text-xs" aria-label={`Click popup hôm nay của ${user.email}`}>{user.popupClicksToday ? <><div className="font-semibold text-white">Tổng {user.popupClicksToday.total.toLocaleString()}</div><div className="mt-1 text-orange-300">Shopee: {user.popupClicksToday.shopee.toLocaleString()}</div><div className="text-sky-300">TikTok: {user.popupClicksToday.tiktok.toLocaleString()}</div></> : <span className="text-gray-500">Chưa có dữ liệu</span>}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('vi-VN') : 'Chưa ghi nhận'}</td>
                     <td className="px-4 py-3 text-right"><Link href={`/admin/users/${user.id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-700 px-3 py-2 text-xs text-gray-300 hover:bg-gray-800"><UserRoundCog className="h-4 w-4" /> Chi tiết</Link></td>
                   </tr>
