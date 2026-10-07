@@ -48,3 +48,7 @@ Run `node scripts/test-post-types-api.cjs` and `node scripts/test-post-types-das
 ## TikTok affiliate URL isolation (2026-10-07)
 
 `node scripts/test-popup-affiliate.cjs` covers Android-source preservation, iOS-only conversion, shared 8192-character input/output/persistence validation, warnings and stale UI requests. Run it before packaging; scoped lint includes the URL validator and harness. No schema migration is required because popup destinations already use TEXT/JSON storage.
+
+
+## Android native launch (2026-10-07)
+The existing full popup runtime/affiliate suites cover the Android native PDP and raw Shopee handoff. Scoped CI lint now includes `lib/popup-settings-server.ts`, whose request-only short-link preparation must remain separate from saved Android/iOS URLs. Verify local focused native checks before the full deployment workflow.

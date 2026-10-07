@@ -16,6 +16,13 @@ Expand TikTok short links on the server and derive the legacy `www.tiktok.com/vi
   Runtime OneLink preparation and other existing callers omit this option and
   keep their existing resolution behavior. Final converted output is also checked
   by the affiliate endpoint.
+- Android popup preparation additionally uses `preserveRawUrl` and an exact
+  `allowedHosts` list. Absolute signed redirect values are validated without
+  serializing their query; relative paths resolve against the current URL while
+  an explicit raw query is kept intact. These options are opt-in, leaving existing
+  editor/iOS resolution unchanged.
+  Product detection stops before fetching the product page, and every followed
+  redirect is validated and bounded before its request.
 
 ## Verification
 

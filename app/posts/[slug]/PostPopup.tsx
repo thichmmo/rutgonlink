@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
 import { sendPopupClick, type PopupClickTracking } from '@/lib/popup-click-client'
@@ -174,13 +174,14 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
     return () => window.clearInterval(timer)
   }, [applies, ready, step, steps])
 
-  function advance(useWebUrl = false) {
-    if (document.documentElement.hasAttribute('data-post-guard-blocked')) return
-    if (!applies || !ready || (pendingOpenRef.current && !pendingOpenRef.current.timedOut)) return
-    if (retryStep === null && (step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length)) return
+  function advance(useWebUrl = false, nativeEvent?: MouseEvent<HTMLAnchorElement>) {
+    if (document.documentElement.hasAttribute('data-post-guard-blocked')) return nativeEvent?.preventDefault()
+    if (!applies || !ready || (pendingOpenRef.current && !pendingOpenRef.current.timedOut)) return nativeEvent?.preventDefault()
+    if (retryStep === null && (step !== stepRef.current || Date.now() < readyAtRef.current || stepRef.current >= steps.length)) return nativeEvent?.preventDefault()
     const fromStep = retryStep ?? stepRef.current
     const current = steps[fromStep]
     if (!current?.url) {
+      nativeEvent?.preventDefault()
       setError(`Chưa cấu hình link ${current?.platform || 'popup'}.`)
       return
     }
@@ -193,7 +194,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
     // the browser asks for consent. iOS still snapshots the next popup immediately.
     flushSync(() => {
       setOpening(true)
-      setRetryStep(current.openMode === 'anchor-same-tab' ? fromStep : null)
+      setRetryStep(isAndroid ? fromStep : null)
       commitStep(nextStep)
       setError('')
     })
@@ -213,8 +214,11 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
 
     let opened: Window | null = null
     try {
-      if (current.openMode === 'anchor-new-tab' || current.openMode === 'anchor-same-tab') {
-        // Android intents must run inside this tap, never after a fetch/timer or in a blank child.
+      // A visible Android anchor uses the browser's trusted default link action,
+      // matching the phone-verified diagnostic. Only fallback/iOS calls need a bridge.
+      if (nativeEvent) {
+        // State is already persisted; do not cancel or synthesize navigation.
+      } else if (current.openMode === 'anchor-new-tab' || current.openMode === 'anchor-same-tab') {
         const anchor = document.createElement('a')
         anchor.href = useWebUrl ? current.url : current.launchUrl
         anchor.target = current.openMode === 'anchor-same-tab' ? '_self' : '_blank'
@@ -229,7 +233,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
       pendingOpenRef.current = null
       setOpening(false)
       commitStep(fromStep)
-      if (current.openMode === 'anchor-same-tab') setRetryStep(fromStep)
+      if (isAndroid) setRetryStep(fromStep)
       setError('Không thể mở liên kết, hãy thử lại.')
       return
     }
@@ -244,7 +248,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
     // round trip or timeout, so a second tap cannot launch TikTok immediately.
     window.setTimeout(() => {
       if (pendingOpenRef.current !== pending || pending.leftPage || document.visibilityState === 'hidden') return
-      if (current.openMode === 'anchor-same-tab') {
+      if (isAndroid) {
         // A quiet webview is not proof of failure. Offer retry without rewinding the
         // saved next step; a slow pagehide/app return must still resume correctly.
         pending.timedOut = true
@@ -260,7 +264,7 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
       if (isMobile) return
       commitStep(fromStep)
       setError('Trình duyệt đã chặn tab mới. Hãy cho phép popup rồi thử lại.')
-    }, current.openMode === 'anchor-same-tab' ? 2500 : 900)
+    }, isAndroid ? 2500 : 900)
   }
 
   const displayStep = retryStep ?? step
@@ -284,11 +288,12 @@ export default function PostPopup({ postId, popup, userAgent, tracking }: { post
         <div className="mb-1 flex items-center justify-between text-xs font-semibold text-gray-500"><span role="timer" aria-live="off" aria-label={`Thời gian chờ ${current.platform}`}>{displayRemaining > 0 ? `Còn ${displayRemaining} giây` : 'Sẵn sàng'}</span><span>{delay}s</span></div>
         <div className="h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label={`Bộ đếm ${current.platform}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(timerPercent)} aria-valuetext={displayRemaining > 0 ? `Còn ${displayRemaining} giây` : 'Sẵn sàng'}><div className="h-full rounded-full bg-[#d61f51] transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${timerPercent}%` }} /></div>
       </div>
-      <button type="button" onClick={() => advance()} disabled={displayRemaining > 0 || opening} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>
+      {isAndroid ? <a data-popup-native-link="" role="button" href={current.launchUrl} target={current.openMode === 'anchor-new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" aria-disabled={displayRemaining > 0 || opening} tabIndex={displayRemaining > 0 || opening ? -1 : 0} onClick={event => advance(false, event)} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); event.currentTarget.click() } }} className={`mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white no-underline transition hover:bg-black sm:h-[72px] sm:text-2xl ${displayRemaining > 0 || opening ? 'cursor-wait opacity-60' : ''}`}>{buttonLabel}</a>
+        : <button type="button" onClick={() => advance()} disabled={displayRemaining > 0 || opening} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>}
       <p className="mt-4 text-center text-base font-medium text-[#9ba3b3] sm:text-lg">{progress}</p>
       {forceMessage && <p className="mt-2 text-center text-xs text-amber-600">{forceMessage}</p>}
       {error && <p role="alert" className="mt-2 text-center text-xs text-amber-700">{error}</p>}
-      {error && <button type="button" data-popup-web-fallback={current.openMode === 'anchor-same-tab' ? '' : undefined} onClick={() => advance(current.openMode === 'anchor-same-tab')} className="mx-auto mt-3 flex items-center gap-1 text-xs font-semibold text-[#d61f51] hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {current.openMode === 'anchor-same-tab' ? 'Mở liên kết web' : 'Thử lại'}</button>}
+      {error && <button type="button" data-popup-web-fallback={isAndroid ? '' : undefined} onClick={() => advance(isAndroid)} className="mx-auto mt-3 flex items-center gap-1 text-xs font-semibold text-[#d61f51] hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {isAndroid ? 'Mở liên kết web' : 'Thử lại'}</button>}
     </div>
   </div>
 }

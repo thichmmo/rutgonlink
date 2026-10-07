@@ -5,26 +5,60 @@ const FACEBOOK_IN_APP_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid/i
 const TIKTOK_HOST_PATTERN = /(^|\.)tiktok\.com$/i
 const TIKTOK_DEEP_LINK_LABEL = 'click_wap_p_product_detail_t_launch_pop_up_s_product_detail_e__f_product_detail_fp__fps_affiliate_links_rf_product_detail'
 
-// These vendor hosts publish Android assetlinks. Unknown shorteners stay HTTPS.
-const ANDROID_APP_HOSTS = {
-  SHOPEE: ['shopee.vn', 'www.shopee.vn', 's.shopee.vn'],
-  TIKTOK: ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com'],
-}
+export const TIKTOK_ANDROID_HOSTS = ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com']
+const MAX_ANDROID_LAUNCH_URL_LENGTH = 8192
 
-export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform) {
+function parseAndroidTikTokUrl(value: string) {
   try {
     const parsed = new URL(value)
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port
-      || !ANDROID_APP_HOSTS[platform].includes(parsed.hostname)
-      || !value.startsWith('https://') || /[#\s\\]/.test(value)) return value
-    // Keep the signed URL byte-for-byte; never rebuild query parameters with URLSearchParams.
-    // Pin the vendor's Vietnam Android app; a package-less HTTPS intent can resolve
-    // back to the browser instead of TikTok. Keep the source URL as the web fallback.
-    const appPackage = platform === 'SHOPEE' ? 'package=com.shopee.vn;' : 'package=com.ss.android.ugc.trill;'
-    return `intent://${value.slice('https://'.length)}#Intent;scheme=https;${appPackage}S.browser_fallback_url=${encodeURIComponent(value)};end`
+      || !TIKTOK_ANDROID_HOSTS.includes(parsed.hostname)
+      || value.length > MAX_ANDROID_LAUNCH_URL_LENGTH
+      || !value.startsWith('https://') || /[#\s\\]/.test(value)) return null
+    // Reject malformed UTF-16 before intent encoding rather than throwing on tap.
+    encodeURIComponent(value)
+    return parsed
   } catch {
-    return value
+    return null
   }
+}
+
+export function buildTikTokAndroidLaunchUrl(productUrl: string, fallbackUrl = productUrl) {
+  const parsed = parseAndroidTikTokUrl(productUrl)
+  if (!parsed || !parseAndroidTikTokUrl(fallbackUrl)
+    || !/\/(?:view\/product|pdp)\//.test(parsed.pathname)
+    || !/\/\d{15,25}\/?$/.test(parsed.pathname)) return fallbackUrl
+
+  // Match the native PDP link verified on the user's Android device. The signed
+  // product is an opaque parameter: decoding params_url returns its exact bytes.
+  const native = new URL('snssdk1180://ec/pdp')
+  native.searchParams.set('biz_type', '0')
+  native.searchParams.set('enter_method', 'web')
+  native.searchParams.set('is_commerce', '1')
+  native.searchParams.set('need_mall', '1')
+  native.searchParams.set('needlaunchlog', '1')
+  native.searchParams.set('page_name', 'reflow_pdp')
+  native.searchParams.set('params_url', productUrl)
+  const result = `intent://${native.toString().slice('snssdk1180://'.length)}#Intent;scheme=snssdk1180;package=com.ss.android.ugc.trill;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`
+  return result.length <= MAX_ANDROID_LAUNCH_URL_LENGTH ? result : fallbackUrl
+}
+
+export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: string) {
+  if (typeof preparedLaunchUrl === 'string' && preparedLaunchUrl.startsWith('intent://ec/pdp?')) {
+    try {
+      const native = new URL(preparedLaunchUrl.replace(/^intent:/, 'snssdk1180:'))
+      const productUrl = native.searchParams.get('params_url')
+      // Derived metadata is accepted only if every field and the original-source
+      // fallback match our builder; settings normalization drops it on all writes.
+      if (productUrl && buildTikTokAndroidLaunchUrl(productUrl, value) === preparedLaunchUrl) return preparedLaunchUrl
+    } catch { /* Invalid or stale metadata falls back to the original source. */ }
+  }
+  return buildTikTokAndroidLaunchUrl(value)
+}
+
+export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform) {
+  // The user verified the original HTTPS Shopee anchor, not an intent wrapper.
+  return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
 }
 
 export function isTikTokOneLinkUrl(value: string) {
@@ -108,7 +142,7 @@ export function getPopupLinkOpenMode(
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
-  if (/android/i.test(options.userAgent)) return 'anchor-same-tab'
+  if (/android/i.test(options.userAgent)) return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   const isIosFacebook = isIosFacebookUserAgent(options.userAgent)
 
   // Let Facebook handle the link action before allocating a script-opened blank webview.

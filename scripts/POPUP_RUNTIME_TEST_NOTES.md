@@ -24,7 +24,8 @@ Short TikTok links are prepared on the server before either popup runtime mounts
 Tests mock the redirect to a signed product URL and assert it becomes the same
 OneLink as a full product URL, without another network request on the click. They
 also cover redirect validation, one deadline for the chain, cache coalescing/expiry,
-failed lookup retry, unchanged Android/Safari/custom iOS URLs, and Shopee return.
+failed lookup retry, unchanged Safari/custom iOS URLs, and Shopee return. Android
+preparation has a separate source/cache and native-PDP contract below.
 Run `node scripts/test-popup-runtime.cjs`; no external link is contacted by these tests.
 Use `POPUP_TEST_ROOT` with `--shortlink-baseline` to reproduce the previous short
 TikTok `new-tab` branch on a source snapshot.
@@ -75,17 +76,32 @@ Telegram render helpers are included in the source loader so ordinary and Telegr
 post changes still exercise the existing popup/inspection runtime unchanged.
 Verify: `node scripts/test-popup-runtime.cjs`.
 
-## Android foreground handoff
+## Android native links and foreground handoff
 
-Run `node scripts/test-popup-runtime.cjs --android-check` for the focused Android
-Chrome/Facebook checks. Known Shopee/TikTok HTTPS destinations use an attached
-`_self` intent link with the untouched affiliate URL encoded as browser fallback.
-Shopee keeps `com.shopee.vn`; TikTok explicitly targets the vendor-published
-Vietnam package `com.ss.android.ugc.trill` rather than a package-less web intent.
-Unknown hosts and fragment-bearing URLs remain unchanged HTTPS links. Tests check
-independent Android/iOS fields, long signed queries, invalid/unsupported hosts,
-persisted next-step handoff, countdowns, one count per accepted tap,
-cookie-only reload, zero cooldown, navigation exceptions and denied storage.
+Run `node scripts/test-popup-runtime.cjs --android-native-check` (or
+`--android-check`) for the focused Android Chrome/Facebook checks. The 2026-10-07
+device diagnostic confirmed TikTok's `snssdk1180://ec/pdp` intent with package
+`com.ss.android.ugc.trill` and Shopee's original HTTPS link in `_blank`. Regression
+tests require the exact seven-field native construction and raw signed
+`params_url`, with the original Android source encoded as browser fallback.
+Shopee must remain raw HTTPS without wrapping in an HTTPS intent.
+
+Android primary CTAs are visible real anchors: Shopee `_blank`, TikTok `_self`.
+The harness dispatches the click through actual runtime handlers, then observes
+whether default navigation remained permitted. It checks attachment, visibility,
+same-anchor identity, persisted progress before navigation, and cancellation for
+countdown/pending taps. Only the test observer prevents external JSDOM navigation.
+This is not a trusted native-device click or evidence that an app opened.
+
+Android short links resolve before rendering, not from a click handler. Tests
+check independent Android/iOS fields and cache keys, coalescing, five-minute cache
+expiry, brief failed-lookup caching, timeout/non-product fallback, direct products
+without fetch, no network request on taps, request-only metadata validation and
+normalization stripping. Absolute, relative and protocol-relative signed query
+bytes survive unchanged. Invalid redirects, malformed UTF-16 and oversized native
+links fall back without truncating the original source. Other coverage includes
+countdowns, one count per accepted tap, cookie-only reload, zero cooldown, explicit
+web-fallback exceptions and denied storage.
 
 A pending Android launch keeps the clicked popup visible while native app-opening
 confirmation is displayed. A 2500 ms wait without departure offers an explicit
@@ -99,10 +115,21 @@ A separate expiring Android session marker covers zero-cooldown browser Back
 when the article remounts without BFCache after the web fallback. Tests assert
 that only a `back_forward` navigation consumes this completion once; fresh
 navigation, reload and expiry remove it and still start with Shopee. Native
-launch exceptions must also expose the explicit HTTPS fallback on both routes.
-The harness mocks anchor navigation, not Android's IntentResolver: these checks
-verify URI and state contracts, not whether a physical device has the target app
-installed or whether Facebook permits external app launches.
+explicit web-fallback exceptions restore progress on both routes. The harness
+mocks navigation, not Android's IntentResolver: these checks verify URI and state
+contracts, not installed apps or Facebook's external-app confirmation. Physical
+production verification remains separate from these deterministic checks.
+
+Verification: `node scripts/test-popup-runtime.cjs --android-native-check` passed
+38 scenarios; `node scripts/test-popup-runtime.cjs` passed 139 scenarios.
+`--export-fixture <directory>` also emits `route-android.html` with a direct product
+fixture and no external resolver request for trusted-browser default-action QA.
+
+Use `POPUP_TEST_ROOT` with `--android-native-baseline` against commit `bc9fbd8` to
+reproduce the old HTTPS-intent/hidden-anchor `_self` path for both platforms.
+It is also the rollback assertion; `--android-native-check` validates the changed
+construction. Baseline output and focused output explicitly retain native-device
+status `UNVERIFIED` because Node mocks cannot establish a physical app launch.
 
 For baseline/rollback evidence, set `POPUP_TEST_ROOT` to the original source
 snapshot and run `node scripts/test-popup-runtime.cjs --android-baseline`. It

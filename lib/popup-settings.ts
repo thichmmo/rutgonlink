@@ -1,4 +1,4 @@
-import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokAndroidLaunchUrl, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
 
 export type PopupPlatformSettings = {
   enabled: boolean
@@ -13,6 +13,8 @@ export type PopupTikTokSettings = PopupPlatformSettings & {
   androidUrl: string
   iosUrl: string
   iosMode: 'desktop' | 'onelink'
+  // Request-only launch metadata. normalizePopupSettings deliberately never reads it.
+  androidLaunchUrl?: string
 }
 
 export type PopupSettings = {
@@ -134,7 +136,7 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   return {
     platform: 'TikTok',
     url,
-    launchUrl: isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(url, 'TIKTOK') : url,
+    launchUrl: isAndroidUserAgent(userAgent) ? getTikTokAndroidLaunchUrl(url, settings.tiktok.androidLaunchUrl) : url,
     openMode: getPopupLinkOpenMode(url, 'TIKTOK', { userAgent }),
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,

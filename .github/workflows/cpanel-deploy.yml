@@ -85,7 +85,7 @@ jobs:
           app/dashboard/popups app/dashboard/posts
           app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
-          lib/content-management.ts lib/popup-settings.ts lib/popup-link.ts lib/public-post-guard.ts
+          lib/content-management.ts lib/popup-settings.ts lib/popup-settings-server.ts lib/popup-link.ts lib/public-post-guard.ts
           lib/popup-affiliate-url.ts lib/tiktok-link.ts scripts/test-popup-affiliate.cjs
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs

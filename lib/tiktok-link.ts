@@ -63,19 +63,36 @@ function productIdFromUrl(parsed: URL) {
   return isProductPath ? parsed.pathname.match(/\/(\d{15,25})\/?$/)?.[1] : undefined
 }
 
-export async function resolveTikTokUrl(inputUrl: string, options: { signal?: AbortSignal; stopAtProduct?: boolean; maxUrlLength?: number } = {}) {
+export async function resolveTikTokUrl(inputUrl: string, options: {
+  signal?: AbortSignal
+  stopAtProduct?: boolean
+  maxUrlLength?: number
+  preserveRawUrl?: boolean
+  allowedHosts?: readonly string[]
+} = {}) {
   const checkLength = (url: string) => {
     if (options.maxUrlLength !== undefined && url.length > options.maxUrlLength) {
       throw new TikTokLinkError(`Link TikTok không được vượt quá ${options.maxUrlLength} ký tự`)
     }
   }
-  let currentUrl = parseTikTokUrl(inputUrl).href
+  const validateUrl = (value: string) => {
+    const parsed = parseTikTokUrl(value)
+    if (options.allowedHosts && !options.allowedHosts.includes(parsed.hostname)) {
+      throw new TikTokLinkError('TikTok chuyển hướng tới domain không hợp lệ', 502)
+    }
+    if (options.preserveRawUrl && (!value.startsWith('https://') || /[#\s\\]/.test(value))) {
+      throw new TikTokLinkError('Link TikTok không hợp lệ')
+    }
+    return parsed
+  }
+  const parsedInput = validateUrl(inputUrl)
+  let currentUrl = options.preserveRawUrl ? inputUrl : parsedInput.href
   checkLength(currentUrl)
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     // The signed product redirect is enough for a popup OneLink. Loading its web
     // page can redirect again to login and discard the usable product destination.
-    if (options.stopAtProduct && productIdFromUrl(parseTikTokUrl(currentUrl))) return currentUrl
+    if (options.stopAtProduct && productIdFromUrl(validateUrl(currentUrl))) return currentUrl
     let response: Response
 
     try {
@@ -102,14 +119,26 @@ export async function resolveTikTokUrl(inputUrl: string, options: { signal?: Abo
 
     if (isRedirect && location) {
       const nextUrl = new URL(location, currentUrl)
-      if (nextUrl.protocol !== 'https:' || nextUrl.username || nextUrl.password || nextUrl.port || !isTikTokHost(nextUrl.hostname)) {
+      // Android validates absolute redirects without reserializing them. Relative
+      // paths resolve normally, but their explicit signed query remains opaque.
+      // Legacy editor/iOS callers retain the existing normalized URL behavior.
+      let nextValue = nextUrl.href
+      if (options.preserveRawUrl) {
+        if (/[#\s\\]/.test(location)) throw new TikTokLinkError('TikTok chuyển hướng tới domain không hợp lệ', 502)
+        const queryAt = location.indexOf('?')
+        if (location.startsWith('https://')) nextValue = location
+        else if (queryAt >= 0) nextValue = nextUrl.href.split('?')[0] + location.slice(queryAt)
+      }
+      try {
+        validateUrl(nextValue)
+      } catch {
         throw new TikTokLinkError('TikTok chuyển hướng tới domain không hợp lệ', 502)
       }
 
       // The editor's optional URL budget applies before the next network request.
       // Runtime app-launch resolution keeps its existing behavior when omitted.
-      checkLength(nextUrl.href)
-      currentUrl = nextUrl.href
+      checkLength(nextValue)
+      currentUrl = nextValue
       continue
     }
 

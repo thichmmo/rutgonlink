@@ -78,3 +78,11 @@ return shows the next step. iOS keeps its existing blur/focus snapshot behavior.
 Shopee's launch URL is unchanged (confirmed on the user's device after Continue).
 Verify `node scripts/test-popup-runtime.cjs --android-check` and full runtime;
 `--android-prompt-baseline` reproduces the prior flash/prompt-focus regression.
+
+
+## Android native launch parity (2026-10-07)
+
+- Standalone public popup uses a visible real anchor for Android primary actions, matching the phone-confirmed diagnostic: Shopee original HTTPS in `_blank`; TikTok native PDP intent in `_self`. The handler persists progress and records the accepted click synchronously, then lets the anchor navigate normally.
+- Countdown, repeated taps and blocked guards cancel default navigation. Android keeps the current popup pending regardless of anchor target; blur alone does not advance. A genuine departure/return resumes the next step; retries retain the original web URL. iOS launch paths remain unchanged.
+- The inline renderer updates the existing anchor instead of detaching it before default navigation. React retains the same anchor while holding the clicked step.
+- Verification: `node scripts/test-popup-runtime.cjs --android-native-check`, the full runtime suite, click/affiliate regressions, ESLint and TypeScript. Physical user confirmed the isolated native TikTok link opens the correct product in Chrome Android and original Shopee HTTPS opens the app directly in Facebook. Integrated production flow still needs its own deployment check.
