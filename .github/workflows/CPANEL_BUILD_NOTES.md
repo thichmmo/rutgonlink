@@ -81,3 +81,13 @@ platform breakdowns, zero values, manual refresh and existing user actions.
 Scoped lint includes both admin user endpoints/pages and the aggregation helper.
 After deployment, both admin read endpoints must still return 403 without an
 authorized session. No database migration is required.
+
+## Article video resolution (2026-10-08)
+
+CI runs `node scripts/test-article-video.cjs` and
+`node scripts/test-article-video-ui.cjs` for static HTML extraction, bounded
+public-network requests, authorization and insertion/refresh race handling.
+`node scripts/test-content-media.cjs` preserves existing direct video and social
+embed behavior. Packaged Linux runtime and production smoke checks require
+unauthenticated resolver POSTs to return 401. No video is downloaded to hosting
+and no migration is added.

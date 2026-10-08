@@ -304,7 +304,7 @@ async function run() {
   uploadPending = deferred()
   await upload('new_photo.png', 'image/png')
   check(() => assert.ok(field('Bài thường (không Telegram)').matches(':disabled'), 'Upload cannot be unmounted by a mode switch'))
-  check(() => assert.equal(button('Đang tải tệp...', composer()).disabled, true))
+  check(() => assert.equal(button('Đang xử lý video/ảnh...', composer()).disabled, true))
   await click(field('Bài thường (không Telegram)'))
   check(() => assert.equal(editor(), null))
   await React.act(async () => uploadPending.resolve(response({ url: '/uploads/content/new-photo.png' })))

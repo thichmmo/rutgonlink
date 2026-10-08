@@ -57,7 +57,7 @@ const button = text => [...document.querySelectorAll('button')].find(item => ite
 async function click(element) { assert.ok(element, 'Click target exists'); await React.act(async () => element.click()) }
 async function type(value) {
   await React.act(async () => {
-    const element = document.querySelector('textarea[placeholder="Dán URL video YouTube/Vimeo/TikTok/... hoặc link MP4"]')
+    const element = document.querySelector('textarea[placeholder^="Dán URL video"]')
     Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set.call(element, value)
     element.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   })

@@ -1,0 +1,7 @@
+# Article video resolution
+
+`article-video.ts` fetches bounded static HTML and returns the first public direct MP4/WebM/OGG/OGV source from actual video/source tags. Relative sources honor the final article URL and first base href. The existing sanitize-html parser decodes attributes once; scripts, comments, raw-text and inert containers are excluded, including permanent plaintext mode. Signed query bytes, duplicate keys and plus/percent escapes must survive URL resolution unchanged; unsupported/blob/manifest/iframe/opaque sources are skipped.
+
+Only HTTPS URLs without credentials/custom ports and at most 8192 characters are accepted. All DNS answers must be public unicast; literal addresses are checked directly. Article sockets pin a validated address, repeated for each of at most three redirects. The shared 10-second deadline includes DNS, headers, body, redirects and candidate-host checks. HTML is capped at 500,000 streamed bytes; non-HTML, compressed, oversized and interrupted responses fail with safe messages. Candidate hosts get DNS checks only: no MP4 requests, downloads, scripts or writes. An authenticated API exposes this helper; it does not reuse the affiliate resolver's platform-specific rules.
+
+Verified: `node scripts/test-article-video.cjs` (64 scenarios), scoped ESLint and isolated helper TypeScript check. Real article/API/form and combined build checks are performed by the coordinating task.
