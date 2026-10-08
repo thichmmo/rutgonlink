@@ -91,3 +91,14 @@ public-network requests, authorization and insertion/refresh race handling.
 embed behavior. Packaged Linux runtime and production smoke checks require
 unauthenticated resolver POSTs to return 401. No video is downloaded to hosting
 and no migration is added.
+
+## Media upload insertion (2026-10-08)
+
+CI runs `node scripts/test-rich-editor-upload.cjs` with browser-like refusal of
+native insertion into a locked editor, plus `node scripts/test-content-upload.cjs`
+with real multipart/filesystem serving and the installed Next body cloner. The
+51MiB Proxy cap preserves permitted 50MiB videos plus multipart overhead; API
+image/video limits remain 8MiB/50MiB. Packaged-runtime and production probes
+require unauthenticated upload POSTs to return 401 before parsing. No migration
+is added. Browser file-picker uploads/playback are checked separately on a local
+real-API fixture; CI transport bytes do not prove codec playback or hosting ingress.

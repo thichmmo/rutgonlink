@@ -151,11 +151,30 @@ export default function RichEditor({ value, onChange, onUpload, canUseRawHtml = 
   function insertHtml(html: string) {
     if (!html) return
     if (sourceMode) { onChange(value + html); return }
-    editorRef.current?.focus()
+    const editor = editorRef.current
+    if (!editor) return
+    editor.focus()
     restoreSelection()
-    document.execCommand('insertHTML', false, html)
+    if (!document.execCommand('insertHTML', false, html)) {
+      // Uploads keep contentEditable locked. Native insertion can decline there;
+      // insert at the saved caret without unlocking the form or losing its body.
+      const selection = window.getSelection()
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+      if (!range || !editor.contains(range.commonAncestorContainer)) throw new Error('Không thể chèn media vào nội dung hiện tại. Hãy thử lại.')
+      const fragment = range.createContextualFragment(html)
+      const last = fragment.lastChild
+      range.deleteContents()
+      range.insertNode(fragment)
+      if (last) {
+        range.setStartAfter(last)
+        range.collapse(true)
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        savedRangeRef.current = range.cloneRange()
+      }
+    }
     clearVideoSelection()
-    onChange(editorRef.current ? richEditorHtml(editorRef.current) : '')
+    onChange(richEditorHtml(editor))
   }
 
   function insertImage(url: string) {

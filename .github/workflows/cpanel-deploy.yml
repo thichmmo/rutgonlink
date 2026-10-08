@@ -92,8 +92,11 @@ jobs:
           node scripts/test-popup-timing.cjs
           node scripts/test-popup-timing-api.cjs
 
-      - name: Persistent content upload path regressions
-        run: node scripts/test-content-upload-path.cjs
+      - name: Content upload regressions
+        run: |
+          node scripts/test-content-upload-path.cjs
+          node scripts/test-content-upload.cjs
+          node scripts/test-rich-editor-upload.cjs
 
       - name: Lint
         run: >-
@@ -106,6 +109,7 @@ jobs:
           lib/popup-affiliate-url.ts lib/tiktok-link.ts scripts/test-popup-affiliate.cjs
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
+          next.config.ts scripts/test-content-upload.cjs scripts/test-rich-editor-upload.cjs
           scripts/test-popup-timing.cjs scripts/test-popup-timing-api.cjs
           app/api/popup-clicks app/api/popup-stats
           app/dashboard/PopupClickStats.tsx app/dashboard/PopupAnalytics.tsx
@@ -158,10 +162,11 @@ jobs:
             popups_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/popups || true)"
             posts_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/posts || true)"
             video_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/content/resolve-video || true)"
-            if [ "$root_status" = 200 ] && [ "$popups_status" = 401 ] && [ "$posts_status" = 401 ] && [ "$video_status" = 401 ]; then exit 0; fi
+            upload_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 4 --request POST --data 'upload-auth-probe' -H 'Host: rutgonlink.site' http://127.0.0.1:3012/api/content/upload || true)"
+            if [ "$root_status" = 200 ] && [ "$popups_status" = 401 ] && [ "$posts_status" = 401 ] && [ "$video_status" = 401 ] && [ "$upload_status" = 401 ]; then exit 0; fi
             sleep 2
           done
-          echo "Preflight failed: root=$root_status popups=$popups_status posts=$posts_status video=$video_status" >&2
+          echo "Preflight failed: root=$root_status popups=$popups_status posts=$posts_status video=$video_status upload=$upload_status" >&2
           exit 1
         env:
           DATABASE_URL: mysql://build:build@127.0.0.1:3306/build
@@ -224,6 +229,7 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
           curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/chinh-sach-bao-mat >/dev/null

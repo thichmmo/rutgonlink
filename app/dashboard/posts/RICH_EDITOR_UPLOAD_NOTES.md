@@ -1,0 +1,7 @@
+# Rich editor upload insertion
+
+Successful server uploads previously attempted native `insertHTML` while the editor still had `contentEditable=false`. Chrome declined insertion, but the form displayed a success message with no new image/video in the body. This was reproduced with actual PostManager, native file selection, multipart API storage and static media serving.
+
+The editor still attempts native insertion first to retain its normal editing/undo behavior. If the command declines, it inserts the prepared media fragment at the restored saved range, updates the caret and emits the complete body. Upload controls stay locked until insertion finishes. Existing mixed content, source mode and stale-response invalidation retain their behavior. An unavailable range surfaces an insertion error instead of claiming success.
+
+Verification: `node scripts/test-rich-editor-upload.cjs` tests actual TSX with a native-command mock that refuses locked targets, covering image/video files, clipboard images, saved caret/selected text, successive uploads, mixed content, source mode, errors/retry, duplicate actions, closure and data-image fallback. The test fails against the prior source and passes with this fix. Existing rich-editor-video, Telegram-dashboard, post-types-dashboard and article-video-UI checks remain passing. Real browser insertion/playback and local API/FS checks are recorded separately by the coordinating task; no production post is saved by these tests.

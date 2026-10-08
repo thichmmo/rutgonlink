@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  experimental: {
+    // Proxy clones multipart bodies; keep the 50MiB video limit plus form overhead intact.
+    proxyClientMaxBodySize: '51mb',
+  },
     async headers() {
     return [
       {
