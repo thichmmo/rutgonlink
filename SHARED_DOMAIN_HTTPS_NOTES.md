@@ -1,0 +1,7 @@
+# Shared-domain HTTPS transport
+
+The proxy now upgrades requests on the exact `SHARED_DOMAINS` allowlist to HTTPS when Cloudflare's trusted `cf-visitor` reports `scheme=http`. The redirect is 308 and keeps the same public hostname, path and original query bytes. Cloning the request URL prevents a leading `//` path from selecting an external host; Passenger's internal hostname/port never becomes the redirect destination.
+
+Existing main-domain canonical behavior and all API/auth restrictions remain intact. HTTPS edge visitors are not redirected merely because Passenger or `x-forwarded-proto` reports HTTP. Missing/malformed edge metadata, local development, unknown hosts and database-configured custom domains retain their prior behavior. Custom-domain HTTPS enforcement needs independently confirmed domain ownership/TLS readiness; this synchronous proxy intentionally does not redirect arbitrary Hosts or add shared domains to `APP_ALLOWED_HOSTS`. The trusted Cloudflare header must be supplied/overwritten by the deployment edge.
+
+This fixes transport consistency, not Facebook comment classification. The original Mesale guard/noscript behavior is unchanged. Verify with `node scripts/test-shared-domain-https.cjs`, scoped ESLint and TypeScript. The focused suite loads the actual proxy, site config, shared allowlist and request-log filter with real NextRequest/NextResponse; only authentication and network side effects are isolated. Production HTTP/HTTPS verification is performed separately after an authorized deployment.

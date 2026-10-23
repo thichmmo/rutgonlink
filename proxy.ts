@@ -2,6 +2,7 @@
 import { getToken } from "next-auth/jwt";
 import { isGarbageRequestLog } from "@/lib/request-log-filter";
 import { getSiteUrl, isMainAppHostname } from "@/lib/site-config";
+import { SHARED_DOMAINS } from "@/lib/shared-domains";
 
 function parseUA(ua: string) {
   const l = ua.toLowerCase();
@@ -28,17 +29,17 @@ export async function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
   const isLocalRequest = hostname === "localhost" || hostname === "127.0.0.1";
+  const cloudflareVisitor = req.headers.get("cf-visitor");
+  let visitorScheme: string | undefined;
+  if (cloudflareVisitor) {
+    try {
+      visitorScheme = (JSON.parse(cloudflareVisitor) as { scheme?: string }).scheme;
+    } catch {
+      visitorScheme = undefined;
+    }
+  }
   if (!isLocalRequest && isMainAppHostname(hostname)) {
     const primaryUrl = new URL(getSiteUrl());
-    const cloudflareVisitor = req.headers.get("cf-visitor");
-    let visitorScheme: string | undefined;
-    if (cloudflareVisitor) {
-      try {
-        visitorScheme = (JSON.parse(cloudflareVisitor) as { scheme?: string }).scheme;
-      } catch {
-        visitorScheme = undefined;
-      }
-    }
     const usesWrongHost = hostname !== primaryUrl.hostname;
     const usesInsecureProtocol = visitorScheme === "http";
 
@@ -47,6 +48,16 @@ export async function proxy(req: NextRequest) {
       const canonicalUrl = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, primaryUrl);
       return NextResponse.redirect(canonicalUrl, 308);
     }
+  }
+
+  if (SHARED_DOMAINS.includes(hostname) && visitorScheme === "http") {
+    // Trust the edge's visitor scheme, not Passenger's internal HTTP URL.
+    // Clone instead of resolving a pathname: //... must stay on this known host.
+    const secureUrl = req.nextUrl.clone();
+    secureUrl.protocol = "https:";
+    secureUrl.hostname = hostname;
+    secureUrl.port = "";
+    return NextResponse.redirect(secureUrl, 308);
   }
 
   // Fire-and-forget request log (skip all API calls, only log page navigations)

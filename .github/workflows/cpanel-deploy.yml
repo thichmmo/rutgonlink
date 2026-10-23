@@ -46,6 +46,9 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit --pretty false
 
+      - name: Shared-domain HTTPS regressions
+        run: node scripts/test-shared-domain-https.cjs
+
       - name: Popup runtime regressions
         run: node scripts/test-popup-runtime.cjs
 
@@ -101,6 +104,7 @@ jobs:
       - name: Lint
         run: >-
           pnpm exec eslint
+          proxy.ts scripts/test-shared-domain-https.cjs
           app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
           app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx

@@ -102,3 +102,12 @@ image/video limits remain 8MiB/50MiB. Packaged-runtime and production probes
 require unauthenticated upload POSTs to return 401 before parsing. No migration
 is added. Browser file-picker uploads/playback are checked separately on a local
 real-API fixture; CI transport bytes do not prove codec playback or hosting ingress.
+
+## Shared-domain HTTPS (2026-10-24)
+
+CI runs `node scripts/test-shared-domain-https.cjs` and lints the proxy before
+packaging. Verify that public HTTP URLs upgrade to the same HTTPS host/path/query,
+that HTTPS does not loop behind Passenger, and that custom-host access controls
+remain intact. This release does not change Mesale redirects or database schema.
+Facebook comment acceptance must be checked separately in the logged-in UI;
+transport tests and successful deployment do not establish that Facebook accepts a link.
