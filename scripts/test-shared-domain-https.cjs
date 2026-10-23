@@ -4,6 +4,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const { NextRequest } = require('next/server')
+const { NextURL } = require('next/dist/server/web/next-url')
+const { stripInternalSearchParams } = require('next/dist/server/internal-utils')
+const { searchParamsToUrlQuery, urlQueryToSearchParams } = require('next/dist/shared/lib/router/utils/querystring')
 
 process.env.NODE_ENV = 'production'
 process.env.NEXTAUTH_URL = 'https://rutgonlink.site'
@@ -53,9 +56,31 @@ async function scenario(name, run) { token = null; await run(); scenarios++; con
       redirected(await proxy(request(host, '/p7/61720', { visitor: '{"scheme":"http"}' })), `https://${host}/p7/61720`)
     }
   })
-  await scenario('raw signed query bytes, duplicate keys and encoded path stay unchanged', async () => {
+  await scenario('query bytes and encoded path received by the proxy stay unchanged', async () => {
     const host = SHARED_DOMAINS[0], pathname = '/p7/61720/%2f%5C%20' + query
     redirected(await proxy(request(host, pathname, { visitor: '{"scheme":"http"}' })), `https://${host}${pathname}`)
+  })
+  await scenario('Next normalization preserves query values and nested signed URL before proxy redirect', async () => {
+    const host = SHARED_DOMAINS[0]
+    const nested = 'https://affiliate.example.invalid/product/123?signature=A+B%2f%2b&part=one&part=two&empty='
+    const external = new URL(`http://${host}/p7/61720?signed=A+B%2f&position=middle&signed=two&empty=&space=%20~&affiliate=${encodeURIComponent(nested)}`)
+    const received = new NextURL(external.href)
+    // Next rebuilds parsed queries, then the adapter removes internal search
+    // parameters. Use the installed helpers rather than bypassing that boundary.
+    received.search = urlQueryToSearchParams(searchParamsToUrlQuery(external.searchParams)).toString()
+    stripInternalSearchParams(received)
+    assert.notEqual(received.search, external.search, 'Default Next normalization is not externally byte-exact')
+    assert.ok(received.search.includes('signed=A+B%2F'))
+    assert.ok(received.search.includes('space=+%7E'))
+    const response = await proxy(request(host, '/p7/61720', { visitor: '{"scheme":"http"}', url: received.href }))
+    redirected(response, `https://${host}/p7/61720${received.search}`)
+    const destination = new URL(response.headers.get('location'))
+    for (const key of new Set(external.searchParams.keys())) {
+      assert.deepEqual(destination.searchParams.getAll(key), external.searchParams.getAll(key), `Decoded values/order for ${key} remain intact`)
+    }
+    assert.deepEqual(destination.searchParams.getAll('signed'), ['A B/', 'two'])
+    assert.equal(destination.searchParams.get('empty'), '')
+    assert.equal(destination.searchParams.get('affiliate'), nested, 'Nested signed URL retains its complete inner byte string')
   })
   await scenario('scheme-relative-looking path cannot change the allowlisted destination host', async () => {
     const host = SHARED_DOMAINS[0], pathname = '//outside.invalid/path' + query
