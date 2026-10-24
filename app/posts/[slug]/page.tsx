@@ -38,12 +38,16 @@ function publicUrl(post: Awaited<ReturnType<typeof findPost>>) {
   return `https://${domain}${getPublicPostPath(post?.slug || '')}`
 }
 
+const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|Facebot|meta-externalagent/i
+
 export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const { slug } = await params
   const post = await findPost(slug)
   if (!post) return { title: 'Không tìm thấy bài viết', robots: { index: false } }
   const canonical = publicUrl(post)
-  const description = post.excerpt || post.content.replace(/<[^>]+>/g, '').slice(0, 160)
+  const plainText = post.content.replace(/<[^>]+>/g, '').trim().slice(0, 160)
+  // Fallback to post.title on video-only posts so og:description is never empty.
+  const description = post.excerpt || plainText || post.title
   const image = getPostPreviewImageUrl(post)
   return {
     title: { absolute: post.title },
@@ -86,6 +90,7 @@ export default async function ManagedPostPage({ params }: Context) {
   const after = blocks.filter(block => block.placement !== 'before')
   const requestHeaders = await headers()
   const userAgent = requestHeaders.get('user-agent') || ''
+  const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
   const tracking = post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, requestHeaders.get('host') || getSiteHostname()) } : undefined
   const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const settings = post.popup?.isActive && normalizedSettings
@@ -96,7 +101,7 @@ export default async function ManagedPostPage({ params }: Context) {
     <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />
     <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
     <DesktopDevToolsGuard userAgent={userAgent} />
-    {telegram.enabled ? <main className="telegram-post-page">
+    {isFacebookCrawler ? <main /> : telegram.enabled ? <main className="telegram-post-page">
       <article className="telegram-post">
         {before.map(block => <div key={block.id}><RenderContent content={block.content} format={block.contentFormat} /></div>)}
         <div dangerouslySetInnerHTML={{ __html: renderTelegramHeader(telegram) }} />
@@ -119,6 +124,6 @@ export default async function ManagedPostPage({ params }: Context) {
     </main>
     <Footer /></>}
     <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>
-    {post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
+    {!isFacebookCrawler && post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div></>
 }

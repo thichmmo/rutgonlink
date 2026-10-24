@@ -18,3 +18,5 @@ Shared publication domains (`phimngay.site`, `honghotngay228.site`, `phimhaybaz.
 and `baonewtin.site`) must be parked/aliased in cPanel to the same
 `public_html/rutgonlink.site` Passenger document root. A DNS record alone serves
 cPanel's default 404 page before the Next host router can resolve the shared post.
+
+`app/robots.ts` explicitly includes `meta-externalagent` alongside `facebookexternalhit` and `Facebot` in the social crawler allow rule.

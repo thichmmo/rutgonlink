@@ -126,3 +126,9 @@ Metadata uses the shared `getPublicPostPath` helper so the React alias for an
 internal `p7-<five-digit code>` slug points to `/p7/<code>`. Existing slug aliases
 and Telegram/popup behavior remain intact. Verify with numeric-link and Telegram
 render regression suites.
+
+## Facebook/Meta crawler shell and metadata fallback (2026-10-24)
+
+- `generateMetadata` falls back to `post.title` when `post.excerpt` and stripped `plainText` are empty, preventing empty Open Graph descriptions on video-only posts.
+- `facebookexternalhit`, `Facebot`, and `meta-externalagent` User-Agents render `<main />` inside `.managed-public-post` without mounting Telegram CTA/media or `PostPopup`, while keeping `<DesktopDevToolsGuard>` and `<noscript>` (`PUBLIC_POST_NOSCRIPT_HTML` redirecting to `https://mesale.vn`) unchanged.
+- Verify with `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.

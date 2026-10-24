@@ -10,7 +10,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/admin', '/api', '/dashboard', '/login', '/register', '/checkout', '/share', '/p/'],
       },
       {
-        userAgent: ['facebookexternalhit', 'Facebot', 'Twitterbot', 'LinkedInBot', 'Zalobot'],
+        userAgent: ['facebookexternalhit', 'Facebot', 'meta-externalagent', 'Twitterbot', 'LinkedInBot', 'Zalobot'],
         allow: '/',
       },
     ],

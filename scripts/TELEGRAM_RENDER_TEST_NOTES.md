@@ -7,3 +7,5 @@ Run baseline behavior against a source snapshot with `POPUP_TEST_ROOT` and `--ba
 No migration, production write, navigation script, cookie, or click event runs in this suite. The existing popup runtime suite remains responsible for popup behavior.
 
 Verified on 2026-10-05: `node scripts/test-telegram-render.cjs` passed 36 scenarios; `--baseline` against the pre-feature archive passed 2 scenarios; `pnpm exec eslint scripts/test-telegram-render.cjs` exited 0. The enabled and disabled pages emit identical script tags, and unsafe saved destinations emit no Telegram CTA while keeping the media visible.
+
+Updated on 2026-10-24: Added 9 scenarios (45 total) covering video-only Open Graph description fallback to `post.title`, minimal `<main></main>` shell for `facebookexternalhit`/`Facebot`/`meta-externalagent` while preserving the Mesale guard and `<noscript>`, and full Telegram CTA/media rendering for Facebook in-app browsers (`FB_IAB`/`FB4A`).

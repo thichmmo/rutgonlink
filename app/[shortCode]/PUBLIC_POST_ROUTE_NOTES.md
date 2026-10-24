@@ -125,3 +125,10 @@ use the shared public path helper; existing slug routes remain usable.
 
 Verification: `node scripts/test-numeric-post-links.cjs` and the existing popup
 runtime suite. Popup launch, timing and progress logic are unchanged.
+
+## Facebook/Meta crawler shell and metadata fallback (2026-10-24)
+
+- Video-only posts without an excerpt or plain-text body fall back to `post.title` for `description`, `og:description`, and `twitter:description` so Facebook never scrapes the visible Telegram CTA into Open Graph preview text.
+- Requests from `facebookexternalhit`, `Facebot`, or `meta-externalagent` receive a minimal `<main></main>` body inside `.managed-public-post` (omitting the Telegram `t.me` CTA, media tags, and cross-domain footer link) while keeping Open Graph/Twitter metadata, `installPublicPostGuard` (`https://mesale.vn`), and `<noscript>` (`PUBLIC_POST_NOSCRIPT_HTML`) intact.
+- Managed-post responses include `<meta name="robots" content="index, follow">` in `<head>` alongside `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate` and `X-Robots-Tag: noindex, nofollow`.
+- Ordinary browsers and Facebook in-app webviews (`FBAN`/`FB_IAB`) continue to receive the full Telegram template, media, and popup runtime. Verify with `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.

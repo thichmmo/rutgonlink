@@ -14,6 +14,7 @@ const baseline = process.argv.includes('--baseline')
 const desktop = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140'
 const cache = new Map()
 let currentPost
+let currentUserAgent = desktop
 let passed = 0
 
 function load(file) {
@@ -28,7 +29,7 @@ function load(file) {
   } }).outputText
   const localRequire = id => {
     if (id === '@/lib/prisma') return { prisma: { managedPost: { findFirst: async () => currentPost } } }
-    if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': desktop, host: 'fixture.example' }) }
+    if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': currentUserAgent, host: 'fixture.example' }) }
     if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') } }
     if (id === 'next/link') return ({ children, ...props }) => React.createElement('a', props, children)
     if (id === '@/components/Navbar' || id === '@/components/Footer') return () => null
@@ -73,9 +74,10 @@ function fixture(settings = savedSettings) {
 
 const buildPage = load('app/[shortCode]/route.ts').buildManagedPostPage
 const reactPage = load('app/posts/[slug]/page.tsx')
-async function render(kind, post) {
+async function render(kind, post, userAgent = desktop) {
   currentPost = post
-  return kind === 'route' ? buildPage(post, 'fixture.example', desktop)
+  currentUserAgent = userAgent
+  return kind === 'route' ? buildPage(post, 'fixture.example', userAgent)
     : renderToStaticMarkup(await reactPage.default({ params: Promise.resolve({ slug: post.slug }) }))
 }
 function documentFor(html) { return new JSDOM(html).window.document }
@@ -241,8 +243,55 @@ async function main() {
     assert.equal(doc.title, currentPost.title)
     assert.equal(doc.querySelector('meta[property="og:title"]')?.content, currentPost.title)
     assert.equal(doc.querySelector('meta[property="og:description"]')?.content, currentPost.excerpt)
+    assert.equal(doc.querySelector('meta[name="robots"]')?.content, 'index, follow')
     assert.equal(doc.querySelector('link[rel="canonical"]')?.href, 'https://fixture.example/telegram-fixture')
   })
+  await check('video-only post without excerpt falls back to title in Open Graph description', async () => {
+    const videoOnly = fixture()
+    videoOnly.excerpt = null
+    videoOnly.content = '<video src="/uploads/content/fixture-video.mp4" controls playsinline></video>'
+    currentPost = videoOnly
+    const metadata = await reactPage.generateMetadata({ params: Promise.resolve({ slug: videoOnly.slug }) })
+    assert.equal(metadata.description, videoOnly.title)
+    assert.equal(metadata.openGraph.description, videoOnly.title)
+    assert.equal(metadata.twitter.description, videoOnly.title)
+    const doc = documentFor(await render('route', videoOnly))
+    assert.equal(doc.querySelector('meta[name="description"]')?.content, videoOnly.title)
+    assert.equal(doc.querySelector('meta[property="og:description"]')?.content, videoOnly.title)
+    assert.equal(doc.querySelector('meta[name="twitter:description"]')?.content, videoOnly.title)
+  })
+  const crawlerUAs = [
+    'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'Facebot',
+    'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+  ]
+  for (const ua of crawlerUAs) {
+    for (const kind of ['route', 'react']) {
+      await check(`${kind}: Facebook crawler UA (${ua.split(' ')[0]}) receives minimal <main></main> while keeping Mesale guard and noscript`, async () => {
+        const html = await render(kind, fixture(), ua)
+        const doc = documentFor(html)
+        const mainNode = doc.querySelector('.managed-public-post > main')
+        assert.ok(mainNode, 'Crawler shell renders .managed-public-post > main')
+        assert.equal(mainNode.innerHTML, '', 'Crawler <main> body is empty')
+        assert.equal(cta(doc), undefined, 'Crawler shell omits t.me CTA')
+        assert.equal(doc.querySelector('iframe,video'), null, 'Crawler shell omits media')
+        const anchors = Array.from(doc.querySelectorAll('a[href]'))
+        assert.ok(anchors.every(a => a.href.startsWith('https://mesale.vn')), 'Only noscript Mesale link remains')
+        assert.ok(html.includes('<noscript>') && html.includes('https://mesale.vn'), 'Noscript Mesale redirect stays intact')
+        if (kind === 'route') {
+          assert.equal(doc.querySelector('meta[property="og:title"]')?.content, 'SEO fixture title')
+        }
+      })
+    }
+  }
+  for (const kind of ['route', 'react']) {
+    await check(`${kind}: Facebook in-app browser UA still renders full Telegram CTA and media`, async () => {
+      const fbInApp = 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.82 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/460.0.0.0.0;]'
+      const doc = documentFor(await render(kind, fixture(), fbInApp))
+      assert.equal(cta(doc)?.href, savedSettings.url)
+      assert.ok(doc.querySelector('iframe'), 'In-app browser retains media')
+    })
+  }
   const exportIndex = process.argv.indexOf('--export-fixture')
   if (exportIndex >= 0) {
     const destination = process.argv[exportIndex + 1]
