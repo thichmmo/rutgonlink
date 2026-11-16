@@ -19,4 +19,4 @@ and `baonewtin.site`) must be parked/aliased in cPanel to the same
 `public_html/rutgonlink.site` Passenger document root. A DNS record alone serves
 cPanel's default 404 page before the Next host router can resolve the shared post.
 
-`app/robots.ts` explicitly includes `meta-externalagent` alongside `facebookexternalhit` and `Facebot` in the social crawler allow rule.
+`app/robots.ts` places the explicit `Allow: /` rule for `facebookexternalhit`, `Facebot`, `meta-externalagent`, `Twitterbot`, `LinkedInBot`, and `Zalobot` first and omits the non-standard `Host:` directive so shared/custom domains do not advertise `rutgonlink.site` as their canonical robots host. Verify with `pnpm exec eslint app/robots.ts` and `tsc --noEmit`.

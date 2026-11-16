@@ -74,18 +74,19 @@ async function getMonthlyClicks(userId: string): Promise<number> {
 
 const KNOWN_PATHS = ['dashboard', 'login', 'register', 'api', '_next', 'favicon.ico', 'public', 'bio', 'p', 'share', 'posts']
 
-async function getCachedLink(shortCode: string, hostname: string): Promise<LinkResult | null> {
+async function getCachedLink(shortCode: string, hostname: string): Promise<{ link: LinkResult | null; canUpgradeToHttps: boolean }> {
   const normalizedHostname = hostname.toLowerCase().replace(/\.$/, '')
   const isSharedDomain = SHARED_DOMAINS.includes(normalizedHostname)
   const isMainDomain = isMainAppHostname(normalizedHostname)
   const domainRecord = isSharedDomain || isMainDomain
     ? null
     : await prisma.domain.findUnique({ where: { domain: normalizedHostname } })
-  if (domainRecord?.disabledAt) return null
+  if (domainRecord?.disabledAt) return { link: null, canUpgradeToHttps: false }
 
   // Shared domains use Link.sharedDomain; custom domains use Domain.id.
   // Do not let an unknown Host header fall back to main-domain links.
-  if (!isSharedDomain && !isMainDomain && !domainRecord) return null
+  if (!isSharedDomain && !isMainDomain && !domainRecord) return { link: null, canUpgradeToHttps: false }
+  const canUpgradeToHttps = isSharedDomain || isMainDomain || Boolean(domainRecord?.verified)
 
   const domainId = domainRecord ? domainRecord.id : null
   const where = isSharedDomain
@@ -115,7 +116,7 @@ async function getCachedLink(shortCode: string, hostname: string): Promise<LinkR
     : null
   const linkResult = result || fallback
   const link = linkResult as unknown as LinkResult | null
-  return link?.user.status === 'active' ? link : null
+  return { link: link?.user.status === 'active' ? link : null, canUpgradeToHttps }
 }
 
 // Batch click writer: gom click trong 2 giây rồi INSERT một lần
@@ -595,6 +596,24 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}<style>*,*:before,*:after{box-sizing:border-box}${PUBLIC_POST_GUARD_CSS}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-timer{margin-top:14px}.managed-popup-timer-label{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px;color:#6b7280;font-size:12px;font-weight:700}.managed-popup-timer-label b{font-variant-numeric:tabular-nums}.managed-popup-timer-track{height:8px;overflow:hidden;border-radius:999px;background:#f1f5f9}.managed-popup-timer-track i{display:block;height:100%;width:0;border-radius:inherit;background:#d61f51;transition:width .2s linear}.managed-popup-open{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;margin-top:18px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled,.managed-popup-open[aria-disabled="true"]{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}@media(prefers-reduced-motion:reduce){.managed-popup-timer-track i{transition:none}}${chromeGateCss}${MANAGED_MEDIA_CSS}${TELEGRAM_POST_CSS}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}"><noscript>${PUBLIC_POST_NOSCRIPT_HTML}</noscript><div class="managed-public-post">${mainBody}</div>${popupScript}</body></html>`
 }
 
+function getEdgeHttpsUpgradeUrl(req: NextRequest, hostname: string): URL | null {
+  const normalized = hostname.toLowerCase().replace(/\.$/, '')
+  if (!normalized || normalized === 'localhost' || normalized === '127.0.0.1') return null
+  const cfVisitor = req.headers.get('cf-visitor')
+  if (!cfVisitor) return null
+  try {
+    if ((JSON.parse(cfVisitor) as { scheme?: string }).scheme !== 'http') return null
+  } catch {
+    return null
+  }
+  // Clone to keep leading // paths pinned to the verified custom domain.
+  const secureUrl = req.nextUrl.clone()
+  secureUrl.protocol = 'https:'
+  secureUrl.hostname = normalized
+  secureUrl.port = ''
+  return secureUrl
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ shortCode: string }> }
@@ -611,6 +630,11 @@ export async function GET(
   // Managed posts take precedence over short links on the selected public domain.
   const managedPost = await findManagedPostForHost(shortCode, hostname)
   if (managedPost) {
+    // proxy.ts leaves database-configured custom domains on HTTP to avoid open redirects on
+    // unverified Hosts; once findManagedPostForHost confirms a verified domain, upgrade cleanly.
+    const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
+    if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
+
     return new Response(await buildManagedPostPage(managedPost, hostname.toLowerCase(), req.headers.get('user-agent') || ''), {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
@@ -622,7 +646,7 @@ export async function GET(
 
   // Numeric article routes stop here; they never resolve/record short-link clicks.
   if (req.nextUrl.pathname.startsWith('/p7/')) return new NextResponse('Not found', { status: 404 })
-  const link = await getCachedLink(shortCode, hostname)
+  const { link, canUpgradeToHttps } = await getCachedLink(shortCode, hostname)
 
   const mainOrigin = getSiteUrl()
 
@@ -631,6 +655,11 @@ export async function GET(
       `<!DOCTYPE html><html><head><meta charset="utf-8"><title>404</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;font-family:sans-serif}h1{font-size:2rem;font-weight:600;color:#111;letter-spacing:.05em}span{color:#999}</style></head><body><h1>404 <span>NOT FOUND</span></h1></body></html>`,
       { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     )
+  }
+
+  if (canUpgradeToHttps) {
+    const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
+    if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
   }
 
   if (link.expiresAt && link.expiresAt < new Date()) {

@@ -1,7 +1,7 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isGarbageRequestLog } from "@/lib/request-log-filter";
-import { getSiteUrl, isMainAppHostname } from "@/lib/site-config";
+import { buildSiteUrl, getSiteUrl, isMainAppHostname } from "@/lib/site-config";
 import { SHARED_DOMAINS } from "@/lib/shared-domains";
 
 function parseUA(ua: string) {
@@ -38,44 +38,61 @@ export async function proxy(req: NextRequest) {
       visitorScheme = undefined;
     }
   }
+  // Keep /robots.txt at 200 on edge HTTP so Cloudflare Managed robots.txt appends
+  // our social-crawler Allow rules instead of emitting a broken 200+Location+Refresh,
+  // and leave HTTP-01 ACME challenges reachable for cPanel AutoSSL renewals.
+  const isHttpPassthroughPath =
+    pathname === "/robots.txt" ||
+    pathname.startsWith("/.well-known/acme-challenge/");
+  // Next.js injects a non-standard Refresh: 0;url=... header on 308 responses;
+  // use standard 301 for GET/HEAD and reserve method-preserving 308 for writes.
+  const permanentRedirectStatus =
+    req.method === "GET" || req.method === "HEAD" ? 301 : 308;
+
   if (!isLocalRequest && isMainAppHostname(hostname)) {
     const primaryUrl = new URL(getSiteUrl());
     const usesWrongHost = hostname !== primaryUrl.hostname;
-    const usesInsecureProtocol = visitorScheme === "http";
+    const usesInsecureProtocol = visitorScheme === "http" && !isHttpPassthroughPath;
 
     // Hợp nhất tín hiệu SEO vào một origin nhưng không ảnh hưởng custom short-link domains.
     if (usesWrongHost || usesInsecureProtocol) {
       const canonicalUrl = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, primaryUrl);
-      return NextResponse.redirect(canonicalUrl, 308);
+      return NextResponse.redirect(canonicalUrl, permanentRedirectStatus);
     }
   }
 
-  if (SHARED_DOMAINS.includes(hostname) && visitorScheme === "http") {
+  if (SHARED_DOMAINS.includes(hostname) && visitorScheme === "http" && !isHttpPassthroughPath) {
     // Trust the edge's visitor scheme, not Passenger's internal HTTP URL.
     // Clone instead of resolving a pathname: //... must stay on this known host.
     const secureUrl = req.nextUrl.clone();
     secureUrl.protocol = "https:";
     secureUrl.hostname = hostname;
     secureUrl.port = "";
-    return NextResponse.redirect(secureUrl, 308);
+    return NextResponse.redirect(secureUrl, permanentRedirectStatus);
   }
 
   // Fire-and-forget request log (skip all API calls, only log page navigations)
-  if (!pathname.startsWith("/api/")) {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!pathname.startsWith("/api/") && process.env.LOG_SECRET) {
     const ua = req.headers.get("user-agent") || "";
-    const { device, browser, os } = parseUA(ua);
     const ip =
       req.headers.get("cf-connecting-ip") ||
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       req.headers.get("x-real-ip") ||
       "";
     if (!isGarbageRequestLog({ method: req.method, path: pathname, userAgent: ua, ip })) {
-      fetch(new URL("/api/internal/log", req.url).toString(), {
+      const hasSessionCookie =
+        req.cookies.has("next-auth.session-token") ||
+        req.cookies.has("__Secure-next-auth.session-token");
+      const token = hasSessionCookie
+        ? await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
+        : null;
+      const { device, browser, os } = parseUA(ua);
+      // Shared/custom domains return 404 on /api/*; always post telemetry to the main app origin.
+      fetch(buildSiteUrl("/api/internal/log"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-log-key": process.env.LOG_SECRET || "",
+          "x-log-key": process.env.LOG_SECRET,
         },
         body: JSON.stringify({
           site: "rutgon",

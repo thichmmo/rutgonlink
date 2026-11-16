@@ -220,6 +220,18 @@ scenario('primary/custom domains, legacy numeric alias and React metadata remain
   const custom = (await create({ publicLinkMode: 'numeric', domainId: 'custom' })).data.items[0]
   assert.equal(custom.publicUrl, 'https://custom.example.test/p7/50001')
   assert.equal((await visit('50001', 'custom.example.test')).status, 200)
+  const customHttpReq = new NextRequest('http://127.0.0.1:3000/p7/50001?fbclid=test', {
+    headers: { host: 'custom.example.test', 'user-agent': 'facebookexternalhit/1.1', 'cf-visitor': '{"scheme":"http"}' },
+  })
+  const customHttpRes = await numericRoute.GET(customHttpReq, { params: Promise.resolve({ code: '50001' }) })
+  assert.equal(customHttpRes.status, 301)
+  assert.equal(customHttpRes.headers.get('location'), 'https://custom.example.test/p7/50001?fbclid=test')
+  const unknownHttpReq = new NextRequest('http://127.0.0.1:3000/p7/50001', {
+    headers: { host: 'unknown.example.test', 'user-agent': 'facebookexternalhit/1.1', 'cf-visitor': '{"scheme":"http"}' },
+  })
+  const unknownHttpRes = await numericRoute.GET(unknownHttpReq, { params: Promise.resolve({ code: '50001' }) })
+  assert.equal(unknownHttpRes.status, 404)
+  assert.equal(unknownHttpRes.headers.get('location'), null)
   assert.equal((await visit('50001', 'rutgonlink.site')).status, 404)
   const req = new NextRequest(`https://rutgonlink.site/${primary.slug}`, { headers: { host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0' } })
   assert.equal((await slugRoute.GET(req, { params: Promise.resolve({ shortCode: primary.slug }) })).status, 200)
