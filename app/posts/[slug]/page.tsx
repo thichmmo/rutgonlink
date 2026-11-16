@@ -38,7 +38,7 @@ function publicUrl(post: Awaited<ReturnType<typeof findPost>>) {
   return `https://${domain}${getPublicPostPath(post?.slug || '')}`
 }
 
-const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|Facebot|meta-externalagent/i
+const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|meta-externalagent|meta-externalfetcher|meta-webindexer/i
 
 export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const { slug } = await params
@@ -93,14 +93,14 @@ export default async function ManagedPostPage({ params }: Context) {
   const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
   const tracking = post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, requestHeaders.get('host') || getSiteHostname()) } : undefined
   const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
-  const settings = post.popup?.isActive && normalizedSettings
+  const settings = !isFacebookCrawler && post.popup?.isActive && normalizedSettings
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
     : normalizedSettings
 
   return <>
-    <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />
+    {!isFacebookCrawler && <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />}
     <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
-    <DesktopDevToolsGuard userAgent={userAgent} />
+    {!isFacebookCrawler && <DesktopDevToolsGuard userAgent={userAgent} />}
     {isFacebookCrawler ? <main /> : telegram.enabled ? <main className="telegram-post-page">
       <article className="telegram-post">
         {before.map(block => <div key={block.id}><RenderContent content={block.content} format={block.contentFormat} /></div>)}
@@ -123,7 +123,7 @@ export default async function ManagedPostPage({ params }: Context) {
       <Link href="/" className="mt-8 inline-block text-sm font-medium text-sky-700 hover:underline">Về trang chủ</Link>
     </main>
     <Footer /></>}
-    <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>
+    {!isFacebookCrawler && <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>}
     {!isFacebookCrawler && post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div></>
 }

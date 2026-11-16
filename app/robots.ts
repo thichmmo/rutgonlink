@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
-        userAgent: ['facebookexternalhit', 'Facebot', 'meta-externalagent', 'Twitterbot', 'LinkedInBot', 'Zalobot'],
+        userAgent: ['facebookexternalhit', 'facebookcatalog', 'Facebot', 'meta-externalagent', 'meta-externalfetcher', 'meta-webindexer', 'Twitterbot', 'LinkedInBot', 'Zalobot'],
         allow: '/',
       },
       {

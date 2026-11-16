@@ -264,10 +264,12 @@ async function main() {
     'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
     'Facebot',
     'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+    'Mozilla/5.0 (compatible; Meta-ExternalFetcher/1.0; +https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+    'Mozilla/5.0 (compatible; Meta-WebIndexer/1.0; +https://developers.facebook.com/docs/sharing/webmasters/crawler)',
   ]
   for (const ua of crawlerUAs) {
     for (const kind of ['route', 'react']) {
-      await check(`${kind}: Facebook crawler UA (${ua.split(' ')[0]}) receives minimal <main></main> while keeping Mesale guard and noscript`, async () => {
+      await check(`${kind}: Facebook crawler UA (${ua.split(' ')[0]}) receives clean Open Graph shell without Mesale redirect chain`, async () => {
         const html = await render(kind, fixture(), ua)
         const doc = documentFor(html)
         const mainNode = doc.querySelector('.managed-public-post > main')
@@ -275,21 +277,31 @@ async function main() {
         assert.equal(mainNode.innerHTML, '', 'Crawler <main> body is empty')
         assert.equal(cta(doc), undefined, 'Crawler shell omits t.me CTA')
         assert.equal(doc.querySelector('iframe,video'), null, 'Crawler shell omits media')
-        const anchors = Array.from(doc.querySelectorAll('a[href]'))
-        assert.ok(anchors.every(a => a.href.startsWith('https://mesale.vn')), 'Only noscript Mesale link remains')
-        assert.ok(html.includes('<noscript>') && html.includes('https://mesale.vn'), 'Noscript Mesale redirect stays intact')
+        assert.equal(doc.querySelector('noscript'), null, 'Crawler shell omits <noscript> meta-refresh')
+        assert.equal(doc.querySelector('meta[http-equiv="refresh"]'), null, 'Crawler shell omits http-equiv refresh')
+        assert.equal(doc.querySelectorAll('a[href]').length, 0, 'Crawler shell omits external body links')
+        assert.equal(html.includes('mesale.vn'), false, 'Crawler shell omits third-party Mesale redirect URL')
+        assert.equal(html.includes('visibility:hidden'), false, 'Crawler shell omits hidden-body CSS')
         if (kind === 'route') {
+          assert.equal(doc.querySelectorAll('script').length, 0, 'Standalone crawler shell omits inline guard scripts')
           assert.equal(doc.querySelector('meta[property="og:title"]')?.content, 'SEO fixture title')
         }
       })
     }
   }
   for (const kind of ['route', 'react']) {
-    await check(`${kind}: Facebook in-app browser UA still renders full Telegram CTA and media`, async () => {
+    await check(`${kind}: Facebook in-app browser and ordinary desktop browser keep Mesale guard, noscript, and Telegram CTA`, async () => {
       const fbInApp = 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.82 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/460.0.0.0.0;]'
-      const doc = documentFor(await render(kind, fixture(), fbInApp))
+      const inAppHtml = await render(kind, fixture(), fbInApp)
+      const doc = documentFor(inAppHtml)
       assert.equal(cta(doc)?.href, savedSettings.url)
       assert.ok(doc.querySelector('iframe'), 'In-app browser retains media')
+      assert.ok(inAppHtml.includes('<noscript>') && inAppHtml.includes('https://mesale.vn'), 'In-app browser retains Mesale noscript')
+      const desktopHtml = await render(kind, fixture(), 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36')
+      assert.ok(desktopHtml.includes('<noscript>') && desktopHtml.includes('https://mesale.vn'), 'Desktop browser retains Mesale noscript')
+      if (kind === 'route') {
+        assert.ok(desktopHtml.includes('window.location.replace'), 'Desktop browser retains inline Mesale DevTools guard')
+      }
     })
   }
   const exportIndex = process.argv.indexOf('--export-fixture')

@@ -12,4 +12,4 @@
 
 `admin-auth.ts` tập trung role/permission với `ADMIN_EMAIL` làm owner dự phòng. `admin-audit.ts` ghi lại mọi mutation và tự redact key nhạy cảm. `billing.ts` dùng chung quy tắc cộng dồn hạn gói cho webhook lẫn thao tác admin; `system-events.ts` lưu heartbeat/lỗi vận hành.
 
-`request-log-filter.ts` chặn thêm `facebookexternalhit`, `meta-externalagent` và `whatsapp` để luồng quét song song của Facebook/Meta không kích hoạt giải mã JWT hoặc gửi request-log nội bộ từ `proxy.ts`. Kiểm tra bằng `node scripts/test-shared-domain-https.cjs` và ESLint.
+`request-log-filter.ts` chặn thêm `facebookexternalhit`, `facebookcatalog`, `meta-externalagent`, `meta-externalfetcher`, `meta-webindexer` và `whatsapp` để luồng quét song song của Facebook/Meta không kích hoạt giải mã JWT hoặc gửi request-log nội bộ từ `proxy.ts`. Kiểm tra bằng `node scripts/test-shared-domain-https.cjs` và ESLint.

@@ -130,5 +130,5 @@ render regression suites.
 ## Facebook/Meta crawler shell and metadata fallback (2026-10-24)
 
 - `generateMetadata` falls back to `post.title` when `post.excerpt` and stripped `plainText` are empty, preventing empty Open Graph descriptions on video-only posts.
-- `facebookexternalhit`, `Facebot`, and `meta-externalagent` User-Agents render `<main />` inside `.managed-public-post` without mounting Telegram CTA/media or `PostPopup`, while keeping `<DesktopDevToolsGuard>` and `<noscript>` (`PUBLIC_POST_NOSCRIPT_HTML` redirecting to `https://mesale.vn`) unchanged.
+- Facebook/Meta crawler User-Agents (`facebookexternalhit`, `facebookcatalog`, `Facebot`, `meta-externalagent`, `meta-externalfetcher`, `meta-webindexer`) render `<main />` inside `.managed-public-post` without mounting `<noscript>` (`PUBLIC_POST_NOSCRIPT_HTML`), `<DesktopDevToolsGuard>`, Telegram CTA/media, or `PostPopup`, while keeping 100% of the Mesale DevTools guard, `<noscript>` redirect, and popup runtime intact for all real browsers and Facebook in-app webviews (`FBAN`/`FB_IAB`).
 - Verify with `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.
