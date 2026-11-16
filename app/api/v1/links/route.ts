@@ -1,16 +1,23 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateApiKey } from '@/lib/api-v1-auth'
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { buildShortUrl, getSiteHostname } from '@/lib/site-config'
+import { SHARED_DOMAINS } from '@/lib/shared-domains'
 
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 6)
 
 const createLinkSchema = z.object({
   originalUrl: z.string().url('URL không hợp lệ — phải bắt đầu bằng https://'),
   customCode: z.string().min(3).max(190).optional().or(z.literal('')),
+  sharedDomain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .refine((value) => !value || SHARED_DOMAINS.includes(value), 'Domain dùng chung không hợp lệ')
+    .optional(),
   title: z.string().max(100).optional(),
   expiresAt: z.string().optional(),
   password: z.string().optional(),
@@ -22,6 +29,8 @@ const LINK_SELECT = {
   shortCode: true,
   originalUrl: true,
   title: true,
+  sharedDomain: true,
+  domain: { select: { domain: true } },
   isActive: true,
   expiresAt: true,
   maxClicks: true,
@@ -29,6 +38,11 @@ const LINK_SELECT = {
   updatedAt: true,
   _count: { select: { clicks: true } },
 } as const
+
+function formatApiShortUrl(link: { shortCode: string; sharedDomain: string | null; domain: { domain: string } | null }) {
+  const host = link.domain?.domain || link.sharedDomain
+  return host ? `https://${host}/${link.shortCode}` : buildShortUrl(link.shortCode)
+}
 
 /**
  * GET /api/v1/links
@@ -67,7 +81,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     data: links.map((l) => ({
       ...l,
-      shortUrl: buildShortUrl(l.shortCode),
+      shortUrl: formatApiShortUrl(l),
+      domain: undefined,
       clicks: l._count.clicks,
       _count: undefined,
     })),
@@ -77,7 +92,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/v1/links
- * Body: { originalUrl, customCode?, title?, expiresAt?, password?, maxClicks? }
+ * Body: { originalUrl, customCode?, sharedDomain?, title?, expiresAt?, password?, maxClicks? }
  */
 export async function POST(req: NextRequest) {
   const auth = await authenticateApiKey(req)
@@ -131,6 +146,7 @@ export async function POST(req: NextRequest) {
     data: {
       userId: user.id,
       shortCode,
+      sharedDomain: data.sharedDomain || null,
       originalUrl: data.originalUrl,
       title: data.title || null,
       expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
@@ -144,7 +160,8 @@ export async function POST(req: NextRequest) {
     {
       data: {
         ...link,
-          shortUrl: buildShortUrl(link.shortCode),
+        shortUrl: formatApiShortUrl(link),
+        domain: undefined,
         clicks: link._count.clicks,
         _count: undefined,
       },

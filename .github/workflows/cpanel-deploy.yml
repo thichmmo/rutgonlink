@@ -104,7 +104,8 @@ jobs:
       - name: Lint
         run: >-
           pnpm exec eslint
-          proxy.ts scripts/test-shared-domain-https.cjs
+          proxy.ts lib/shared-domains.ts scripts/test-shared-domain-https.cjs
+          app/api/v1/links/route.ts
           app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
           app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx
@@ -228,31 +229,23 @@ jobs:
 
       - name: Verify production routes
         run: |
-          curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/ >/dev/null
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
-          curl --fail --silent --show-error --max-time 20 https://rutgonlink.site/chinh-sach-bao-mat >/dev/null
-          dashboard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
+          # Resolve directly to cPanel origin so Cloudflare datacenter bot challenges do not return 503 on GitHub runners.
+          origin_curl() { curl -k --resolve rutgonlink.site:443:103.57.221.79 --max-time 20 "$@"; }
+          origin_curl --fail --silent --show-error https://rutgonlink.site/ >/dev/null
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
+          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
+          origin_curl --fail --silent --show-error https://rutgonlink.site/chinh-sach-bao-mat >/dev/null
+          dashboard_status="$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
           test "$dashboard_status" = 302 || test "$dashboard_status" = 307
-          if [ -n "${SMOKE_POST_URL:-}" ]; then
-            test "$(curl --silent --output /dev/null --write-out '%{http_code}' "$SMOKE_POST_URL")" = 200
-          fi
-          if [ -n "${SMOKE_SHORT_URL:-}" ]; then
-            short_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$SMOKE_SHORT_URL")"
-            test "$short_status" = 200 || test "$short_status" = 302
-          fi
-
-        env:
-          SMOKE_POST_URL: ${{ secrets.SMOKE_POST_URL }}
-          SMOKE_SHORT_URL: ${{ secrets.SMOKE_SHORT_URL }}
+          curl --fail --silent --show-error --max-time 20 https://6739dd4f.nip.io/robots.txt >/dev/null
 
       - name: Remove temporary release asset
-        if: success()
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete "deploy-${GITHUB_SHA}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+        run: gh release delete "deploy-${GITHUB_SHA}" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true

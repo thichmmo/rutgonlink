@@ -60,8 +60,11 @@ test -f "$stage/.next/BUILD_ID"
 test -d "$stage/.next/static"
 test -d "$stage/public"
 test -d "$release/unpacked/prisma/migrations"
-# Keep uploaded post media outside the atomically swapped standalone release.
-mkdir -p "$app/uploads/content"
+# Keep uploaded post media outside the atomically swapped standalone release,
+# and bypass Passenger under .well-known so cPanel AutoSSL HTTP-01 DCV succeeds.
+mkdir -p "$app/uploads/content" "$app/.well-known"
+printf 'PassengerEnabled off\n<IfModule mod_rewrite.c>\nRewriteEngine Off\n</IfModule>\n' > "$app/.well-known/.htaccess"
+chmod 644 "$app/.well-known/.htaccess"
 ln -s "$app/.env" "$stage/.env"
 
 cd "$stage"

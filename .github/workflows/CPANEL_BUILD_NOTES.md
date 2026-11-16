@@ -111,3 +111,7 @@ that HTTPS does not loop behind Passenger, and that custom-host access controls
 remain intact. This release does not change Mesale redirects or database schema.
 Facebook comment acceptance must be checked separately in the logged-in UI;
 transport tests and successful deployment do not establish that Facebook accepts a link.
+
+## Top-1M shared domains and AutoSSL HTTP-01 preservation (2026-11-17)
+
+`scripts/cpanel-release.sh` ensures `$app/.well-known/.htaccess` sets `PassengerEnabled off` so cPanel AutoSSL HTTP-01 DCV challenges for direct-IP Top-1M shared domains (`6739dd4f.nip.io`, `tin24h-6739dd4f.nip.io`, `103-57-221-79.sslip.io`) are served by Apache rather than intercepted by Passenger. Post-deploy smoke checks resolve `rutgonlink.site` directly against the cPanel origin (`103.57.221.79`), probe `https://6739dd4f.nip.io/robots.txt`, and run `Remove temporary release asset` with `if: always()`. Verify with `bash -n scripts/cpanel-release.sh`, `node scripts/test-shared-domain-https.cjs`, and `node scripts/test-telegram-quick-form.cjs`.

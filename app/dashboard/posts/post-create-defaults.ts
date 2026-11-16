@@ -2,8 +2,10 @@ type DomainOption = { id: string | null; domain: string; kind: 'primary' | 'shar
 type PopupOption = { id: string; isActive?: boolean }
 
 export function telegramCreateDefaults(domains: DomainOption[], popups: PopupOption[]) {
-  const preferred = domains.find(domain => domain.domain.toLowerCase() === 'honghotngay228.site'
-    && (domain.kind !== 'custom' || Boolean(domain.id)))
+  // Prefer a Top-1M shared domain accepted by Facebook's l.php Sentry check; retain fallback for legacy fixtures.
+  const preferred = ['6739dd4f.nip.io', 'honghotngay228.site']
+    .map(target => domains.find(domain => domain.domain.toLowerCase() === target && (domain.kind !== 'custom' || Boolean(domain.id))))
+    .find(Boolean)
   const domainKey = preferred?.kind === 'shared' ? `shared:${preferred.domain}`
     : preferred?.kind === 'custom' ? preferred.id! : 'primary'
   return { domainKey, isPublished: true, popupIds: refreshCreatePopupSelection([], popups, true) }

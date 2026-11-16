@@ -383,6 +383,12 @@ async function run() {
   await click(button('Hủy', composer()))
 
   popupOptions = []
+  domainOptions = [...initialDomains, { id: null, domain: '6739dd4f.nip.io', kind: 'shared' }]
+  await refreshOptions()
+  await click(button('Tạo bài Telegram'))
+  check(() => assert.equal(field('Domain').value, 'shared:6739dd4f.nip.io', 'Top-1M shared domain takes priority over legacy shared domain when both are available'))
+  await click(button('Hủy', composer()))
+
   domainOptions = initialDomains.filter(domain => domain.kind !== 'shared')
   await refreshOptions()
   await click(button('Tạo bài Telegram'))

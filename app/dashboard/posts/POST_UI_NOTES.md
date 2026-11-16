@@ -117,8 +117,8 @@ plain/raw post without losing its stored body.
 
 ## Telegram creation defaults and numeric links
 
-`Tạo bài Telegram` selects `honghotngay228.site` when present in permitted domain
-options, enables publishing, and selects the first active popup. The options API
+`Tạo bài Telegram` prefers `6739dd4f.nip.io` (falling back to `honghotngay228.site`) when present in permitted domain
+options so newly created numeric posts pass Facebook's `l.php` Top-1M Sentry check out of the box, enables publishing, and selects the first active popup. The options API
 orders popups newest-first. Missing preferred domain falls back to the primary
 domain; missing popups remain empty. These defaults run once for a new form,
 without rewriting existing posts or draft fields when type/defaults change.
@@ -136,7 +136,7 @@ Standard posts and every edit retain the existing slug contract. List text, open
 and copy use the API's canonical `publicUrl`. Media removal updates content through
 `onContentChange`, preserving title/link and content format.
 
-Verify: `node scripts/test-telegram-quick-form.cjs` (162 assertions),
+Verify: `node scripts/test-telegram-quick-form.cjs` (163 assertions),
 `node scripts/test-telegram-dashboard.cjs` (35),
 `node scripts/test-post-types-dashboard.cjs` (78), and
 `node scripts/test-fixed-content-composer.cjs` (60). These are actual TSX/JSDOM tests

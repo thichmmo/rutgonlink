@@ -1,6 +1,6 @@
 # Telegram quick-form regression coverage
 
-Run `node scripts/test-telegram-quick-form.cjs` (162 assertions). The harness
+Run `node scripts/test-telegram-quick-form.cjs` (163 assertions). The harness
 executes actual TSX in JSDOM against in-memory API fixtures; it creates no live
 posts, uploads no real files, and loads no remote media.
 
@@ -13,7 +13,7 @@ Telegram/manual versus standard/native validation paths, including a hidden
 invalid Telegram URL and corrected retry. Metadata/API failures reveal settings
 and retain drafts; missing title regenerates, while edited legacy slugs still validate.
 
-New Telegram drafts prefer an available `honghotngay228.site`, publish immediately,
+New Telegram drafts prefer an available `6739dd4f.nip.io` (or fallback `honghotngay228.site`), publish immediately,
 and select the newest popup. Global focus refresh handles deletion before opening
 a composer and deletion/arrival during drafts without losing
 media, manual domain/publish choices, manual alternate popups or an explicitly
