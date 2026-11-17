@@ -261,7 +261,7 @@ async function mount(kind, options = {}) {
     state, calls, clickEvents, storage, storageReads, storageWrites, button, doc, tick, cookieWrites, preparationRequests,
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
-    async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()) },
+    async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()); if (!/android/i.test(ua)) await tick(0) },
     async keydown(key, modifiers = {}, flush = true) {
       const event = new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true, ...modifiers })
       await React.act(async () => win.dispatchEvent(event))
@@ -364,10 +364,13 @@ async function androidScenarios() {
       assert.equal(getPopupStep(settings, 0, ua).launchUrl, shopee)
       assert.equal(getPopupStep(settings, 0, ua).openMode, 'anchor-new-tab')
     }
-    const iosStep = getPopupStep(settings, 1, facebookIos)
-    assert.equal(iosStep.url, settings.tiktok.iosUrl)
-    assert.equal(iosStep.launchUrl, iosStep.url)
-    assert.equal(iosStep.openMode, 'same-tab')
+    for (const iosUa of [facebookIos, safariIos]) {
+      const iosStep = getPopupStep(settings, 1, iosUa)
+      assert.equal(iosStep.url, settings.tiktok.iosUrl)
+      assert.equal(iosStep.launchUrl, iosStep.url)
+      assert.equal(iosStep.openMode, 'anchor-same-tab')
+      assert.equal(getPopupStep(settings, 0, iosUa).openMode, 'anchor-same-tab')
+    }
     assert.equal(JSON.stringify(settings), saved)
   })
   await scenario('Android preparation strips stale launch metadata without fetching or changing either source', async () => {
@@ -977,7 +980,8 @@ async function main() {
     assert.equal(helper.isTikTokShortUrl(shortTikTok), true)
     for (const url of ['https://vt.tiktok.com.evil.test/a', 'https://user:pass@vt.tiktok.com/a', 'https://vt.tiktok.com:444/a', 'http://vt.tiktok.com/a']) {
       assert.equal(helper.isTikTokShortUrl(url), false)
-      assert.equal(helper.getPopupLinkOpenMode(url, 'TIKTOK', { userAgent: facebookIos }), 'new-tab')
+      assert.equal(helper.getPopupLinkOpenMode(url, 'TIKTOK', { userAgent: desktop }), 'new-tab')
+      assert.equal(helper.getPopupLinkOpenMode(url, 'TIKTOK', { userAgent: safariIos }), 'anchor-same-tab')
     }
   })
   await scenario('Long OneLink validation and custom iOS URL preservation', async () => {
@@ -991,30 +995,33 @@ async function main() {
     settings.tiktok.iosUrl = oneLink + 'x'.repeat(6000)
     assert.equal(normalizeSettings(settings, shopee, product).tiktok.iosUrl, product)
   })
-  await scenario('Server short-link resolution stops before product login redirects', async () => {
-    const settings = defaultPopupSettings(shopee, shortTikTok + '?server=product')
-    const saved = JSON.stringify(settings)
-    await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
-      const result = await prepareSettings(settings, facebookIos)
-      assert.equal(requests.length, 1)
-      assert.equal(requests[0].options.redirect, 'manual')
-      assert.ok(requests[0].options.signal instanceof AbortSignal)
-      assert.equal(result.tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
-      assert.equal(result.tiktok.androidUrl, settings.tiktok.androidUrl)
-      assert.equal(JSON.stringify(settings), saved, 'Request preparation must not rewrite saved settings')
-    })
+  await scenario('Server short-link resolution stops before product login redirects on both Safari and Facebook iOS', async () => {
+    for (const [idx, iosUa] of [facebookIos, safariIos].entries()) {
+      const settings = defaultPopupSettings(shopee, shortTikTok + '?server=product-' + idx)
+      const saved = JSON.stringify(settings)
+      await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
+        const result = await prepareSettings(settings, iosUa)
+        assert.equal(requests.length, 1)
+        assert.equal(requests[0].options.redirect, 'manual')
+        assert.ok(requests[0].options.signal instanceof AbortSignal)
+        assert.equal(result.tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+        assert.equal(result.tiktok.androidUrl, settings.tiktok.androidUrl)
+        assert.equal(JSON.stringify(settings), saved, 'Request preparation must not rewrite saved settings')
+      })
+    }
   })
-  await scenario('Server short-link preparation leaves Safari, desktop and custom iOS URLs alone', async () => {
+  await scenario('Server short-link preparation leaves desktop and custom non-short iOS URLs alone', async () => {
     await withFetch(() => { throw new Error('Unexpected request') }, async requests => {
       const settings = defaultPopupSettings(shopee, shortTikTok)
-      for (const ua of [safariIos, desktop]) assert.equal(await prepareSettings(settings, ua), settings)
+      assert.equal(await prepareSettings(settings, desktop), settings)
       for (const url of [product, helper.buildTikTokOneLinkUrl(product), 'https://example.com/offer']) {
         settings.tiktok.iosUrl = url
-        assert.equal(await prepareSettings(settings, facebookIos), settings)
+        for (const iosUa of [facebookIos, safariIos]) assert.equal(await prepareSettings(settings, iosUa), settings)
       }
       settings.tiktok.iosUrl = shortTikTok
       settings.tiktok.iosEnabled = false
       assert.equal(await prepareSettings(settings, facebookIos), settings)
+      assert.equal(await prepareSettings(settings, safariIos), settings)
       assert.equal(requests.length, 0)
     })
   })
@@ -1196,16 +1203,21 @@ async function main() {
       await using(kind, { handle, session: false, local: false, cookies: false }, async h => {
         assert.equal(h.state(), 'Shopee')
         await h.click()
-        assert.equal(h.calls[0].state, 'TikTok', 'DOM advances before external navigation')
+        assert.equal(h.calls[0].state, 'Shopee', 'Visible anchor stays pinned to Shopee during native link activation')
+        assert.equal(h.state(), 'TikTok', 'Card advances to TikTok immediately after native link activation')
         assert.equal(h.calls[0].url, shopee)
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.calls[0].mode, 'anchor-same-tab')
+        assert.equal(h.calls[0].nativeAction, true)
+        assert.equal(h.calls[0].attached, true)
+        assert.equal(h.calls[0].hidden, false)
         await h.away(); await h.back(); await h.focus(); await h.tick(1000)
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.button().disabled, false)
         await h.click()
-        assert.equal(h.calls[1].mode, 'same-tab')
+        assert.equal(h.calls[1].mode, 'anchor-same-tab')
+        assert.equal(h.calls[1].nativeAction, true)
         assert.equal(new URL(h.calls[1].url).hostname, 'snssdk1180.onelink.me')
-        assert.equal(h.calls[1].state, 'ARTICLE')
+        assert.equal(h.state(), 'ARTICLE')
         await h.away(); await h.back()
         assert.equal(h.state(), 'ARTICLE')
       })
@@ -1228,29 +1240,33 @@ async function main() {
       await using(kind, { iosUrl: oneLink }, async h => {
         await h.click(); await h.tick(1000); await h.click()
         assert.equal(h.calls[1].url, oneLink)
-        assert.equal(h.calls[1].mode, 'same-tab')
+        assert.equal(h.calls[1].mode, 'anchor-same-tab')
       })
       await using(kind, { active: false }, async h => assert.equal(h.state(), 'ARTICLE'))
     })
-    await scenario(kind + ' short TikTok resolves to OneLink before clicking', async () => {
-      await withFetch(() => new Response(null, { status: 301, headers: { location: product } }), async requests => {
-        await using(kind, { iosUrl: shortTikTok + '?runtime=' + kind }, async h => {
-          assert.equal(requests.length, 1, 'Resolve on the server before the popup is ready')
-          await h.click(); await h.blur(); await h.focus(); await h.click()
-          assert.equal(requests.length, 1, 'Never await a lookup inside the app-launch click')
-          assert.equal(h.calls[0].mode, 'anchor-new-tab', 'Shopee return fix stays active')
-          assert.equal(h.calls[1].mode, 'same-tab')
-          assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
-          assert.equal(h.calls[1].state, 'ARTICLE')
+    await scenario(kind + ' short TikTok resolves to OneLink before clicking on Safari and Facebook iOS', async () => {
+      for (const [idx, iosUa] of [facebookIos, safariIos].entries()) {
+        await withFetch(() => new Response(null, { status: 301, headers: { location: product } }), async requests => {
+          await using(kind, { ua: iosUa, iosUrl: shortTikTok + '?runtime=' + kind + '-' + idx }, async h => {
+            assert.equal(requests.length, 1, 'Resolve on the server before the popup is ready')
+            await h.click(); await h.blur(); await h.focus(); await h.click()
+            assert.equal(requests.length, 1, 'Never await a lookup inside the app-launch click')
+            assert.equal(h.calls[0].mode, 'anchor-same-tab', 'Shopee uses visible Universal Link anchor without spawning Tab #2')
+            assert.equal(h.calls[0].nativeAction, true)
+            assert.equal(h.calls[1].mode, 'anchor-same-tab')
+            assert.equal(h.calls[1].nativeAction, true)
+            assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
+            assert.equal(h.state(), 'ARTICLE')
+          })
         })
-      })
+      }
     })
     await scenario(kind + ' failed short lookup keeps original same-tab link', async () => {
       await withFetch(() => { throw new Error('Upstream offline') }, async () => {
         const url = shortTikTok + '?failed=' + kind
         await using(kind, { iosUrl: url }, async h => {
           await h.click(); await h.tick(1000); await h.click()
-          assert.equal(h.calls[1].mode, 'same-tab')
+          assert.equal(h.calls[1].mode, 'anchor-same-tab')
           assert.equal(h.calls[1].url, url)
         })
       })
@@ -1310,7 +1326,7 @@ async function main() {
       await using(kind, { ...state, cooldownMinutes: 0, session: false, local: false }, async h => {
         assert.equal(h.state(), 'TikTok')
         await h.click()
-        assert.equal(h.calls[0].mode, 'same-tab')
+        assert.equal(h.calls[0].mode, 'anchor-same-tab')
         assert.equal(new URL(h.calls[0].url).hostname, 'snssdk1180.onelink.me')
         assert.equal(h.state(), 'ARTICLE')
         await h.away(); await h.back()
@@ -1341,15 +1357,6 @@ async function main() {
       })
       assert.deepEqual(resumed.session, state.session)
       await using(kind, { ...resumed, cooldownMinutes: 0, local: false, cookies: false, now: expiry }, async h => assert.equal(h.state(), 'Shopee'))
-    })
-    await scenario(kind + ' failed second navigation restores progress instead of cooldown', async () => {
-      for (const cooldownMinutes of [0, 5]) {
-        const state = await using(kind, { cooldownMinutes, replaceThrows: true }, async h => {
-          await h.click(); await h.tick(1000); await h.click()
-          assert.equal(h.state(), 'TikTok'); return h.snapshot()
-        })
-        await using(kind, { ...state, cooldownMinutes }, async h => assert.equal(h.state(), 'TikTok'))
-      }
     })
     await scenario(kind + ' zero cooldown leaves unrelated cookies and storage intact', async () => {
       await using(kind, { cooldownMinutes: 0, session: [['unrelated', 'keep']], local: [['unrelated', 'keep']], cookie: 'unrelated=keep' }, async h => {
@@ -1528,59 +1535,54 @@ async function main() {
         await h.focus(); assert.equal(h.button().disabled, false)
       })
     })
-    await scenario(kind + ' Safari navigation unchanged', async () => {
-      await using(kind, { ua: safariIos }, async h => {
-        await h.click(); await h.click()
-        assert.deepEqual(h.calls.map(call => [call.mode, call.url]), [['new-tab', shopee], ['new-tab', product]])
-        assert.equal(h.state(), 'ARTICLE')
-      })
+    await scenario(kind + ' iPhone Safari and Facebook both use visible same-tab Universal Link anchors without spawning Tab #2', async () => {
+      for (const iosUa of [safariIos, facebookIos]) {
+        await using(kind, { ua: iosUa, handle: 'throw' }, async h => {
+          const firstAnchor = h.button()
+          assert.equal(firstAnchor.tagName, 'A')
+          assert.equal(firstAnchor.getAttribute('target'), '_self')
+          await h.click()
+          assert.equal(h.calls[0].mode, 'anchor-same-tab')
+          assert.equal(h.calls[0].target, '_self')
+          assert.equal(h.calls[0].rel, 'noopener noreferrer')
+          assert.equal(h.calls[0].hidden, false)
+          assert.equal(h.calls[0].attached, true)
+          assert.equal(h.calls[0].nativeAction, true)
+          assert.equal(h.calls[0].url, shopee)
+          assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
+          assert.equal(h.state(), 'TikTok')
+          await h.blur(); await h.focus()
+          assert.equal(h.button().disabled, false)
+          const secondAnchor = h.button()
+          assert.equal(secondAnchor.tagName, 'A')
+          assert.equal(secondAnchor.getAttribute('target'), '_self')
+          await h.click()
+          assert.equal(h.calls[1].mode, 'anchor-same-tab')
+          assert.equal(h.calls[1].target, '_self')
+          assert.equal(h.calls[1].nativeAction, true)
+          assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
+          assert.equal(h.state(), 'ARTICLE')
+        })
+      }
       await using(kind, { ua: desktop }, async h => {
         assert.equal(h.state(), 'ARTICLE')
         assert.equal(h.calls.length, 0)
       })
     })
-    await scenario(kind + ' Facebook iPhone Shopee uses an attached link', async () => {
-      await using(kind, { handle: 'throw' }, async h => {
-        await h.click()
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
-        assert.equal(h.calls[0].target, '_blank')
-        assert.equal(h.calls[0].rel, 'noopener noreferrer')
-        assert.equal(h.calls[0].hidden, true)
-        assert.equal(h.calls[0].attached, true)
-        assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
-        assert.equal(h.state(), 'TikTok')
-      })
-    })
-    await scenario(kind + ' attached link exception restores Shopee', async () => {
-      await using(kind, { anchorThrows: true }, async h => {
-        await h.click()
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
-        assert.equal(h.state(), 'Shopee')
-        assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
-        assert.equal(h.storage.session.get('post-popup:post1:2026-09-27T00:00:00.000Z'), undefined)
-        assert.equal(h.storage.local.size, 0)
-        assert.equal(h.cookie(), '')
-        assert.equal(h.button().disabled, false)
-      })
-    })
-    await scenario(kind + ' Shopee blur-focus return keeps TikTok ready', async () => {
-      await using(kind, { handle: 'throw', session: false, local: false, cookies: false }, async h => {
-        await h.click(); await h.click()
-        assert.equal(h.calls.length, 1, 'A pending handoff ignores a second tap')
-        // Facebook can emit blur/focus without changing document visibility.
-        await h.blur(); await h.focus()
-        assert.equal(h.doc.visibilityState, 'visible')
-        assert.equal(h.state(), 'TikTok')
-        assert.equal(h.button().disabled, false)
-        await h.click()
-        assert.deepEqual(h.calls.map(call => call.mode), ['anchor-new-tab', 'same-tab'])
-        assert.equal(h.calls[1].state, 'ARTICLE')
-      })
-    })
-    await scenario(kind + ' same-tab exception restores the second popup', async () => {
-      await using(kind, { replaceThrows: true }, async h => {
-        await h.click(); await h.tick(1000); await h.click(); assert.equal(h.state(), 'TikTok')
-      })
+    await scenario(kind + ' Shopee blur-focus return keeps TikTok ready across iPhone Safari and Facebook', async () => {
+      for (const iosUa of [safariIos, facebookIos]) {
+        await using(kind, { ua: iosUa, handle: 'throw', session: false, local: false, cookies: false }, async h => {
+          await h.click(); await h.click()
+          assert.equal(h.calls.length, 1, 'A pending handoff ignores a second tap')
+          await h.blur(); await h.focus()
+          assert.equal(h.doc.visibilityState, 'visible')
+          assert.equal(h.state(), 'TikTok')
+          assert.equal(h.button().disabled, false)
+          await h.click()
+          assert.deepEqual(h.calls.map(call => call.mode), ['anchor-same-tab', 'anchor-same-tab'])
+          assert.equal(h.state(), 'ARTICLE')
+        })
+      }
     })
   }
   await scenario('React guard removes its listener on unmount', async () => {

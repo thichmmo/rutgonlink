@@ -48,3 +48,9 @@ full PDP. Article return, countdown, cooldown-zero reload and two accepted local
 affiliate clicks per original trial passed. Six tested source hashes matched.
 iOS is automated-only; production deployment, database counts and commission
 attribution are separate checks.
+
+## iOS Universal Link handoff across Safari & in-app webviews (2026-11-18)
+
+- On iOS (`iPhone`/`iPad`/`iPod`, including Mobile Safari and Facebook/Messenger/Zalo webviews), both `SHOPEE` and `TIKTOK` use `'anchor-same-tab'` (`<a data-popup-native-link target="_self">`) instead of `window.open(..., '_blank')` or `_blank` anchors. Spawning a `_blank` tab on iOS breaks `WKNavigationTypeLinkActivated` Universal Link interception and strands visitors on the newly opened `shopee.vn` web tab instead of returning to the TikTok popup.
+- `getTikTokIosLaunchUrl` and `preparePopupSettingsForRequest` wrap/resolve TikTok product and `vt.tiktok.com` / `vm.tiktok.com` short links into `snssdk1180.onelink.me` across all iOS user agents (`isIosUserAgent`), while Android (`SHOPEE` `_blank`, `TIKTOK` `_self` raw HTTPS) and desktop remain unchanged.
+- Verify: `node scripts/test-popup-runtime.cjs --android-native-check` and `node scripts/test-popup-runtime.cjs`.

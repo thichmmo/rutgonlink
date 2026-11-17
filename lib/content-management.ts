@@ -42,11 +42,11 @@ export const popupSchema = z.object({
   }
 })
 
-export const postSchema = z.object({
+const postBaseSchema = z.object({
   title: z.string().trim().min(1).max(200),
   slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(190),
   excerpt: z.string().trim().max(1000).nullable().optional(),
-  content: z.string().trim().min(1).max(200000),
+  content: z.string().trim().max(200000),
   contentFormat: z.enum(['plain', 'rich', 'raw-html']).optional().default('plain'),
   popupId: z.string().nullable().optional(),
   popupIds: z.array(z.string()).max(20).optional(),
@@ -55,15 +55,26 @@ export const postSchema = z.object({
   previewImage: z.string().max(MAX_INTERMEDIATE_IMAGE_LENGTH)
     .refine(isValidIntermediateImage, 'Ảnh phải là URL HTTP(S) hoặc ảnh tải lên').nullable().optional(),
   isFakeVideo: z.boolean().optional().default(false),
+  isDirectWrapper: z.boolean().optional(),
   isPublished: z.boolean().optional().default(false),
   telegramSettings: telegramSettingsSchema.optional(),
 })
 
+export const postSchema = postBaseSchema.superRefine((data, context) => {
+  // Direct popup wrappers ("Bọc thẳng") intentionally omit article HTML/media.
+  if (!data.isDirectWrapper && !data.content) {
+    context.addIssue({ code: 'custom', path: ['content'], message: 'Vui lòng nhập nội dung bài viết' })
+  }
+})
+
 // Numeric links are a create-only opt-in; older clients and every edit keep slugs.
-export const createPostSchema = postSchema.extend({
-  slug: postSchema.shape.slug.optional(),
+export const createPostSchema = postBaseSchema.extend({
+  slug: postBaseSchema.shape.slug.optional(),
   publicLinkMode: z.literal('numeric').optional(),
 }).superRefine((data, context) => {
+  if (!data.isDirectWrapper && !data.content) {
+    context.addIssue({ code: 'custom', path: ['content'], message: 'Vui lòng nhập nội dung bài viết' })
+  }
   if (data.publicLinkMode !== 'numeric' && !data.slug) {
     context.addIssue({ code: 'custom', path: ['slug'], message: 'Vui lòng nhập đường dẫn bài viết' })
   }

@@ -18,22 +18,40 @@ import { PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-p
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
-import { getPublicPostPath } from '@/lib/public-post-link'
+import { getPopupStep } from '@/lib/popup-settings'
+import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
 
 type Context = { params: Promise<{ slug: string }> }
 
 async function findPost(slug: string) {
-  return prisma.managedPost.findFirst({
-    where: { slug, isPublished: true, user: { status: 'active', deletedAt: null } },
-    include: {
-      popup: true,
-      domain: { select: { domain: true } },
-      user: { select: { managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }] } } },
+  const include = {
+    popup: true,
+    domain: { select: { domain: true } },
+    user: {
+      select: {
+        status: true,
+        deletedAt: true,
+        numericFallbackEnabled: true,
+        managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' as const }, { sortOrder: 'asc' as const }] },
+      },
     },
+  }
+  const exact = await prisma.managedPost.findFirst({
+    where: { slug, isPublished: true, user: { status: 'active', deletedAt: null } },
+    include,
   })
+  if (exact) return { post: exact, isFallback: false }
+
+  if (!isNumericPostSlug(slug)) return null
+  const fallback = await prisma.managedPost.findFirst({
+    where: { isPublished: true, user: { status: 'active', deletedAt: null, numericFallbackEnabled: true } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    include,
+  })
+  return fallback?.user?.numericFallbackEnabled === true ? { post: fallback, isFallback: true } : null
 }
 
-function publicUrl(post: Awaited<ReturnType<typeof findPost>>) {
+function publicUrl(post: NonNullable<Awaited<ReturnType<typeof findPost>>>['post']) {
   const domain = post?.domain?.domain || post?.sharedDomain || getSiteHostname()
   return `https://${domain}${getPublicPostPath(post?.slug || '')}`
 }
@@ -42,11 +60,12 @@ const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|m
 
 export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const { slug } = await params
-  const post = await findPost(slug)
-  if (!post) return { title: 'Không tìm thấy bài viết', robots: { index: false } }
+  const match = await findPost(slug)
+  if (!match) return { title: 'Không tìm thấy bài viết', robots: { index: false } }
+  const { post } = match
   const canonical = publicUrl(post)
-  const plainText = post.content.replace(/<[^>]+>/g, '').trim().slice(0, 160)
-  // Fallback to post.title on video-only posts so og:description is never empty.
+  const plainText = (post.content || '').replace(/<[^>]+>/g, '').trim().slice(0, 160)
+  // Fallback to post.title on video-only or direct-wrapper posts so og:description is never empty.
   const description = post.excerpt || plainText || post.title
   const image = getPostPreviewImageUrl(post)
   return {
@@ -82,9 +101,11 @@ function RenderContent({ content, format }: { content: string; format: string })
 
 export default async function ManagedPostPage({ params }: Context) {
   const { slug } = await params
-  const post = await findPost(slug)
-  if (!post) notFound()
+  const match = await findPost(slug)
+  if (!match) notFound()
+  const { post, isFallback } = match
   const telegram = normalizeTelegramSettings(post.telegramSettings)
+  const isDirectWrapper = Boolean(post.isDirectWrapper)
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
@@ -96,12 +117,24 @@ export default async function ManagedPostPage({ params }: Context) {
   const settings = !isFacebookCrawler && post.popup?.isActive && normalizedSettings
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
     : normalizedSettings
+  const directSteps = !isFacebookCrawler && isDirectWrapper && settings
+    ? [getPopupStep(settings, 0, userAgent), getPopupStep(settings, 1, userAgent)].filter(item => item.url)
+    : []
 
   return <>
     {!isFacebookCrawler && <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />}
     <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
     {!isFacebookCrawler && <DesktopDevToolsGuard userAgent={userAgent} />}
-    {isFacebookCrawler ? <main /> : telegram.enabled ? <main className="telegram-post-page">
+    {!isFacebookCrawler && isFallback && <script dangerouslySetInnerHTML={{ __html: `try{if(window.history&&window.history.replaceState)window.history.replaceState(null,"",${JSON.stringify(`/posts/${encodeURIComponent(post.slug)}`)}+window.location.search+window.location.hash)}catch(_){}` }} />}
+    {isFacebookCrawler ? <main /> : isDirectWrapper ? <main data-direct-wrapper="" className="flex min-h-screen items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white px-6 py-8 text-center shadow-sm">
+        <h1 className="text-xl font-bold leading-snug text-gray-950">{post.title}</h1>
+        <p className="mt-2.5 text-sm text-gray-500">Chọn liên kết bên dưới nếu ứng dụng chưa tự mở.</p>
+        {directSteps.length > 0 && <div className="mt-5 grid gap-3">
+          {directSteps.map(item => <a key={item.platform} href={item.launchUrl || item.url} rel="noopener noreferrer" className="block rounded-full bg-[#19181d] px-5 py-3.5 text-base font-bold text-white no-underline hover:bg-black">Mở {item.platform}</a>)}
+        </div>}
+      </div>
+    </main> : telegram.enabled ? <main className="telegram-post-page">
       <article className="telegram-post">
         {before.map(block => <div key={block.id}><RenderContent content={block.content} format={block.contentFormat} /></div>)}
         <div dangerouslySetInnerHTML={{ __html: renderTelegramHeader(telegram) }} />

@@ -1,4 +1,4 @@
-import { buildTikTokOneLinkUrl, isIosFacebookUserAgent, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
+import { buildTikTokOneLinkUrl, isIosUserAgent, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
 import { popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
@@ -42,7 +42,7 @@ export async function preparePopupSettingsForRequest(settings: PopupSettings, us
     settings = { ...settings, tiktok: { ...settings.tiktok } }
     delete settings.tiktok.androidLaunchUrl
   }
-  if (!isIosFacebookUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent)) return settings
+  if (!isIosUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent)) return settings
   const url = settings.tiktok.iosUrl || settings.tiktok.url
   if (!isTikTokShortUrl(url)) return settings
   const launchUrl = await resolvePopupShortLink(url)

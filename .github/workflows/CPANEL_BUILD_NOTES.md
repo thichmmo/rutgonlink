@@ -115,3 +115,8 @@ transport tests and successful deployment do not establish that Facebook accepts
 ## Top-1M shared domains and AutoSSL HTTP-01 preservation (2026-11-17)
 
 `scripts/cpanel-release.sh` ensures `$app/.well-known/.htaccess` sets `PassengerEnabled off` so cPanel AutoSSL HTTP-01 DCV challenges for shared domains (`ca33newss.xyz`, `6739dd4f.nip.io`, `tin24h-6739dd4f.nip.io`, `103-57-221-79.sslip.io`) are served by Apache rather than intercepted by Passenger. Full origin Apache/Passenger route smoke checks (`rutgonlink.site`, `ca33newss.xyz/robots.txt`, `6739dd4f.nip.io/robots.txt`) execute inside `scripts/cpanel-release.sh` before `SUCCESS` (triggering automatic rollback on failure and writing `smoke_routes_verified=1` to `deploy.log`), and `.github/workflows/cpanel-deploy.yml` verifies `smoke_routes_verified=1` via the cPanel API so Imunify360 WebShield `503` splash pages on Azure runner IPs do not cause false CI failures. `Remove temporary release asset` runs with `if: always()`. Verify with `bash -n scripts/cpanel-release.sh`, `node scripts/test-shared-domain-https.cjs`, and `node scripts/test-telegram-quick-form.cjs`.
+
+## Post Fallback API Lint & Origin Smoke Check (2026-11-18)
+
+- `.github/workflows/cpanel-deploy.yml` includes `app/api/settings/post-fallback` in ESLint, and `scripts/cpanel-release.sh` verifies `https://rutgonlink.site/api/settings/post-fallback` returns `401` unauthenticated before marking `SUCCESS`.
+- Verify: `bash -n scripts/cpanel-release.sh` and scoped ESLint.

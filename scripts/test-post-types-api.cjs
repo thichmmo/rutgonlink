@@ -14,7 +14,8 @@ for (let index = 0; index < 80; index += 1) {
   rows.push({
     id: `a-${index}`, userId: owner.id, title: index % 2 ? `Video ${index}` : `Article ${index}`,
     slug: `post-${index}`, excerpt: index % 4 ? null : 'Interesting', isPublished: index % 3 !== 0,
-    telegramSettings: states[index % states.length], updatedAt: new Date(2026, 9, 1, 0, index),
+    isDirectWrapper: index >= 76,
+    telegramSettings: index >= 76 ? { enabled: false } : states[index % states.length], updatedAt: new Date(2026, 9, 1, 0, index),
     domainId: index % 3 === 2 ? 'domain-a' : null,
     sharedDomain: index % 3 === 1 ? 'share.example.test' : null,
     domain: index % 3 === 2 ? { id: 'domain-a', domain: 'custom.example.test' } : null, popup: null,
@@ -73,7 +74,12 @@ async function get(query = '') {
 }
 function expected({ type = 'all', status = 'all', query = '', domain = '', page = 1, pageSize = 10 } = {}) {
   const result = rows.filter(row => row.userId === state.actor.id)
-    .filter(row => type === 'all' || ((row.telegramSettings?.enabled === true) === (type === 'telegram')))
+    .filter(row => {
+      if (type === 'all') return true
+      if (type === 'direct') return row.isDirectWrapper === true
+      if (row.isDirectWrapper) return false
+      return (row.telegramSettings?.enabled === true) === (type === 'telegram')
+    })
     .filter(row => status === 'all' || row.isPublished === (status === 'published'))
     .filter(row => !query || [row.title, row.slug, row.excerpt || ''].some(text => text.toLowerCase().includes(query.toLowerCase())))
     .filter(row => !domain || (row.domain?.domain || row.sharedDomain || 'rutgonlink.site') === domain)
@@ -109,11 +115,11 @@ if (baseline) {
 } else {
   scenario('authentication rejected before any database access', async () => {
     state.actor = null; state.calls = []
-    for (const type of ['all', 'standard', 'telegram']) assert.equal((await get(`type=${type}`)).status, 401)
+    for (const type of ['all', 'standard', 'telegram', 'direct']) assert.equal((await get(`type=${type}`)).status, 401)
     assert.equal(state.calls.length, 0)
     state.actor = owner
   })
-  for (const type of ['all', 'standard', 'telegram']) {
+  for (const type of ['all', 'standard', 'telegram', 'direct']) {
     scenario(`${type}: own posts, count and pagination`, async () => {
       for (const pageSize of [6, 10, 20, 25]) for (const page of [1, 2, 20]) await check({ type, pageSize, page })
     })
@@ -137,13 +143,19 @@ if (baseline) {
       assert.deepEqual(result.body, normal.body)
     }
   })
-  scenario('legacy NULL/missing/false settings are standard; strict true alone is Telegram', async () => {
+  scenario('legacy NULL/missing/false settings are standard; strict true alone is Telegram; direct is mutually exclusive', async () => {
     for (const type of ['standard', 'telegram']) {
       const result = await check({ type, pageSize: 25 })
-      for (const row of result.body.items) assert.equal(row.telegramSettings?.enabled === true, type === 'telegram')
+      for (const row of result.body.items) {
+        assert.equal(row.isDirectWrapper, false)
+        assert.equal(row.telegramSettings?.enabled === true, type === 'telegram')
+      }
     }
+    const directResult = await check({ type: 'direct', pageSize: 25 })
+    assert.equal(directResult.body.total, 4)
+    for (const row of directResult.body.items) assert.equal(row.isDirectWrapper, true)
     const result = await get('type=standard&pageSize=25')
-    assert.equal(result.body.total, 70)
+    assert.equal(result.body.total, 67)
     assert(result.body.items.some(row => row.telegramSettings === null))
     assert(result.body.items.some(row => row.telegramSettings && !('enabled' in row.telegramSettings)))
   })
@@ -177,6 +189,10 @@ if (baseline) {
           assert(query.args.includes('null'), 'JSON null enabled must match')
         } else assert(!query.sql.includes('IS NULL'))
       }
+      await check({ type: 'direct' })
+      const { where: directWhere } = state.calls.find(call => call.method === 'findMany').args
+      await client.managedPost.findMany({ where: directWhere, select: { id: true }, take: 6, skip: 0 })
+      assert(queries.at(-1).sql.includes('isDirectWrapper'))
     } finally { await client.$disconnect() }
   })
 }

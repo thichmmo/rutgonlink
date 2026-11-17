@@ -12,3 +12,8 @@ create/list/PUT. A source numeric link receives a fresh numeric code with bounde
 transaction retries; legacy sources retain their `slug-copy` behavior. Both keep
 draft status and the source snapshot. Verify with the numeric-link and Telegram
 API regression suites.
+
+## Direct Wrapper duplication (2026-11-18)
+
+- `POST /api/posts/[id]/duplicate` copies `isDirectWrapper` onto the newly allocated draft.
+- Verify: `node scripts/test-numeric-post-links.cjs`.

@@ -128,3 +128,8 @@ Historical reproductions still use `POPUP_TEST_ROOT` plus `--android-baseline`,
 `--android-native-baseline` (commit `bc9fbd8`) or `--android-prompt-baseline`
 (commit `3104b2d`). Clear `POPUP_TEST_ROOT` for current-source verification.
 The historical flags do not describe the new HTTPS or Chrome-gate behavior.
+
+## iOS Safari + Facebook Visible Universal Link Anchor Coverage (2026-11-18)
+
+- `scripts/test-popup-runtime.cjs` verifies both `safariIos` and `facebookIos` render visible `<a data-popup-native-link target="_self">` (`anchor-same-tab`) elements, pre-resolve short TikTok links to `snssdk1180.onelink.me` on the server, keep the tapped anchor attached during synchronous click activation, and advance to `TikTok` / `ARTICLE` on the `0ms` post-click macrotask without spawning `_blank` tabs.
+- Verify: `node scripts/test-popup-runtime.cjs` (135 scenarios) and `node scripts/test-popup-runtime.cjs --android-native-check` (42 scenarios).

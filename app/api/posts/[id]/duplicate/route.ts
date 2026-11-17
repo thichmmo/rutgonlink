@@ -35,6 +35,7 @@ export async function POST(_req: Request, { params }: Context) {
         contentFormat: source.contentFormat,
         previewImage: source.previewImage,
         isFakeVideo: source.isFakeVideo,
+        ...(source.isDirectWrapper ? { isDirectWrapper: true } : {}),
         isPublished: false,
         // A legacy NULL means disabled, not "inherit the current account default".
         telegramSettings: source.telegramSettings === null ? Prisma.DbNull : source.telegramSettings as Prisma.InputJsonValue,

@@ -37,3 +37,8 @@ standalone cPanel releases detect both the live `.next/standalone` tree and the
 continues to use `uploads/content` below the current working directory.
 
 Verify with `node scripts/test-popup-affiliate.cjs`, `node scripts/test-popup-runtime.cjs`, `node scripts/test-content-media.cjs`, `pnpm exec eslint lib/content-management.ts lib/popup-affiliate-url.ts lib/popup-settings.ts lib/popup-link.ts lib/video-embed.ts` and `pnpm exec tsc --noEmit --pretty false`.
+
+## Direct popup wrapper schema (`isDirectWrapper`, 2026-11-18)
+
+- `postSchema` and `createPostSchema` accept optional `isDirectWrapper: boolean`. When `isDirectWrapper === true`, `content` may be empty (`""`) while standard and Telegram posts continue requiring non-empty `content`.
+- Verify: `node scripts/test-numeric-post-links.cjs` and `node scripts/test-post-types-api.cjs`.

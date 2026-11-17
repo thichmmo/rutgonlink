@@ -26,6 +26,7 @@ model User {
   googleDriveEmail           String?
   googleDriveFolderId        String?
   telegramSettings           Json?
+  numericFallbackEnabled     Boolean           @default(false)
   fbDebugIntervalMinutes     Int               @default(20)
   fbDebugMinClicksPerDay     Int               @default(0)
   fbDebugAllActiveLinks      Boolean           @default(false)
@@ -237,8 +238,9 @@ model ManagedPost {
   content       String         @db.LongText
   contentFormat String         @default("plain") @db.VarChar(20)
   previewImage  String?        @db.LongText
-  isFakeVideo   Boolean        @default(false)
-  isPublished   Boolean        @default(false)
+  isFakeVideo     Boolean        @default(false)
+  isDirectWrapper Boolean        @default(false)
+  isPublished     Boolean        @default(false)
   telegramSettings Json?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

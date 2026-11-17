@@ -121,7 +121,7 @@ jobs:
           lib/popup-click-client.ts lib/popup-click-token.ts
           lib/popup-analytics.ts lib/popup-analytics-server.ts scripts/test-popup-clicks.cjs
           lib/telegram-settings.ts lib/telegram-render.ts
-          app/api/settings/telegram app/dashboard/settings/TelegramSettingsSection.tsx
+          app/api/settings/telegram app/api/settings/post-fallback app/dashboard/settings/TelegramSettingsSection.tsx
           app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
           scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs
           scripts/test-telegram-quick-form.cjs

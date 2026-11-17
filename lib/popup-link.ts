@@ -120,12 +120,13 @@ export function buildTikTokOneLinkUrl(value: string) {
 }
 
 export function getTikTokIosLaunchUrl(value: string, userAgent: string) {
-  return isIosFacebookUserAgent(userAgent)
+  // Wrap product URLs into OneLink across all iOS browsers so Safari and in-app webviews launch TikTok directly.
+  return isIosUserAgent(userAgent)
     ? buildTikTokOneLinkUrl(value)
     : value
 }
 
-function isIosUserAgent(userAgent: string) {
+export function isIosUserAgent(userAgent: string) {
   return /iphone|ipad|ipod/i.test(userAgent)
 }
 
@@ -138,18 +139,18 @@ export function isIosFacebookUserAgent(userAgent: string) {
 }
 
 export function getPopupLinkOpenMode(
-  value: string,
+  _value: string,
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
-  if (/android/i.test(options.userAgent)) return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
-  const isIosFacebook = isIosFacebookUserAgent(options.userAgent)
-
-  // Let Facebook handle the link action before allocating a script-opened blank webview.
-  if (isIosFacebook && platform === 'SHOPEE') return 'anchor-new-tab'
-
-  // An unresolved short link must not fall back to a script-created Facebook tab.
-  return isIosFacebook && platform === 'TIKTOK' && (isTikTokOneLinkUrl(value) || isTikTokShortUrl(value))
-    ? 'same-tab'
-    : 'new-tab'
+  if (/android/i.test(options.userAgent)) {
+    return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
+  }
+  // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context
+  // that breaks Universal Links and leaves the user stranded on shopee.vn. A visible
+  // same-tab <a> tap sets WKNavigationTypeLinkActivated so iOS launches Shopee & TikTok directly.
+  if (isIosUserAgent(options.userAgent)) {
+    return 'anchor-same-tab'
+  }
+  return 'new-tab'
 }

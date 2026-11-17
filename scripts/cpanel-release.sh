@@ -149,6 +149,7 @@ test "$root_http" = 200; test "$popups_http" = 401; test "$posts_http" = 401
 # Run full origin route and shared-domain checks locally on cPanel so regressions roll back before SUCCESS
 # and Imunify360 datacenter challenges on GitHub Actions IPs do not cause false post-deploy 503 failures.
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/post-fallback)" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403

@@ -17,3 +17,8 @@ Numeric-link serialization shares `getPublicPostPath` with create/list and the
 public renderers. PUT still validates/persists the supplied existing slug and
 never reads create-only `publicLinkMode` or allocates another code. Verify numeric
 edit/link stability with `node scripts/test-numeric-post-links.cjs`.
+
+## Direct Wrapper updates (2026-11-18)
+
+- `PUT /api/posts/[id]` persists `isDirectWrapper` when supplied, requires an active `popupId` when `isDirectWrapper === true`, and keeps `telegramSettings.enabled` false for direct wrappers.
+- Verify: `node scripts/test-numeric-post-links.cjs`.

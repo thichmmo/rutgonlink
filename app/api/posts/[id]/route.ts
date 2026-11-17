@@ -35,12 +35,15 @@ export async function PUT(req: NextRequest, { params }: Context) {
   const { id } = await params
   try {
     const data = postSchema.parse(await req.json())
+    if (data.isDirectWrapper && !data.popupId) {
+      return NextResponse.json({ error: 'Bọc thẳng cần chọn popup' }, { status: 400 })
+    }
     if (!(await ownsPopupRecord(actor.id, data.popupId))) {
       return NextResponse.json({ error: 'Popup không thuộc tài khoản này' }, { status: 400 })
     }
     const target = await validatePublicationTarget(actor.id, data.domainId, data.sharedDomain)
     const format = normalizeContentFormat(data.contentFormat)
-    const content = normalizeContent(data.content, format, actor.isAdmin)
+    const content = data.isDirectWrapper && !data.content ? '' : normalizeContent(data.content, format, actor.isAdmin)
     const updated = await prisma.managedPost.updateMany({
       where: { id, userId: actor.id },
       data: {
@@ -54,9 +57,10 @@ export async function PUT(req: NextRequest, { params }: Context) {
         contentFormat: format,
         previewImage: data.previewImage || null,
         isFakeVideo: data.isFakeVideo,
+        ...(data.isDirectWrapper === undefined ? {} : { isDirectWrapper: data.isDirectWrapper }),
         isPublished: data.isPublished,
         // Older clients omit this field; their edits must preserve the stored snapshot.
-        ...(data.telegramSettings === undefined ? {} : { telegramSettings: data.telegramSettings }),
+        ...(data.telegramSettings === undefined ? {} : { telegramSettings: data.isDirectWrapper ? { ...data.telegramSettings, enabled: false } : data.telegramSettings }),
       },
     })
     if (!updated.count) return NextResponse.json({ error: 'Không tìm thấy bài viết' }, { status: 404 })

@@ -226,17 +226,22 @@ function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProp
     const pending = { fromStep, nextStep, leftPage: false, timedOut: false }
     pendingOpenRef.current = pending
     sendPopupClick(tracking, current.platform)
-    // Persist before navigation; Android keeps the clicked popup visible while
-    // the browser asks for consent. iOS still snapshots the next popup immediately.
+    // Hold the clicked step during synchronous flushSync so a visible <a> keeps its current href
+    // when the browser executes its default link action; on iOS swap to the next step right after.
     flushSync(() => {
       setOpening(true)
-      setRetryStep(isAndroid ? fromStep : null)
+      setRetryStep(nativeEvent ? fromStep : (isAndroid ? fromStep : null))
       commitStep(nextStep)
       setError('')
     })
+    if (nativeEvent && !isAndroid) {
+      window.setTimeout(() => {
+        if (pendingOpenRef.current === pending) setRetryStep(null)
+      }, 0)
+    }
 
     if (current.openMode === 'same-tab') {
-      // Use the OneLink handoff in the originating Facebook tab, as in the reference flow.
+      // Retain compatibility if a non-anchor same-tab mode is ever passed.
       try {
         window.location.replace(current.url)
       } catch {
@@ -250,8 +255,8 @@ function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProp
 
     let opened: Window | null = null
     try {
-      // A visible Android anchor uses the browser's trusted default link action,
-      // matching the phone-verified diagnostic. Only fallback/iOS calls need a bridge.
+      // Visible mobile anchors (both Android and iOS) use the browser's trusted default link action
+      // so iOS sets WKNavigationTypeLinkActivated and launches Universal Links instead of a shopee.vn tab.
       if (nativeEvent) {
         // State is already persisted; do not cancel or synthesize navigation.
       } else if (current.openMode === 'anchor-new-tab' || current.openMode === 'anchor-same-tab') {
@@ -268,14 +273,15 @@ function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProp
     } catch {
       pendingOpenRef.current = null
       setOpening(false)
+      setRetryStep(isAndroid ? fromStep : null)
       commitStep(fromStep)
-      if (isAndroid) setRetryStep(fromStep)
       setError('Không thể mở liên kết, hãy thử lại.')
       return
     }
     if (opened) {
       pendingOpenRef.current = null
       setOpening(false)
+      setRetryStep(null)
       try { opened.opener = null } catch { /* The new tab may have navigated. */ }
       return
     }
@@ -295,6 +301,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProp
       }
       pendingOpenRef.current = null
       setOpening(false)
+      setRetryStep(null)
       // Mobile browsers can return null even after successfully opening a tab.
       // Keep the committed step instead of replaying Shopee on return.
       if (isMobile) return
@@ -324,7 +331,8 @@ function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProp
         <div className="mb-1 flex items-center justify-between text-xs font-semibold text-gray-500"><span role="timer" aria-live="off" aria-label={`Thời gian chờ ${current.platform}`}>{displayRemaining > 0 ? `Còn ${displayRemaining} giây` : 'Sẵn sàng'}</span><span>{delay}s</span></div>
         <div className="h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label={`Bộ đếm ${current.platform}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(timerPercent)} aria-valuetext={displayRemaining > 0 ? `Còn ${displayRemaining} giây` : 'Sẵn sàng'}><div className="h-full rounded-full bg-[#d61f51] transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${timerPercent}%` }} /></div>
       </div>
-      {isAndroid ? <a data-popup-native-link="" role="button" href={current.launchUrl} target={current.openMode === 'anchor-new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" aria-disabled={displayRemaining > 0 || opening} tabIndex={displayRemaining > 0 || opening ? -1 : 0} onClick={event => advance(false, event)} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); event.currentTarget.click() } }} className={`mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white no-underline transition hover:bg-black sm:h-[72px] sm:text-2xl ${displayRemaining > 0 || opening ? 'cursor-wait opacity-60' : ''}`}>{buttonLabel}</a>
+      {isMobile && (current.openMode === 'anchor-new-tab' || current.openMode === 'anchor-same-tab')
+        ? <a data-popup-native-link="" role="button" href={current.launchUrl} target={current.openMode === 'anchor-new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" aria-disabled={displayRemaining > 0 || opening} tabIndex={displayRemaining > 0 || opening ? -1 : 0} onClick={event => advance(false, event)} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); event.currentTarget.click() } }} className={`mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white no-underline transition hover:bg-black sm:h-[72px] sm:text-2xl ${displayRemaining > 0 || opening ? 'cursor-wait opacity-60' : ''}`}>{buttonLabel}</a>
         : <button type="button" onClick={() => advance()} disabled={displayRemaining > 0 || opening} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>}
       <p className="mt-4 text-center text-base font-medium text-[#9ba3b3] sm:text-lg">{progress}</p>
       {forceMessage && <p className="mt-2 text-center text-xs text-amber-600">{forceMessage}</p>}

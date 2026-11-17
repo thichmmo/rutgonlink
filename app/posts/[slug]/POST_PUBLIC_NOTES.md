@@ -132,3 +132,9 @@ render regression suites.
 - `generateMetadata` falls back to `post.title` when `post.excerpt` and stripped `plainText` are empty, preventing empty Open Graph descriptions on video-only posts.
 - Facebook/Meta crawler User-Agents (`facebookexternalhit`, `facebookcatalog`, `Facebot`, `meta-externalagent`, `meta-externalfetcher`, `meta-webindexer`) render `<main />` inside `.managed-public-post` without mounting `<noscript>` (`PUBLIC_POST_NOSCRIPT_HTML`), `<DesktopDevToolsGuard>`, Telegram CTA/media, or `PostPopup`, while keeping 100% of the Mesale DevTools guard, `<noscript>` redirect, and popup runtime intact for all real browsers and Facebook in-app webviews (`FBAN`/`FB_IAB`).
 - Verify with `node scripts/test-telegram-render.cjs` and `node scripts/test-popup-runtime.cjs`.
+
+## iOS Universal Link handoff, Direct Wrapper & Anti-404 `/p7` Fallback (2026-11-18)
+
+- `PostPopup` renders a visible `<a data-popup-native-link>` for both iOS (`_self` Universal Link) and Android (`_blank` Shopee, `_self` TikTok), pinning `retryStep` during synchronous `flushSync` so `href` does not mutate before WebKit's default link navigation and clearing `retryStep` on a `0ms` timer for iOS.
+- `ManagedPostPage` supports `post.isDirectWrapper` (`data-direct-wrapper=""`) and opt-in `user.numericFallbackEnabled` fallback for missing numeric `p7-<code>` slugs with client `history.replaceState`.
+- Verify: `node scripts/test-popup-runtime.cjs` and `node scripts/test-numeric-post-links.cjs`.

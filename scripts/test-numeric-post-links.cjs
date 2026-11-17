@@ -16,9 +16,16 @@ const legacy = { title: 'Fixture', slug: 'legacy-name', content: '<p>Video fixtu
 const collision = () => new Prisma.PrismaClientKnownRequestError('Fixture collision', { code: 'P2002', clientVersion: 'test' })
 
 function matches(row, where) {
-  return Object.entries(where).every(([key, value]) => key === 'user'
-    ? row.user.status === value.status && row.user.deletedAt === value.deletedAt
-    : row[key] === value)
+  return Object.entries(where).every(([key, value]) => {
+    if (key === 'AND') return value.every(item => matches(row, item))
+    if (key === 'OR') return value.some(item => matches(row, item))
+    if (key === 'user') {
+      return row.user.status === value.status
+        && row.user.deletedAt === value.deletedAt
+        && (value.numericFallbackEnabled === undefined || Boolean(row.user.numericFallbackEnabled) === value.numericFallbackEnabled)
+    }
+    return row[key] === value
+  })
 }
 const prisma = {
   $transaction: async operation => {
@@ -27,20 +34,27 @@ const prisma = {
     const before = structuredClone(state.rows)
     try { return await operation(prisma) } catch (error) { state.rows = before; throw error }
   },
-  user: { findUnique: async () => { state.defaultsRead += 1; return { telegramSettings: telegram } } },
+  user: {
+    findUnique: async () => { state.defaultsRead += 1; return { telegramSettings: telegram, numericFallbackEnabled: Boolean(state.numericFallbackEnabled) } },
+    update: async ({ data }) => { state.numericFallbackEnabled = Boolean(data.numericFallbackEnabled); for (const row of state.rows.values()) row.user.numericFallbackEnabled = state.numericFallbackEnabled; return { numericFallbackEnabled: state.numericFallbackEnabled } },
+  },
   domain: { findFirst: async ({ where }) => where.domain === 'custom.example.test' ? { id: 'custom' } : null },
   link: { findFirst: async () => { throw new Error('Numeric routes must never resolve a short link') } },
   click: { create: async () => { throw new Error('Numeric routes must never write short-link analytics') } },
   managedPost: {
     findUnique: async ({ where }) => [...state.rows.values()].find(row => row.slug === where.slug) || null,
-    findFirst: async ({ where }) => [...state.rows.values()].find(row => matches(row, where)) || null,
+    findFirst: async ({ where, orderBy }) => {
+      const list = [...state.rows.values()].filter(row => matches(row, where))
+      if (orderBy) list.sort((a, b) => (b.createdAt - a.createdAt) || b.id.localeCompare(a.id))
+      return list[0] || null
+    },
     count: async ({ where }) => [...state.rows.values()].filter(row => matches(row, where)).length,
     findMany: async ({ where }) => [...state.rows.values()].filter(row => matches(row, where)),
     create: async ({ data }) => {
       state.calls.push(structuredClone(data))
       if (state.createError) throw state.createError
       if (state.alwaysCollide || state.calls.length === state.failCreate || [...state.rows.values()].some(row => row.slug === data.slug)) throw collision()
-      const row = { id: `post-${++state.nextId}`, popup: null, domain: data.domainId === 'custom' ? { id: 'custom', domain: 'custom.example.test' } : null, user: { status: 'active', deletedAt: null, managedContentBlocks: [] }, createdAt: new Date('2026-10-07T00:00:00Z'), ...data }
+      const row = { id: `post-${++state.nextId}`, popup: null, domain: data.domainId === 'custom' ? { id: 'custom', domain: 'custom.example.test' } : null, user: { status: 'active', deletedAt: null, numericFallbackEnabled: Boolean(state.numericFallbackEnabled), managedContentBlocks: [] }, createdAt: new Date(Date.UTC(2026, 9, 7, 0, state.nextId)), isDirectWrapper: false, ...data }
       state.rows.set(row.id, row)
       return row
     },
@@ -86,6 +100,7 @@ function load(file) {
 const api = load('app/api/posts/route.ts')
 const item = load('app/api/posts/[id]/route.ts')
 const duplicate = load('app/api/posts/[id]/duplicate/route.ts')
+const fallbackApi = load('app/api/settings/post-fallback/route.ts')
 const numericRoute = load('app/p7/[code]/route.ts')
 const slugRoute = load('app/[shortCode]/route.ts')
 const reactPage = load('app/posts/[slug]/page.tsx')
@@ -95,7 +110,7 @@ const body = async response => ({ status: response.status, data: await response.
 const tasks = []
 const scenario = (name, run) => tasks.push({ name, run })
 function reset() {
-  Object.assign(state, { actor: { id: 'owner', isAdmin: false }, rows: new Map(), calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true })
+  Object.assign(state, { actor: { id: 'owner', isAdmin: false }, rows: new Map(), calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true, numericFallbackEnabled: false })
 }
 async function create(patch = {}) { return body(await api.POST(request({ ...legacy, ...patch }))) }
 async function visit(code, host = 'honghotngay228.site') {
@@ -238,6 +253,45 @@ scenario('primary/custom domains, legacy numeric alias and React metadata remain
   const metadata = await reactPage.generateMetadata({ params: Promise.resolve({ slug: primary.slug }) })
   assert.equal(metadata.alternates.canonical, primary.publicUrl)
   assert.equal(custom.slug, 'p7-50001')
+})
+scenario('direct wrapper allocates numeric /p7 link without article body, requires popup, and renders minimal card', async () => {
+  const missingPopup = await api.POST(request({ title: 'Ưu đãi hôm nay', content: '', contentFormat: 'rich', isDirectWrapper: true, publicLinkMode: 'numeric', popupIds: [], sharedDomain: 'ca33newss.xyz', isPublished: true }))
+  assert.equal(missingPopup.status, 400)
+  const created = await body(await api.POST(request({ title: 'Ưu đãi hôm nay', content: '', contentFormat: 'rich', isDirectWrapper: true, publicLinkMode: 'numeric', popupIds: ['p1'], sharedDomain: 'ca33newss.xyz', isPublished: true })))
+  assert.equal(created.status, 201)
+  const post = created.data.items[0]
+  assert.equal(post.slug, 'p7-50000')
+  assert.equal(post.publicUrl, 'https://ca33newss.xyz/p7/50000')
+  assert.equal(post.isDirectWrapper, true)
+  assert.equal(post.telegramSettings.enabled, false)
+  const res = await visit('50000', 'ca33newss.xyz')
+  assert.equal(res.status, 200)
+  const html = await res.text()
+  assert(html.includes('data-direct-wrapper=""'))
+  assert(!html.includes('class="telegram-post"'))
+  assert(html.includes('https://mesale.vn'))
+  const copied = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: post.id }) }))
+  assert.equal(copied.status, 201)
+  assert.equal(copied.data.isDirectWrapper, true)
+  assert.equal(copied.data.slug, 'p7-50001')
+})
+scenario('opt-in numericFallbackEnabled routes missing /p7/<code> to newest active post on same domain with replaceState', async () => {
+  await create({ title: 'Older post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })
+  const newest = (await create({ title: 'Newest post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })).data.items[0]
+  assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404, 'Disabled by default')
+  const toggled = await body(await fallbackApi.PUT(request({ enabled: true })))
+  assert.equal(toggled.status, 200)
+  assert.equal(toggled.data.numericFallbackEnabled, true)
+  const fallbackRes = await visit('99999', 'ca33newss.xyz')
+  assert.equal(fallbackRes.status, 200)
+  const html = await fallbackRes.text()
+  assert(html.includes('Newest post'))
+  assert(html.includes(`href="${newest.publicUrl}"`))
+  assert(html.includes('window.history.replaceState(null,"","/p7/50001"'))
+  assert.equal((await visit('99999', 'honghotngay228.site')).status, 404, 'Never cross domains on fallback')
+  const toggledOff = await body(await fallbackApi.PUT(request({ enabled: false })))
+  assert.equal(toggledOff.data.numericFallbackEnabled, false)
+  assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404)
 })
 
 ;(async () => {

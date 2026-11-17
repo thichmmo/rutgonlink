@@ -44,13 +44,18 @@ export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get('type') || 'all'
   const page = pageValue(req.nextUrl.searchParams.get('page'), 1)
   const pageSize = pageSizeValue(req.nextUrl.searchParams.get('pageSize'))
-  const typeFilter: Prisma.ManagedPostWhereInput[] = type === 'telegram'
-    ? [{ telegramSettings: { path: '$.enabled', equals: true } }]
-    : type === 'standard' ? [{ OR: [
-      { telegramSettings: { path: '$.enabled', not: true } },
-      // A negated JSON comparison alone drops SQL NULL and legacy objects with no enabled key.
-      { telegramSettings: { path: '$.enabled', equals: Prisma.AnyNull } },
-    ] }] : []
+  const typeFilter: Prisma.ManagedPostWhereInput[] = type === 'direct'
+    ? [{ isDirectWrapper: true }]
+    : type === 'telegram'
+      ? [{ isDirectWrapper: false, telegramSettings: { path: '$.enabled', equals: true } }]
+      : type === 'standard' ? [{
+        isDirectWrapper: false,
+        OR: [
+          { telegramSettings: { path: '$.enabled', not: true } },
+          // A negated JSON comparison alone drops SQL NULL and legacy objects with no enabled key.
+          { telegramSettings: { path: '$.enabled', equals: Prisma.AnyNull } },
+        ],
+      }] : []
   const where: Prisma.ManagedPostWhereInput = {
     userId: actor.id,
     ...(status === 'published' ? { isPublished: true } : status === 'draft' ? { isPublished: false } : {}),
@@ -84,20 +89,24 @@ export async function POST(req: NextRequest) {
   try {
     const data = createPostSchema.parse(await req.json())
     const popupIds = data.popupIds?.length ? [...new Set(data.popupIds)] : (data.popupId ? [data.popupId] : [])
+    if (data.isDirectWrapper && !popupIds.length) {
+      return NextResponse.json({ error: 'Bọc thẳng cần chọn ít nhất 1 popup đang bật' }, { status: 400 })
+    }
     if (!(await ownsActivePopups(actor.id, popupIds))) {
       return NextResponse.json({ error: 'Popup không thuộc tài khoản hoặc đang tắt' }, { status: 400 })
     }
     const target = await validatePublicationTarget(actor.id, data.domainId, data.sharedDomain)
     const format = normalizeContentFormat(data.contentFormat)
-    const content = normalizeContent(data.content, format, actor.isAdmin)
+    const content = data.isDirectWrapper && !data.content ? '' : normalizeContent(data.content, format, actor.isAdmin)
     const account = data.telegramSettings === undefined
       ? await prisma.user.findUnique({ where: { id: actor.id }, select: { telegramSettings: true } })
       : null
     // Snapshot once per create request, including all popup variants; defaults never leak into old posts.
-    const telegramSettings = data.telegramSettings ?? normalizeTelegramSettings(account?.telegramSettings)
+    const baseTelegram = data.telegramSettings ?? normalizeTelegramSettings(account?.telegramSettings)
+    const telegramSettings = data.isDirectWrapper ? { ...baseTelegram, enabled: false } : baseTelegram
     const numericLink = data.publicLinkMode === 'numeric'
-    if (numericLink && !telegramSettings.enabled) {
-      return NextResponse.json({ error: 'Mã link số chỉ dùng khi tạo bài Telegram' }, { status: 400 })
+    if (numericLink && !telegramSettings.enabled && !data.isDirectWrapper) {
+      return NextResponse.json({ error: 'Mã link số chỉ dùng khi tạo bài Telegram hoặc Bọc thẳng' }, { status: 400 })
     }
     // Snapshots stay outside retries so all variants retain the same account defaults.
     const createTransaction = () => prisma.$transaction(async (tx) => {
@@ -125,6 +134,7 @@ export async function POST(req: NextRequest) {
             contentFormat: format,
             previewImage: data.previewImage || null,
             isFakeVideo: data.isFakeVideo,
+            ...(data.isDirectWrapper ? { isDirectWrapper: true } : {}),
             isPublished: data.isPublished,
             telegramSettings,
           },

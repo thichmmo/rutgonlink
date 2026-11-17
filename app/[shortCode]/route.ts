@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createPopupClickToken } from '@/lib/popup-click-token'
-import { getPublicPostPath } from '@/lib/public-post-link'
+import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
 import { sendPopupClick } from '@/lib/popup-click-client'
 import { prisma } from '@/lib/prisma'
 import { UAParser } from 'ua-parser-js'
@@ -272,36 +272,66 @@ async function findManagedPostForHost(slug: string, hostname: string) {
     : isShared
       ? { domainId: null, sharedDomain: normalized }
       : { domainId: domain!.id }
+  const include = {
+    popup: true,
+    user: {
+      select: {
+        status: true,
+        deletedAt: true,
+        numericFallbackEnabled: true,
+        managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' as const }, { sortOrder: 'asc' as const }] },
+      },
+    },
+  }
   const post = await prisma.managedPost.findFirst({
     where: { slug, isPublished: true, ...targetWhere, user: { status: 'active', deletedAt: null } },
-    include: {
-      popup: true,
-      user: { select: { managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }] } } },
-    },
+    include,
   })
-  if (post || !isShared) return post
+  if (post) return { post, isFallback: false }
 
-  // Preserve links created before a shared domain was selected in the editor.
-  return prisma.managedPost.findFirst({
-    where: { slug, isPublished: true, domainId: null, sharedDomain: null, user: { status: 'active', deletedAt: null } },
-    include: {
-      popup: true,
-      user: { select: { managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' }, { sortOrder: 'asc' }] } } },
-    },
+  if (isShared) {
+    // Preserve links created before a shared domain was selected in the editor.
+    const legacyShared = await prisma.managedPost.findFirst({
+      where: { slug, isPublished: true, domainId: null, sharedDomain: null, user: { status: 'active', deletedAt: null } },
+      include,
+    })
+    if (legacyShared) return { post: legacyShared, isFallback: false }
+  }
+
+  // Anti-404 fallback: route deleted/missing /p7/<code> paths to the newest active post on this domain
+  // only when the post owner explicitly enabled numericFallbackEnabled.
+  if (!isNumericPostSlug(slug)) return null
+  const fallbackWhere = { isPublished: true, user: { status: 'active', deletedAt: null, numericFallbackEnabled: true } }
+  const fallback = await prisma.managedPost.findFirst({
+    where: { ...fallbackWhere, ...targetWhere },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    include,
   })
+  if (fallback?.user?.numericFallbackEnabled === true) return { post: fallback, isFallback: true }
+
+  if (isShared) {
+    const legacyFallback = await prisma.managedPost.findFirst({
+      where: { ...fallbackWhere, domainId: null, sharedDomain: null },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include,
+    })
+    if (legacyFallback?.user?.numericFallbackEnabled === true) return { post: legacyFallback, isFallback: true }
+  }
+  return null
 }
 
 const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|meta-externalagent|meta-externalfetcher|meta-webindexer/i
 
 // Route handlers return a standalone HTML document so custom domains keep the public slug.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildManagedPostPage(post: any, hostname: string, userAgent: string) {
+async function buildManagedPostPage(post: any, hostname: string, userAgent: string, isFallback = false) {
   const telegram = normalizeTelegramSettings(post.telegramSettings)
+  const isDirectWrapper = Boolean(post.isDirectWrapper)
   const absoluteImage = getPostPreviewImageUrl(post)
-  const plainText = String(post.content).replace(/<[^>]+>/g, '').trim().slice(0, 160)
+  const plainText = String(post.content || '').replace(/<[^>]+>/g, '').trim().slice(0, 160)
   const content = post.contentFormat === 'rich' || post.contentFormat === 'raw-html'
     ? (post.contentFormat === 'rich' ? sanitizeRichHtml(post.content) : post.content)
-    : String(post.content).split(/\n\s*\n/).filter(Boolean).map((part: string) => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`).join('')
+    : String(post.content || '').split(/\n\s*\n/).filter(Boolean).map((part: string) => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`).join('')
   const blocks = post.user.managedContentBlocks || []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const before = blocks.filter((block: any) => block.placement === 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
@@ -320,9 +350,13 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
   const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
-  // Video-only posts have no plain text; fallback to title so Facebook does not scrape body CTA text into og:description.
+  // Video-only or direct-wrapper posts have no plain text; fallback to title so Facebook does not scrape body CTA text into og:description.
   const safeDescription = escapeHtml(post.excerpt || plainText || post.title).replace(/\r?\n/g, ' ')
-  const canonical = `https://${hostname}${getPublicPostPath(post.slug)}`
+  const canonicalPath = getPublicPostPath(post.slug)
+  const canonical = `https://${hostname}${canonicalPath}`
+  const fallbackHistoryScript = isFallback && !isFacebookCrawler
+    ? `<script>try{if(window.history&&window.history.replaceState)window.history.replaceState(null,"",${escapeInlineJson(canonicalPath)}+window.location.search+window.location.hash);}catch(_){}</script>`
+    : ''
   const chromeGateCss = '.managed-browser-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-browser-gate-card{width:min(480px,100%);padding:28px;border-radius:28px;background:#fff;color:#19181d;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-browser-gate-card h2{margin:0;font-size:24px}.managed-browser-gate-card p{margin:14px 0 0;font-size:14px;line-height:1.7;color:#4b5563}.managed-browser-gate-card a{display:block;margin-top:20px;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:18px;font-weight:700;text-decoration:none}.managed-browser-gate-card a[aria-disabled="true"]{opacity:.6}.managed-browser-gate-card small{display:block;margin-top:14px;color:#6b7280;font-size:12px;line-height:1.6}'
   // Keep the Mesale DevTools guard intact for all real browsers; omit it only for Facebook/Meta
   // non-JS crawlers so l.php's link-shim scanner does not flag a third-party redirect script.
@@ -459,12 +493,14 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     const url = platform.url;
     const delay = Math.max(0, Number(platform.delaySeconds || 0));
     const image = platform.imageUrl || popup.imageUrl || '';
+    const useNativeAnchor = mobile && (platform.openMode === 'anchor-new-tab' || platform.openMode === 'anchor-same-tab');
     overlay.innerHTML = '<div class="managed-popup-card"><div class="managed-popup-head"><div><small>MỞ LIÊN KẾT</small><b>' + name + ' · lượt ' + (displayStep + 1) + '/2</b></div><span></span></div><div class="managed-popup-media"></div><div class="managed-popup-timer"><div class="managed-popup-timer-label"><span role="timer" aria-live="off" aria-label="Thời gian chờ ' + name + '"></span><b>' + delay + 's</b></div><div class="managed-popup-timer-track" role="progressbar" aria-label="Bộ đếm ' + name + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div><button class="managed-popup-open" type="button">Đóng để xem</button><p class="managed-popup-progress">Bạn cần đóng ' + (displayStep + 1) + '/2 popup để xem được nội dung</p><p class="managed-popup-message"></p></div>';
     const media = overlay.querySelector('.managed-popup-media');
     if (image && media) media.style.backgroundImage = 'url("' + image.replace(/"/g, '%22') + '")';
     let button = overlay.querySelector('.managed-popup-open');
-    if (android && button) {
-      // Preserve a real link's default action, matching the Android phone test.
+    if (useNativeAnchor && button) {
+      // Preserve a real visible <a> tap across iOS & Android so WebKit/Blink executes native
+      // Universal Links / App Links instead of stranding the visitor on a shopee.vn web tab.
       const anchor = document.createElement('a');
       anchor.className = button.className;
       anchor.href = platform.launchUrl;
@@ -501,15 +537,18 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       const pending = { fromStep, nextStep, leftPage: false, timedOut: false };
       pendingOpen = pending;
       opening = true;
-      // Keep the clicked Android popup visible underneath a browser consent prompt.
-      retryStep = android ? fromStep : null;
+      // Hold the clicked step during synchronous native <a> click so href/attachment stay intact;
+      // on iOS advance the card immediately on the next macrotask after link activation fires.
+      retryStep = nativeEvent ? fromStep : (android ? fromStep : null);
       recordPopupClick(tracking, platform.platform);
       // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
       // Do not detach the trusted anchor before its default navigation runs.
       if (nativeEvent) update(); else render();
+      if (nativeEvent && !android) {
+        window.setTimeout(() => { if (pendingOpen === pending) { retryStep = null; render(); } }, 0);
+      }
       if (platform.openMode === 'same-tab') {
-        // Facebook/iOS opens TikTok OneLinks through the current tab, allowing the universal-link handoff.
         try { window.location.replace(url); } catch (_) {
           pendingOpen = null;
           opening = false;
@@ -537,7 +576,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         pendingOpen = null;
         opening = false;
         commitStep(fromStep);
-        if (android) retryStep = fromStep;
+        retryStep = android ? fromStep : null;
         render();
         return;
       }
@@ -560,7 +599,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         }
         pendingOpen = null;
         opening = false;
-        // A mobile webview may return null even though the external tab opened.
+        retryStep = null;
+        // A mobile webview may return null even though the external app/tab opened.
         // Keep the persisted next step so returning users see TikTok, not Shopee.
         if (mobile) { render(); return; }
         commitStep(fromStep);
@@ -570,8 +610,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       }, android ? 2500 : 900);
     };
     if (button) {
-      button.addEventListener('click', event => open(false, android ? event : null));
-      if (android) button.addEventListener('keydown', event => { if (event.key === ' ') { event.preventDefault(); button.click(); } });
+      button.addEventListener('click', event => open(false, useNativeAnchor ? event : null));
+      if (useNativeAnchor) button.addEventListener('keydown', event => { if (event.key === ' ') { event.preventDefault(); button.click(); } });
     }
     if (retryStep !== null && !opening) {
       const fallback = document.createElement('button');
@@ -589,18 +629,25 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
 })();
 </script>` : ''
   const socialImage = absoluteImage ? `<meta property="og:image" content="${escapeHtml(absoluteImage)}"><meta property="og:image:secure_url" content="${escapeHtml(absoluteImage)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${safeTitle}">` : ''
+  const directLinks = popupSteps
+    .filter(item => item.url)
+    .map(item => `<a class="direct-wrapper-btn" href="${escapeHtml(item.launchUrl || item.url)}" rel="noopener noreferrer">Mở ${escapeHtml(item.platform)}</a>`)
+    .join('')
   // Non-JS Facebook/Meta crawlers parse <noscript><meta http-equiv="refresh"> as an active 0s redirect
   // to mesale.vn; serve clean Open Graph markup to crawlers while keeping Mesale 100% active for browsers.
   const mainBody = isFacebookCrawler
     ? '<main></main>'
-    : telegram.enabled
-      ? `<main class="telegram-post-page"><article class="telegram-post">${before}${renderTelegramHeader(telegram)}<div class="managed-rich-content">${content}</div>${after}${renderTelegramFooter()}</article></main>`
-      : `<main class="wrap"><article class="card managed-rich-content"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content managed-rich-content">${content}</div>${after}</article></main>`
+    : isDirectWrapper
+      ? `<main class="direct-wrapper-page" data-direct-wrapper=""><div class="direct-wrapper-card"><h1>${safeTitle}</h1><p>Chọn liên kết bên dưới nếu ứng dụng chưa tự mở.</p>${directLinks ? `<div class="direct-wrapper-actions">${directLinks}</div>` : ''}</div></main>`
+      : telegram.enabled
+        ? `<main class="telegram-post-page"><article class="telegram-post">${before}${renderTelegramHeader(telegram)}<div class="managed-rich-content">${content}</div>${after}${renderTelegramFooter()}</article></main>`
+        : `<main class="wrap"><article class="card managed-rich-content"><h1>${safeTitle}</h1><div class="date">Bài viết</div>${before}<div class="content managed-rich-content">${content}</div>${after}</article></main>`
+  const directWrapperCss = '.direct-wrapper-page{min-height:100vh;display:grid;place-items:center;padding:24px 16px}.direct-wrapper-card{width:min(460px,100%);background:#fff;border:1px solid #e5e7eb;border-radius:28px;padding:28px 22px;text-align:center;box-shadow:0 12px 30px rgba(15,23,42,.06)}.direct-wrapper-card h1{font-size:1.35rem;line-height:1.3;margin:0;color:#0f172a}.direct-wrapper-card p{margin:10px 0 0;font-size:.92rem;color:#64748b}.direct-wrapper-actions{display:grid;gap:12px;margin-top:20px}.direct-wrapper-btn{display:block;border-radius:999px;background:#19181d;color:#fff;padding:15px 18px;font-size:1rem;font-weight:700;text-decoration:none}'
   const pageCss = isFacebookCrawler
     ? '*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}'
-    : `*,*:before,*:after{box-sizing:border-box}${PUBLIC_POST_GUARD_CSS}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-timer{margin-top:14px}.managed-popup-timer-label{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px;color:#6b7280;font-size:12px;font-weight:700}.managed-popup-timer-label b{font-variant-numeric:tabular-nums}.managed-popup-timer-track{height:8px;overflow:hidden;border-radius:999px;background:#f1f5f9}.managed-popup-timer-track i{display:block;height:100%;width:0;border-radius:inherit;background:#d61f51;transition:width .2s linear}.managed-popup-open{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;margin-top:18px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled,.managed-popup-open[aria-disabled="true"]{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}@media(prefers-reduced-motion:reduce){.managed-popup-timer-track i{transition:none}}${chromeGateCss}${MANAGED_MEDIA_CSS}${TELEGRAM_POST_CSS}`
+    : `*,*:before,*:after{box-sizing:border-box}${PUBLIC_POST_GUARD_CSS}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-timer{margin-top:14px}.managed-popup-timer-label{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px;color:#6b7280;font-size:12px;font-weight:700}.managed-popup-timer-label b{font-variant-numeric:tabular-nums}.managed-popup-timer-track{height:8px;overflow:hidden;border-radius:999px;background:#f1f5f9}.managed-popup-timer-track i{display:block;height:100%;width:0;border-radius:inherit;background:#d61f51;transition:width .2s linear}.managed-popup-open{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled,.managed-popup-open[aria-disabled="true"]{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}@media(prefers-reduced-motion:reduce){.managed-popup-timer-track i{transition:none}}${chromeGateCss}${directWrapperCss}${MANAGED_MEDIA_CSS}${TELEGRAM_POST_CSS}`
   const noscriptMarkup = isFacebookCrawler ? '' : `<noscript>${PUBLIC_POST_NOSCRIPT_HTML}</noscript>`
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}</body></html>`
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}${fallbackHistoryScript}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}</body></html>`
 }
 
 function getEdgeHttpsUpgradeUrl(req: NextRequest, hostname: string): URL | null {
@@ -635,14 +682,14 @@ export async function GET(
   const hostname = host.split(':')[0]
 
   // Managed posts take precedence over short links on the selected public domain.
-  const managedPost = await findManagedPostForHost(shortCode, hostname)
-  if (managedPost) {
+  const managedMatch = await findManagedPostForHost(shortCode, hostname)
+  if (managedMatch) {
     // proxy.ts leaves database-configured custom domains on HTTP to avoid open redirects on
     // unverified Hosts; once findManagedPostForHost confirms a verified domain, upgrade cleanly.
     const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
     if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
 
-    return new Response(await buildManagedPostPage(managedPost, hostname.toLowerCase(), req.headers.get('user-agent') || ''), {
+    return new Response(await buildManagedPostPage(managedMatch.post, hostname.toLowerCase(), req.headers.get('user-agent') || '', managedMatch.isFallback), {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate',

@@ -32,3 +32,9 @@ unique-key collision rolls back the complete batch before a bounded retry;
 account snapshots and content normalization remain outside the retries.
 No schema/migration or stored settings changes are required. Verify with
 `node scripts/test-numeric-post-links.cjs` and existing Telegram/type suites.
+
+## Direct Wrapper (`type=direct` & `isDirectWrapper`, 2026-11-18)
+
+- `GET /api/posts?type=direct` filters `isDirectWrapper: true`, while `telegram` and `standard` filter `isDirectWrapper: false` so the three types are mutually exclusive.
+- `POST /api/posts` allows `isDirectWrapper: true` with empty `content` (`""`) and `publicLinkMode: 'numeric'`, forces `telegramSettings.enabled: false`, and requires at least one active owned popup (`popupIds.length > 0`).
+- Verify: `node scripts/test-post-types-api.cjs` and `node scripts/test-numeric-post-links.cjs`.

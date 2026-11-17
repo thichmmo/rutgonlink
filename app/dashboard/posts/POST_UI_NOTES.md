@@ -141,3 +141,9 @@ Verify: `node scripts/test-telegram-quick-form.cjs` (164 assertions),
 `node scripts/test-post-types-dashboard.cjs` (78), and
 `node scripts/test-fixed-content-composer.cjs` (60). These are actual TSX/JSDOM tests
 with local API fixtures; backend allocation/routing has separate coverage.
+
+## Bọc thẳng composer & Hứng link `/p7` cũ toggle (2026-11-18)
+
+- `PostManager` exposes a one-click toolbar toggle (`Hứng link /p7 cũ: Đang bật` / `Đang tắt`) backed by `PUT /api/settings/post-fallback` (`numericFallbackEnabled`).
+- `Tạo Bọc thẳng` (`type=direct`) opens a compact composer with `ca33newss.xyz` (or preferred domain), newest active popup, and `Xuất bản ngay` selected by default, allocating a `/p7/<code>` numeric path without mounting `RichEditor` or `TelegramPostEditor`. Filter bar and list cards include `Bọc thẳng`.
+- Verify: `node scripts/test-telegram-quick-form.cjs`, `node scripts/test-post-types-dashboard.cjs`, and `node scripts/test-fixed-content-composer.cjs`.

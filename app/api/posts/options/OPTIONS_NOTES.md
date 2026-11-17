@@ -16,3 +16,8 @@ the latest remaining popup. Existing post selections are handled by the editor.
 
 Verification: `node scripts/test-telegram-api.cjs` checks authentication,
 owner/active scope, and this ordering contract.
+
+## Numeric `/p7` fallback option (2026-11-18)
+
+- `GET /api/posts/options` returns `numericFallbackEnabled: boolean` from the authenticated user's account so `PostManager` initializes the toolbar toggle without an extra round trip.
+- Verify: `node scripts/test-telegram-quick-form.cjs`.
