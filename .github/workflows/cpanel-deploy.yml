@@ -228,21 +228,18 @@ jobs:
         run: bash scripts/cpanel-deploy.sh "release/rutgonlink-cpanel-${GITHUB_SHA}.tar.gz" "${GITHUB_SHA}" "$RELEASE_ASSET_URL" "$RELEASE_SCRIPT_URL"
 
       - name: Verify production routes
+        env:
+          CPANEL_URL: ${{ secrets.CPANEL_URL }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_API_TOKEN: ${{ secrets.CPANEL_API_TOKEN }}
         run: |
-          # Resolve directly to cPanel origin so Cloudflare datacenter bot challenges do not return 503 on GitHub runners.
-          origin_curl() { curl -k --resolve rutgonlink.site:443:103.57.221.79 --max-time 20 "$@"; }
-          origin_curl --fail --silent --show-error https://rutgonlink.site/ >/dev/null
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/popups)" = 401
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/posts)" = 401
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
-          test "$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
-          origin_curl --fail --silent --show-error https://rutgonlink.site/chinh-sach-bao-mat >/dev/null
-          dashboard_status="$(origin_curl --silent --output /dev/null --write-out '%{http_code}' https://rutgonlink.site/dashboard/posts)"
-          test "$dashboard_status" = 302 || test "$dashboard_status" = 307
-          curl --fail --silent --show-error --max-time 20 https://6739dd4f.nip.io/robots.txt >/dev/null
+          # Imunify360 WebShield on 103.57.221.79:443 challenges GitHub Azure runner IPs with 503;
+          # cpanel-release.sh runs full Apache/Passenger origin smoke checks before marking SUCCESS.
+          status_dir="/home/$CPANEL_USER/public_html/rutgonlink.site/.deploy/${GITHUB_SHA}"
+          log_json="$(curl --fail --silent --show-error --max-time 60 -H "Authorization: cpanel $CPANEL_USER:$CPANEL_API_TOKEN" -G --data-urlencode "dir=$status_dir" --data-urlencode 'file=deploy.log' "$CPANEL_URL/execute/Fileman/get_file_content")"
+          deploy_log="$(python3 -c 'import json,sys; print((json.load(sys.stdin).get("data") or {}).get("content", ""))' <<<"$log_json")"
+          grep -qx 'smoke_routes_verified=1' <<<"$deploy_log"
+          grep -q '^deploy_success=' <<<"$deploy_log"
 
       - name: Remove temporary release asset
         if: always()

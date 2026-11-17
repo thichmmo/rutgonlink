@@ -386,7 +386,13 @@ async function run() {
   domainOptions = [...initialDomains, { id: null, domain: '6739dd4f.nip.io', kind: 'shared' }]
   await refreshOptions()
   await click(button('Tạo bài Telegram'))
-  check(() => assert.equal(field('Domain').value, 'shared:6739dd4f.nip.io', 'Top-1M shared domain takes priority over legacy shared domain when both are available'))
+  check(() => assert.equal(field('Domain').value, 'shared:6739dd4f.nip.io', 'Top-1M fallback domain takes priority over legacy shared domain when ca33newss.xyz is absent'))
+  await click(button('Hủy', composer()))
+
+  domainOptions = [...domainOptions, { id: null, domain: 'ca33newss.xyz', kind: 'shared' }]
+  await refreshOptions()
+  await click(button('Tạo bài Telegram'))
+  check(() => assert.equal(field('Domain').value, 'shared:ca33newss.xyz', 'Primary Top-1M domain ca33newss.xyz takes top priority when available'))
   await click(button('Hủy', composer()))
 
   domainOptions = initialDomains.filter(domain => domain.kind !== 'shared')

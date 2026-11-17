@@ -130,14 +130,34 @@ swapped=1
 mv "$live" "$backup"
 mv "$stage" "$live"
 touch "$app/tmp/restart.txt"
+origin_curl() {
+  curl -k -sS --max-time 10 \
+    --resolve rutgonlink.site:443:103.57.221.79 \
+    --resolve ca33newss.xyz:443:103.57.221.79 \
+    --resolve 6739dd4f.nip.io:443:103.57.221.79 \
+    "$@"
+}
 for attempt in $(seq 1 30); do
-  root_http="$(curl -k -sS --max-time 6 --resolve rutgonlink.site:443:103.57.221.79 -o /dev/null -w '%{http_code}' https://rutgonlink.site/ || true)"
-  popups_http="$(curl -k -sS --max-time 6 --resolve rutgonlink.site:443:103.57.221.79 -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/popups || true)"
-  posts_http="$(curl -k -sS --max-time 6 --resolve rutgonlink.site:443:103.57.221.79 -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/posts || true)"
+  root_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/ || true)"
+  popups_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/popups || true)"
+  posts_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/posts || true)"
   echo "health_attempt=$attempt root=$root_http popups=$popups_http posts=$posts_http"
   if [ "$root_http" = 200 ] && [ "$popups_http" = 401 ] && [ "$posts_http" = 401 ]; then break; fi
   sleep 3
 done
 test "$root_http" = 200; test "$popups_http" = 401; test "$posts_http" = 401
+# Run full origin route and shared-domain checks locally on cPanel so regressions roll back before SUCCESS
+# and Imunify360 datacenter challenges on GitHub Actions IPs do not cause false post-deploy 503 failures.
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
+test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
+test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/chinh-sach-bao-mat)" = 200
+dashboard_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/dashboard/posts)"
+test "$dashboard_http" = 302 || test "$dashboard_http" = 307
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://ca33newss.xyz/robots.txt)" = 200
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://6739dd4f.nip.io/robots.txt)" = 200
+echo smoke_routes_verified=1
 echo SUCCESS > "$status"
 echo "deploy_success=$(date -Is)"

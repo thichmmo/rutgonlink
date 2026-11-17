@@ -14,7 +14,7 @@ The blog route compares the content slugs with `app/blog/blog-seo.ts` during bui
 
 Production must build with `NEXTAUTH_URL=https://rutgonlink.site`. The proxy redirects the primary `www` alias and uses Cloudflare's external-scheme signal for HTTP redirects, avoiding loops caused by the internal reverse proxy reporting `x-forwarded-proto=http`.
 
-Shared publication domains (`6739dd4f.nip.io`, `tin24h-6739dd4f.nip.io`, `103-57-221-79.sslip.io`, `phimngay.site`, `honghotngay228.site`, `phimhaybaz.site`,
+Shared publication domains (`ca33newss.xyz`, `6739dd4f.nip.io`, `tin24h-6739dd4f.nip.io`, `103-57-221-79.sslip.io`, `phimngay.site`, `honghotngay228.site`, `phimhaybaz.site`,
 and `baonewtin.site`) must be parked/aliased in cPanel to the same
 `public_html/rutgonlink.site` Passenger document root. A DNS record alone serves
 cPanel's default 404 page before the Next host router can resolve the shared post.
