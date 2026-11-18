@@ -206,6 +206,11 @@ async function scenario(name, run) { token = null; await run(); scenarios++; con
           url: `https://${host}${pathname}`,
           headers: { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
         })), 'https://mesale.vn/', 302)
+        redirected(await proxy(request(host, pathname, {
+          visitor: '{"scheme":"https"}',
+          url: `https://${host}${pathname}?gclid=EAIaIQobChMI_nexturl_test`,
+          headers: { 'user-agent': 'Mozilla/5.0 Chrome/140' },
+        })), 'https://mesale.vn/', 302)
       }
       // /robots.txt passthrough stays 200 next
       next(await proxy(request(host, '/robots.txt', {
@@ -229,6 +234,13 @@ async function scenario(name, run) { token = null; await run(); scenarios++; con
         headers: { 'user-agent': 'Mozilla/5.0 Chrome/140', referer: 'https://www.google.com/' },
       })))
     }
+    // Verify NextURL composition (instanceof URL === false) extracts _fbh and fbclid on server
+    const handoff = load('lib/facebook-handoff-token.ts')
+    const signed = handoff.createFacebookHandoffToken('ca33newss.xyz')
+    const nextUrlWithFbh = new NextURL(`https://ca33newss.xyz/p7/37325?_fbh=${encodeURIComponent(signed)}`)
+    assert.equal(nextUrlWithFbh instanceof URL, false)
+    assert.equal(handoff.isServerFacebookTrafficSource({ userAgent: 'Mozilla/5.0 Chrome/140', url: nextUrlWithFbh, host: 'ca33newss.xyz' }), true)
+    assert.equal(handoff.isServerFacebookTrafficSource({ userAgent: 'Mozilla/5.0 Chrome/140', url: new NextURL('https://ca33newss.xyz/p7/37325?fbclid=IwZXh'), host: 'ca33newss.xyz' }), true)
   })
   console.log('RESULT=PASS shared-domain-https-scenarios=' + scenarios)
 })().catch(error => { console.error(error); process.exitCode = 1 })

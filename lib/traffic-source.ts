@@ -15,6 +15,7 @@ export type SearchParamsInput =
   | string
   | URL
   | URLSearchParams
+  | { searchParams: URLSearchParams }
   | Record<string, string | string[] | undefined>
   | null
   | undefined
@@ -22,8 +23,13 @@ export type SearchParamsInput =
 function readParam(source: SearchParamsInput, key: string): string {
   if (!source) return ''
   try {
-    if (source instanceof URLSearchParams) return (source.get(key) || '').trim()
-    if (source instanceof URL) return (source.searchParams.get(key) || '').trim()
+    if (typeof (source as URLSearchParams).get === 'function') {
+      return ((source as URLSearchParams).get(key) || '').trim()
+    }
+    // Next.js NextURL composes URL rather than extending globalThis.URL (instanceof URL === false).
+    if (typeof source === 'object' && 'searchParams' in source && source.searchParams && typeof (source.searchParams as URLSearchParams).get === 'function') {
+      return ((source.searchParams as URLSearchParams).get(key) || '').trim()
+    }
     if (typeof source === 'string') {
       const trimmed = source.trim()
       if (!trimmed) return ''
@@ -32,7 +38,7 @@ function readParam(source: SearchParamsInput, key: string): string {
       return (new URLSearchParams(trimmed).get(key) || '').trim()
     }
     if (typeof source === 'object') {
-      const raw = source[key]
+      const raw = (source as Record<string, string | string[] | undefined>)[key]
       if (typeof raw === 'string') return raw.trim()
       if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0].trim()
     }

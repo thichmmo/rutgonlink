@@ -4,7 +4,7 @@
 
 Centralizes Facebook popup eligibility (`onlyFromFacebook`) and Google redirect (`GOOGLE_REDIRECT_URL = 'https://mesale.vn'`) across server routes, edge proxy, and client fallbacks:
 
-- [traffic-source.ts](traffic-source.ts): Isomorphic helpers (`isFacebookUserAgent`, `isFacebookReferer`, `hasFacebookClickId`, `extractFacebookHandoffToken`, `isGoogleUserAgent`, `isGoogleReferer`, `hasGoogleClickParams`, `isGoogleTrafficSource`) with zero `node:*` imports so both edge/server routes and `'use client'` components can share them.
+- [traffic-source.ts](traffic-source.ts): Isomorphic helpers (`isFacebookUserAgent`, `isFacebookReferer`, `hasFacebookClickId`, `extractFacebookHandoffToken`, `isGoogleUserAgent`, `isGoogleReferer`, `hasGoogleClickParams`, `isGoogleTrafficSource`) with zero `node:*` imports so both edge/server routes and `'use client'` components can share them. `readParam` duck-types `.searchParams` (`typeof source.searchParams.get === 'function'`) rather than relying on `instanceof URL` because Next.js `NextURL` (`req.nextUrl`) composes `URL` without inheriting from `globalThis.URL`.
 - [facebook-handoff-token.ts](facebook-handoff-token.ts): Server HMAC-SHA256 token signer/verifier (`createFacebookHandoffToken`, `verifyFacebookHandoffToken`, `isServerFacebookTrafficSource`) bound to the normalized request hostname with a 2-hour TTL (`FACEBOOK_HANDOFF_TTL_MS`).
 
 ## Behavior
