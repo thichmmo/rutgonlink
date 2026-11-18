@@ -23,6 +23,7 @@ type UserRow = {
   paymentCount: number
   clickCount: number
   popupClicksToday?: { shopee: number; tiktok: number; total: number }
+  fbViralCollageEnabled?: boolean
 }
 
 type ResponseData = {
@@ -52,7 +53,32 @@ function UsersContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [popupClicksTodayAsOf, setPopupClicksTodayAsOf] = useState('')
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const requestRef = useRef(0)
+
+  const toggleFbViral = async (target: UserRow) => {
+    if (togglingId) return
+    const nextEnabled = !target.fbViralCollageEnabled
+    setTogglingId(target.id)
+    try {
+      const res = await fetch(`/api/admin/users/${target.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set-fb-viral-collage',
+          fbViralCollageEnabled: nextEnabled,
+          reason: nextEnabled ? 'Cấp quyền tối ưu ảnh đề xuất FB' : 'Thu hồi quyền tối ưu ảnh đề xuất FB',
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Không thể cập nhật quyền')
+      setUsers((prev) => prev.map((u) => (u.id === target.id ? { ...u, fbViralCollageEnabled: nextEnabled } : u)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật quyền')
+    } finally {
+      setTogglingId(null)
+    }
+  }
 
   const load = useCallback(async () => {
     // Filter changes and refresh can overlap; only the latest snapshot may win.
@@ -128,7 +154,7 @@ function UsersContent() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] text-left text-sm">
               <thead className="border-b border-gray-800 bg-gray-950/50 text-xs uppercase text-gray-500">
-                <tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Gói</th><th className="px-4 py-3">Hoạt động</th><th className="px-4 py-3">Click popup hôm nay</th><th className="px-4 py-3">Đăng nhập cuối</th><th className="px-4 py-3" /></tr>
+                <tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Gói</th><th className="px-4 py-3">Hoạt động</th><th className="px-4 py-3">Click popup hôm nay</th><th className="px-4 py-3">Ảnh đề xuất FB</th><th className="px-4 py-3">Đăng nhập cuối</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {users.map((user) => (
@@ -138,6 +164,7 @@ function UsersContent() {
                     <td className="px-4 py-3"><AdminBadge value={user.plan} label={PLAN_LABEL[user.plan] || user.plan} />{user.planExpiresAt && <div className="mt-1 text-xs text-gray-500">đến {new Date(user.planExpiresAt).toLocaleDateString('vi-VN')}</div>}</td>
                     <td className="px-4 py-3 text-xs text-gray-400"><div>{user.linkCount} links · {user.clickCount.toLocaleString()} click link toàn thời gian</div><div>{user.domainCount} domains · {user.paymentCount} payments</div></td>
                     <td className="px-4 py-3 text-xs" aria-label={`Click popup hôm nay của ${user.email}`}>{user.popupClicksToday ? <><div className="font-semibold text-white">Tổng {user.popupClicksToday.total.toLocaleString()}</div><div className="mt-1 text-orange-300">Shopee: {user.popupClicksToday.shopee.toLocaleString()}</div><div className="text-sky-300">TikTok: {user.popupClicksToday.tiktok.toLocaleString()}</div></> : <span className="text-gray-500">Chưa có dữ liệu</span>}</td>
+                    <td className="px-4 py-3 text-xs">{user.adminRole === 'owner' || user.adminRole === 'ops' ? <span className="inline-flex rounded-full bg-emerald-950/60 px-2.5 py-1 text-[11px] font-medium text-emerald-300">Mặc định (Admin)</span> : <button type="button" disabled={togglingId === user.id} onClick={() => void toggleFbViral(user)} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-40 ${user.fbViralCollageEnabled ? 'border-emerald-700 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/50' : 'border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-500 hover:text-gray-200'}`}>{user.fbViralCollageEnabled ? 'Đang bật' : 'Đang tắt'}</button>}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('vi-VN') : 'Chưa ghi nhận'}</td>
                     <td className="px-4 py-3 text-right"><Link href={`/admin/users/${user.id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-700 px-3 py-2 text-xs text-gray-300 hover:bg-gray-800"><UserRoundCog className="h-4 w-4" /> Chi tiết</Link></td>
                   </tr>

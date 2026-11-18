@@ -92,7 +92,7 @@ export default function MenuVisibilitySection({
             Hiển thị thanh Menu
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Tắt bớt các tính năng bạn không dùng để thanh menu gọn gàng hơn. Các mục chính (Tổng quan, TikTok AFF, Popups, Bài viết, Cài đặt) luôn được giữ lại.
+            Tắt bớt các tính năng bạn không dùng để thanh menu gọn gàng hơn. Các mục chính (Tổng quan, TikTok AFF, Popups, Bài viết, Ghép ảnh, Cài đặt) luôn được giữ lại.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

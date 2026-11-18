@@ -8,6 +8,27 @@ import { ADMIN_POPUP_CLICKS_TIMEZONE, getAdminUserPopupClicksToday } from '@/lib
 
 const PLANS = ['free', 'pro', 'ultra', 'ultra_plus'] as const
 const PERIODS = ['1m', '6m', '1y', 'lifetime'] as const
+const FB_VIRAL_COLLAGE_ACCESS_KEY = 'fb_viral_collage_users'
+
+async function readFbViralEnabledSet(): Promise<Set<string>> {
+  try {
+    const appSetting = (prisma as unknown as { appSetting?: typeof prisma.appSetting }).appSetting
+    if (typeof appSetting?.findUnique !== 'function') return new Set()
+    const row = await appSetting.findUnique({ where: { key: FB_VIRAL_COLLAGE_ACCESS_KEY } })
+    if (!row?.value) return new Set()
+    const parsed = JSON.parse(row.value) as { userIds?: unknown }
+    return Array.isArray(parsed.userIds)
+      ? new Set(parsed.userIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
+      : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function isImplicitFbViralAdmin(email: string, adminRole?: string | null) {
+  const ownerEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+  return (Boolean(ownerEmail) && email.toLowerCase() === ownerEmail) || adminRole === 'owner' || adminRole === 'ops'
+}
 
 const actionSchema = z.object({
   action: z.enum([
@@ -19,11 +40,13 @@ const actionSchema = z.object({
     'revoke-api-key',
     'update-plan',
     'set-admin-role',
+    'set-fb-viral-collage',
   ]),
   reason: z.string().trim().min(3).max(500),
   plan: z.enum(PLANS).optional(),
   period: z.enum(PERIODS).optional(),
   adminRole: z.enum(ADMIN_ROLES).nullable().optional(),
+  fbViralCollageEnabled: z.boolean().optional(),
 })
 
 const USER_SNAPSHOT_SELECT = {
@@ -117,10 +140,16 @@ export async function GET(
     }),
     getAdminUserPopupClicksToday([id], now),
   ])
+  const fbViralEnabledSet = await readFbViralEnabledSet()
 
   const { apiKey, ...safeUser } = user
   return NextResponse.json({
-    user: { ...safeUser, hasApiKey: Boolean(apiKey), popupClicksToday: popupClicksToday[id] },
+    user: {
+      ...safeUser,
+      hasApiKey: Boolean(apiKey),
+      popupClicksToday: popupClicksToday[id],
+      fbViralCollageEnabled: isImplicitFbViralAdmin(safeUser.email, safeUser.adminRole) || fbViralEnabledSet.has(id),
+    },
     links,
     domains,
     payments,
@@ -149,7 +178,7 @@ export async function PATCH(
   const before = await prisma.user.findUnique({ where: { id }, select: USER_SNAPSHOT_SELECT })
   if (!before) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const { action, reason, plan, period, adminRole } = parsed.data
+  const { action, reason, plan, period, adminRole, fbViralCollageEnabled } = parsed.data
 
   if (action === 'update-plan' && !hasAdminPermission(access.admin, 'billing.write')) {
     return NextResponse.json({ error: 'Role hiện tại không có quyền thay đổi gói' }, { status: 403 })
@@ -228,6 +257,19 @@ export async function PATCH(
     await prisma.user.update({ where: { id }, data: { apiKey: null } })
   } else if (action === 'set-admin-role') {
     await prisma.user.update({ where: { id }, data: { adminRole: adminRole || null } })
+  } else if (action === 'set-fb-viral-collage') {
+    if (typeof fbViralCollageEnabled !== 'boolean') {
+      return NextResponse.json({ error: 'Thiếu trạng thái quyền tối ưu đề xuất FB' }, { status: 400 })
+    }
+    const enabledSet = await readFbViralEnabledSet()
+    if (fbViralCollageEnabled) enabledSet.add(id)
+    else enabledSet.delete(id)
+    const payload = JSON.stringify({ userIds: [...enabledSet], updatedAt: now.toISOString() })
+    await prisma.appSetting.upsert({
+      where: { key: FB_VIRAL_COLLAGE_ACCESS_KEY },
+      create: { key: FB_VIRAL_COLLAGE_ACCESS_KEY, value: payload },
+      update: { value: payload },
+    })
   } else if (action === 'update-plan') {
     if (!plan) return NextResponse.json({ error: 'Thiếu plan' }, { status: 400 })
 

@@ -190,6 +190,9 @@ test "$root_http" = 200; test "$popups_http" = 401; test "$posts_http" = 401
 # and Imunify360 datacenter challenges on GitHub Actions IPs do not cause false post-deploy 503 failures.
 expect_origin_http 401 https://rutgonlink.site/api/settings/telegram
 expect_origin_http 401 https://rutgonlink.site/api/settings/navigation
+expect_origin_http 401 https://rutgonlink.site/api/settings/collage
+expect_origin_http 401 https://rutgonlink.site/api/collage
+expect_origin_http 200 https://rutgonlink.site/defaults/reaction-default.jpg
 expect_origin_http 403 https://rutgonlink.site/api/admin/post-fallback
 expect_origin_http 403 https://rutgonlink.site/api/admin/tranco
 expect_origin_http 403 https://rutgonlink.site/api/admin/domains/default-post-domain

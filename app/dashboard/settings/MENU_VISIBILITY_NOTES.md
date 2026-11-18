@@ -6,6 +6,7 @@ Card inside `/dashboard/settings` allowing users to individually toggle (`Links`
 ## Behavior
 - Hydrated server-side from `SettingsPage` (`getUserDashboardNavVisibility`) so switches render immediately without a loading spinner.
 - Dispatches `dashboard-nav-updated` optimistically and persists to `PUT /api/settings/navigation`, rolling back UI state if the network request fails.
+- Lists `Ghép ảnh` alongside `Bài viết`, `Popup`, and `Link TikTok` in the always-pinned core section note.
 
 ## Verification
 - `node scripts/test-dashboard-nav-visibility.cjs`

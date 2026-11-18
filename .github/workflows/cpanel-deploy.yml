@@ -103,6 +103,9 @@ jobs:
           node scripts/test-content-upload.cjs
           node scripts/test-rich-editor-upload.cjs
 
+      - name: Reaction collage regressions
+        run: node scripts/test-reaction-collage.cjs
+
       - name: Lint
         run: >-
           pnpm exec eslint
@@ -141,6 +144,10 @@ jobs:
           'app/p7/[code]' lib/public-post-link.ts lib/numeric-post-link-server.ts
           scripts/test-fixed-content-composer.cjs
           scripts/test-post-types-api.cjs scripts/test-post-types-dashboard.cjs
+          lib/reaction-collage-config.ts lib/reaction-collage-server.ts
+          app/api/collage app/api/settings/collage
+          app/dashboard/collage app/dashboard/settings/ReactionCollageSettingsSection.tsx
+          scripts/test-reaction-collage.cjs
 
       - name: Validate deployment scripts
         run: |

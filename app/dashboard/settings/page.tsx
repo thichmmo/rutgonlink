@@ -9,8 +9,11 @@ import ApiKeySection from './ApiKeySection';
 import FolderRotationSection from './FolderRotationSection';
 import TelegramSettingsSection from './TelegramSettingsSection';
 import MenuVisibilitySection from './MenuVisibilitySection';
+import ReactionCollageSettingsSection from './ReactionCollageSettingsSection';
 import {defaultDashboardNavVisibility} from '@/lib/dashboard-nav-visibility';
 import {getUserDashboardNavVisibility} from '@/lib/dashboard-nav-visibility-server';
+import {defaultUserCollageSettings} from '@/lib/reaction-collage-config';
+import {canActorUseFbViralCollage, getUserCollageSettings, isImplicitFbViralAdminUser} from '@/lib/reaction-collage-server';
 
 export default async function SettingsPage() {
     const session = await getServerSession(authOptions);
@@ -18,14 +21,21 @@ export default async function SettingsPage() {
 
     const user = await prisma.user.findUnique({
         where: {email: session.user.email},
-        select: {id: true, apiKey: true, password: true},
+        select: {id: true, email: true, adminRole: true, apiKey: true, password: true},
     });
 
     const apiKey: string | null = user?.apiKey ?? null;
     const hasPassword = !!user?.password;
-    const navVisibility = user
-        ? await getUserDashboardNavVisibility(user.id)
-        : defaultDashboardNavVisibility();
+    const [navVisibility, collageSettings, canUseFbViral] = user
+        ? await Promise.all([
+              getUserDashboardNavVisibility(user.id),
+              getUserCollageSettings(user.id),
+              canActorUseFbViralCollage({
+                  id: user.id,
+                  isAdmin: isImplicitFbViralAdminUser(user),
+              }),
+          ])
+        : [defaultDashboardNavVisibility(), defaultUserCollageSettings(), false];
 
     return (
         <div className="space-y-6 min-w-0">
@@ -55,6 +65,11 @@ export default async function SettingsPage() {
             </div>
 
             <MenuVisibilitySection initialVisibility={navVisibility} />
+
+            <ReactionCollageSettingsSection
+                initialSettings={collageSettings}
+                canUseFbViral={canUseFbViral}
+            />
 
             <ApiKeySection initialApiKey={apiKey} />
 

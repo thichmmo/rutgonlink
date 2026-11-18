@@ -4,6 +4,27 @@ import { requireAdmin } from '@/lib/admin-auth'
 import { ADMIN_POPUP_CLICKS_TIMEZONE, getAdminUserPopupClicksToday } from '@/lib/admin-popup-clicks'
 
 const PAGE_SIZE = 20
+const FB_VIRAL_COLLAGE_ACCESS_KEY = 'fb_viral_collage_users'
+
+async function readFbViralEnabledSet(): Promise<Set<string>> {
+  try {
+    const appSetting = (prisma as unknown as { appSetting?: typeof prisma.appSetting }).appSetting
+    if (typeof appSetting?.findUnique !== 'function') return new Set()
+    const row = await appSetting.findUnique({ where: { key: FB_VIRAL_COLLAGE_ACCESS_KEY } })
+    if (!row?.value) return new Set()
+    const parsed = JSON.parse(row.value) as { userIds?: unknown }
+    return Array.isArray(parsed.userIds)
+      ? new Set(parsed.userIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
+      : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function isImplicitFbViralAdmin(email: string, adminRole?: string | null) {
+  const ownerEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+  return (Boolean(ownerEmail) && email.toLowerCase() === ownerEmail) || adminRole === 'owner' || adminRole === 'ops'
+}
 
 export async function GET(req: NextRequest) {
   const access = await requireAdmin('users.read')
@@ -69,7 +90,7 @@ export async function GET(req: NextRequest) {
   ])
 
   const userIds = users.map((user) => user.id)
-  const [links, popupClicksToday] = await Promise.all([
+  const [links, popupClicksToday, fbViralEnabledSet] = await Promise.all([
     userIds.length
       ? prisma.link.findMany({
           where: { userId: { in: userIds } },
@@ -77,6 +98,7 @@ export async function GET(req: NextRequest) {
         })
       : Promise.resolve([]),
     getAdminUserPopupClicksToday(userIds, now),
+    userIds.length ? readFbViralEnabledSet() : Promise.resolve(new Set<string>()),
   ])
 
   const clickCountByUser = new Map<string, number>()
@@ -96,6 +118,7 @@ export async function GET(req: NextRequest) {
       paymentCount: _count.payments,
       clickCount: clickCountByUser.get(user.id) || 0,
       popupClicksToday: popupClicksToday[user.id],
+      fbViralCollageEnabled: isImplicitFbViralAdmin(user.email, user.adminRole) || fbViralEnabledSet.has(user.id),
     })),
     total,
     page,

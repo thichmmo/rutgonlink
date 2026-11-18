@@ -13,6 +13,7 @@ type UserDetail = {
     suspendedAt: string | null; suspensionReason: string | null; deletedAt: string | null
     googleDriveEmail: string | null; hasApiKey: boolean
     popupClicksToday?: { total: number; shopee: number; tiktok: number }
+    fbViralCollageEnabled?: boolean
     _count: { links: number; domains: number; notes: number; ownedWorkspaces: number; payments: number }
   }
   links: Array<{ id: string; shortCode: string; title: string | null; originalUrl: string; isActive: boolean; disabledByAdmin: boolean; createdAt: string; _count: { clicks: number } }>
@@ -73,16 +74,17 @@ export default function AdminUserDetailPage() {
     return () => { active = false; loadRequest.current += 1 }
   }, [load])
 
-  const execute = async (action: string, extra: Record<string, unknown> = {}) => {
+  const execute = async (action: string, extra: Record<string, unknown> = {}, fallbackReason?: string) => {
     if (data?.user.id !== params.id) return
-    if (reason.trim().length < 3) { setError('Lý do phải có ít nhất 3 ký tự'); return }
+    const effectiveReason = reason.trim() || fallbackReason || ''
+    if (effectiveReason.length < 3) { setError('Lý do phải có ít nhất 3 ký tự'); return }
     const request = loadRequest.current
     setSaving(true)
     setError('')
     const response = await fetch(`/api/admin/users/${params.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, reason, ...extra }),
+      body: JSON.stringify({ action, reason: effectiveReason, ...extra }),
     })
     const json = await response.json()
     // A completed action for the previous account cannot reload it after navigation.
@@ -153,6 +155,41 @@ export default function AdminUserDetailPage() {
           </>}
         </section>
       </div>
+
+      {canWrite && (
+        <section className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="font-semibold text-white">Quyền tối ưu ảnh đề xuất Facebook (Ghép ảnh)</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Cho phép tài khoản này dùng chế độ nâng chuẩn HD 2048px / khung 4:5, xóa metadata và làm mới mã ảnh tự nhiên trên tab Ghép ảnh.
+              </p>
+            </div>
+            {user.adminRole === 'owner' || user.adminRole === 'ops' ? (
+              <span className="rounded-full bg-emerald-950/60 px-3 py-1.5 text-xs font-medium text-emerald-300">
+                Mặc định bật (Admin)
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void execute(
+                  'set-fb-viral-collage',
+                  { fbViralCollageEnabled: !user.fbViralCollageEnabled },
+                  user.fbViralCollageEnabled ? 'Thu hồi quyền tối ưu ảnh đề xuất FB' : 'Cấp quyền tối ưu ảnh đề xuất FB',
+                )}
+                className={`rounded-xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-50 ${
+                  user.fbViralCollageEnabled
+                    ? 'border-emerald-700 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/60'
+                    : 'border-gray-700 bg-gray-950 text-gray-300 hover:border-gray-500'
+                }`}
+              >
+                {user.fbViralCollageEnabled ? 'Đang bật · Nhấn để tắt' : 'Đang tắt · Nhấn để cấp quyền'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {canManageRoles && <section className="rounded-2xl border border-gray-800 bg-gray-900 p-5"><h2 className="mb-3 flex items-center gap-2 font-semibold text-white"><Shield className="h-4 w-4" />Phân quyền admin</h2><div className="flex flex-col gap-3 sm:flex-row"><select value={role} onChange={(event) => setRole(event.target.value)} className="rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm"><option value="">Không phải admin</option><option value="support">Support</option><option value="finance">Finance</option><option value="ops">Operations</option><option value="viewer">Viewer</option></select><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Lý do phân quyền" className="flex-1 rounded-xl border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm" /><button onClick={() => execute('set-admin-role', { adminRole: role || null })} className="rounded-lg border border-red-700 px-4 py-2 text-sm text-red-300">Lưu role</button></div></section>}
 

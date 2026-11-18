@@ -15,3 +15,7 @@ Verify: `node scripts/test-admin-popup-clicks-ui.cjs`, scoped ESLint and combine
 Browser verification used the actual list/detail TSX with isolated in-memory GET
 fixtures: per-user values, zero/unavailable rows, search retained on refresh, and
 detail refresh were visually verified. No production accounts or events changed.
+
+## Facebook Viral Collage Permission Toggle
+
+Each row includes an `Ảnh đề xuất FB` column showing `Mặc định (Admin)` for implicit admin accounts (`owner`/`ops`) or a 1-click `Đang bật` / `Chưa cấp` toggle button calling `PATCH /api/admin/users/[id]` (`action: 'set-fb-viral-collage'`) without introducing extra `<select>` elements or mount fetches. Verify with `node scripts/test-admin-popup-clicks-ui.cjs` and `node scripts/test-reaction-collage.cjs`.

@@ -124,7 +124,7 @@ async function run() {
   const headerHasCreateLink = () => document.querySelector('#header-cta')?.textContent.includes('Tạo link mới')
   const clickButton = async btn => { assert.ok(btn); await React.act(async () => { btn.click() }) }
 
-  assert.deepEqual(desktopLabels(), ['Tổng quan', 'Links', 'Folders', 'Thống kê', 'Ghi chú', 'FB Debug', 'TikTok AFF', 'Popups', 'Bài viết', 'Cài đặt', 'Admin'])
+  assert.deepEqual(desktopLabels(), ['Tổng quan', 'Links', 'Folders', 'Thống kê', 'Ghi chú', 'FB Debug', 'TikTok AFF', 'Popups', 'Bài viết', 'Ghép ảnh', 'Cài đặt', 'Admin'])
   assert.equal(headerHasCreateLink(), true)
 
   // Toggle Links OFF -> hides Links and CreateLinkButton immediately
@@ -136,9 +136,9 @@ async function run() {
   // Click "Ẩn gọn cả 5 mục" -> hides all 5 optional modules while keeping core items
   const hideAllBtn = [...document.querySelectorAll('#settings-card button')].find(b => b.textContent.trim() === 'Ẩn gọn cả 5 mục')
   await clickButton(hideAllBtn)
-  assert.deepEqual(desktopLabels(), ['Tổng quan', 'TikTok AFF', 'Popups', 'Bài viết', 'Cài đặt', 'Admin'])
+  assert.deepEqual(desktopLabels(), ['Tổng quan', 'TikTok AFF', 'Popups', 'Bài viết', 'Ghép ảnh', 'Cài đặt', 'Admin'])
   const mobileBottomLabels = [...document.querySelectorAll('#mobile-nav nav')][1].querySelectorAll('a')
-  assert.deepEqual([...mobileBottomLabels].map(a => a.textContent.trim()), ['Tổng quan', 'Bài viết', 'Popups', 'Cài đặt', 'Admin'])
+  assert.deepEqual([...mobileBottomLabels].map(a => a.textContent.trim()), ['Tổng quan', 'Bài viết', 'Popups', 'Ghép ảnh', 'Cài đặt', 'Admin'])
   scenarios += 1
 
   // Network failure rolls back optimistic change
@@ -151,7 +151,7 @@ async function run() {
   // Click "Hiện tất cả" -> restores all 5 modules and CreateLinkButton
   const showAllBtn = [...document.querySelectorAll('#settings-card button')].find(b => b.textContent.trim() === 'Hiện tất cả')
   await clickButton(showAllBtn)
-  assert.equal(desktopLabels().length, 11)
+  assert.equal(desktopLabels().length, 12)
   assert.equal(headerHasCreateLink(), true)
   scenarios += 1
 

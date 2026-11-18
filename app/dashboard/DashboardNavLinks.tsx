@@ -15,6 +15,7 @@ import {
   Music2,
   PanelsTopLeft,
   FileText,
+  ImagePlus,
 } from 'lucide-react'
 import {
   DASHBOARD_NAV_EVENT,
@@ -34,6 +35,7 @@ const navItems = [
   { href: '/dashboard/tiktok-link', label: 'TikTok AFF', icon: Music2 },
   { href: '/dashboard/popups', label: 'Popups', icon: PanelsTopLeft },
   { href: '/dashboard/posts', label: 'Bài viết', icon: FileText },
+  { href: '/dashboard/collage', label: 'Ghép ảnh', icon: ImagePlus },
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 

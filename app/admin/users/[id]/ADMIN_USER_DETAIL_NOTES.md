@@ -21,3 +21,5 @@ cleanup. This reset applies to navigation, while manual refresh preserves drafts
 Verify: `node scripts/test-admin-popup-clicks-ui.cjs` (list and detail, actual TSX
 with in-memory GET fixtures), scoped ESLint and TypeScript.
 No production data or admin mutation is used by this regression.
+
+When `currentAdmin.permissions` includes `users.write`, a dedicated **Quyền Ghép ảnh Chuẩn đề xuất Facebook** card lets Admin grant or revoke `fbViralCollageEnabled` (`action: 'set-fb-viral-collage'`) with automatic audit logging. Verify with `node scripts/test-reaction-collage.cjs`.
