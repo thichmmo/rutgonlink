@@ -20,6 +20,7 @@ import { getPostPreviewImageUrl } from '@/lib/post-preview'
 import { normalizeTelegramSettings } from '@/lib/telegram-settings'
 import { renderTelegramHeader, renderTelegramFooter, TELEGRAM_POST_CSS } from '@/lib/telegram-render'
 import { installPublicPostGuard, PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
+import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
 
 interface LinkResult {
   id: string
@@ -278,7 +279,6 @@ async function findManagedPostForHost(slug: string, hostname: string) {
       select: {
         status: true,
         deletedAt: true,
-        numericFallbackEnabled: true,
         managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' as const }, { sortOrder: 'asc' as const }] },
       },
     },
@@ -287,7 +287,7 @@ async function findManagedPostForHost(slug: string, hostname: string) {
     where: { slug, isPublished: true, ...targetWhere, user: { status: 'active', deletedAt: null } },
     include,
   })
-  if (post) return { post, isFallback: false }
+  if (post) return { kind: 'post' as const, post, isFallback: false }
 
   if (isShared) {
     // Preserve links created before a shared domain was selected in the editor.
@@ -295,29 +295,22 @@ async function findManagedPostForHost(slug: string, hostname: string) {
       where: { slug, isPublished: true, domainId: null, sharedDomain: null, user: { status: 'active', deletedAt: null } },
       include,
     })
-    if (legacyShared) return { post: legacyShared, isFallback: false }
+    if (legacyShared) return { kind: 'post' as const, post: legacyShared, isFallback: false }
   }
 
-  // Anti-404 fallback: route deleted/missing /p7/<code> paths to the newest active post on this domain
-  // only when the post owner explicitly enabled numericFallbackEnabled.
+  // System-wide Admin fallback applies only to missing /p7/<code> article links on valid hosts;
+  // ordinary /<shortCode> short links never trigger article fallback.
   if (!isNumericPostSlug(slug)) return null
-  const fallbackWhere = { isPublished: true, user: { status: 'active', deletedAt: null, numericFallbackEnabled: true } }
-  const fallback = await prisma.managedPost.findFirst({
-    where: { ...fallbackWhere, ...targetWhere },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    include,
-  })
-  if (fallback?.user?.numericFallbackEnabled === true) return { post: fallback, isFallback: true }
-
-  if (isShared) {
-    const legacyFallback = await prisma.managedPost.findFirst({
-      where: { ...fallbackWhere, domainId: null, sharedDomain: null },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  const fallback = await resolveSystemPostFallback((targetSlug) =>
+    prisma.managedPost.findFirst({
+      where: { slug: targetSlug, isPublished: true, user: { status: 'active', deletedAt: null } },
       include,
-    })
-    if (legacyFallback?.user?.numericFallbackEnabled === true) return { post: legacyFallback, isFallback: true }
-  }
-  return null
+    }),
+  )
+  if (!fallback) return null
+  return fallback.kind === 'post'
+    ? { kind: 'post' as const, post: fallback.post, isFallback: true }
+    : { kind: 'redirect' as const, redirectUrl: fallback.redirectUrl }
 }
 
 const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|meta-externalagent|meta-externalfetcher|meta-webindexer/i
@@ -688,6 +681,13 @@ export async function GET(
     // unverified Hosts; once findManagedPostForHost confirms a verified domain, upgrade cleanly.
     const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
     if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
+
+    if (managedMatch.kind === 'redirect') {
+      return NextResponse.redirect(managedMatch.redirectUrl, {
+        status: 302,
+        headers: { 'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate' },
+      })
+    }
 
     return new Response(await buildManagedPostPage(managedMatch.post, hostname.toLowerCase(), req.headers.get('user-agent') || '', managedMatch.isFallback), {
       headers: {

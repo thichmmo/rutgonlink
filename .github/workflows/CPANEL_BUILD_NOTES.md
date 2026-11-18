@@ -118,5 +118,5 @@ transport tests and successful deployment do not establish that Facebook accepts
 
 ## Post Fallback API Lint & Origin Smoke Check (2026-11-18)
 
-- `.github/workflows/cpanel-deploy.yml` includes `app/api/settings/post-fallback` in ESLint, and `scripts/cpanel-release.sh` verifies `https://rutgonlink.site/api/settings/post-fallback` returns `401` unauthenticated before marking `SUCCESS`.
+- `.github/workflows/cpanel-deploy.yml` includes `lib/post-fallback-config.ts`, `app/api/admin/post-fallback`, `app/admin/post-fallback`, and `app/admin/layout.tsx` in ESLint, and `scripts/cpanel-release.sh` verifies `https://rutgonlink.site/api/admin/post-fallback` returns `403` unauthenticated before marking `SUCCESS`.
 - Verify: `bash -n scripts/cpanel-release.sh` and scoped ESLint.

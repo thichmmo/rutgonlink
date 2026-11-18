@@ -44,8 +44,6 @@ export default function PostManager() {
   const [fixedContentRevision, setFixedContentRevision] = useState(0)
   const [showTelegramDefaults, setShowTelegramDefaults] = useState(false)
   const [telegramDefaults, setTelegramDefaults] = useState<TelegramSettings>(defaultTelegramSettings)
-  const [numericFallbackEnabled, setNumericFallbackEnabled] = useState(false)
-  const [savingFallback, setSavingFallback] = useState(false)
   const [optionsReady, setOptionsReady] = useState(false)
   const [formSession, setFormSession] = useState(0)
   const [uploadingTelegram, setUploadingTelegram] = useState(false)
@@ -66,7 +64,6 @@ export default function PostManager() {
   const previewPasteRef = useRef<HTMLDivElement>(null)
   const previewRequest = useRef(0)
   const defaultsRevision = useRef(0)
-  const fallbackRevision = useRef(0)
   const loadRequest = useRef(0)
   const fixedContentTrigger = useRef<HTMLButtonElement | null>(null)
   const createPopupDefault = useRef<{ automatic: boolean } | null>(null)
@@ -74,7 +71,6 @@ export default function PostManager() {
   const load = useCallback(async () => {
     const request = ++loadRequest.current
     const revision = defaultsRevision.current
-    const fallbackRev = fallbackRevision.current
     setLoadingPosts(true)
     setListError('')
     try {
@@ -100,7 +96,6 @@ export default function PostManager() {
       setCanUseRawHtml(Boolean(optionsData.canUseRawHtml))
       // A pending options request must not revert a newer explicit default save.
       if (revision === defaultsRevision.current) setTelegramDefaults(normalizeTelegramSettings(optionsData.telegramDefaults))
-      if (fallbackRev === fallbackRevision.current) setNumericFallbackEnabled(Boolean(optionsData.numericFallbackEnabled))
       setOptionsReady(true)
     } catch (cause) {
       if (request === loadRequest.current) {
@@ -129,28 +124,6 @@ export default function PostManager() {
   function savedTelegramDefaults(settings: TelegramSettings) {
     defaultsRevision.current += 1
     setTelegramDefaults(settings)
-  }
-
-  async function toggleNumericFallback() {
-    if (!optionsReady || savingFallback) return
-    const next = !numericFallbackEnabled
-    fallbackRevision.current += 1
-    setSavingFallback(true)
-    setError('')
-    try {
-      const response = await fetch('/api/settings/post-fallback', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: next }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Không thể cập nhật cài đặt hứng link cũ')
-      setNumericFallbackEnabled(Boolean(data.numericFallbackEnabled))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể cập nhật cài đặt hứng link cũ')
-    } finally {
-      setSavingFallback(false)
-    }
   }
 
   function openBlocks(event: React.MouseEvent<HTMLButtonElement>) {
@@ -445,7 +418,7 @@ export default function PostManager() {
   const popupFields = <><fieldset className="rounded-xl border border-gray-200 p-3"><legend className="px-1 text-xs font-semibold text-gray-700">Popup {selectedCount ? `(${selectedCount})` : ''}</legend><div className="max-h-56 space-y-2 overflow-y-auto">{popups.map(popup => { const timing = popupTiming(popup.settings); return <label key={popup.id} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={form.popupIds.includes(popup.id)} onChange={event => { if (createPopupDefault.current) createPopupDefault.current.automatic = false; setForm(current => ({ ...current, popupIds: event.target.checked ? [...current.popupIds, popup.id] : current.popupIds.filter(id => id !== popup.id) })) }} className="mt-1 h-4 w-4 accent-sky-600" /><span className="min-w-0"><span className="block">{popup.name}</span><span className="mt-0.5 block text-[11px] font-medium text-gray-500" aria-label={`Bộ đếm ${popupTimingLabel(popup.settings)}`}>S {timing.shopeeSeconds}s · T {timing.tiktokSeconds}s · Cooldown {timing.cooldownMinutes}m</span></span></label> })}{!popups.length && <p className="text-xs text-gray-500">Chưa có popup bật.</p>}</div></fieldset>{selectedPopup && <><PopupTimingPreview key={selectedPopup.id} settings={selectedPopup.settings} name="Bộ đếm bài viết" />{selectedPopup.isActive === false && <p className="text-xs text-amber-700">Popup đang tắt: bài viết hiển thị ngay, không chạy bộ đếm.</p>}</>}<label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-medium"><input type="checkbox" checked={form.isPublished} onChange={event => setForm(current => ({ ...current, isPublished: event.target.checked }))} className="h-4 w-4 accent-sky-600" /> Xuất bản ngay</label></>
 
   return <div className="mx-auto max-w-7xl space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p><p className="mt-1 text-xs text-gray-500">Loại ưu tiên của tài khoản: {telegramDefaults.enabled ? 'Bài Telegram' : 'Bài thường'}. Bạn có thể tạo nhanh Bọc thẳng hoặc bật hứng link /p7 cũ bên cạnh.</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={!optionsReady || savingFallback} aria-pressed={numericFallbackEnabled} onClick={() => void toggleNumericFallback()} title="Tự động chuyển mã /p7/mã-số đã xóa hoặc không tồn tại về bài mới nhất đang xuất bản trên cùng domain" className={`disabled:opacity-50 rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition ${numericFallbackEnabled ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}>Hứng link /p7 cũ: {numericFallbackEnabled ? 'Đang bật' : 'Đang tắt'}</button><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={openBlocks} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={() => startCreate('standard')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Plus className="h-4 w-4" /> Tạo bài thường</button><button disabled={!optionsReady || busy} onClick={() => startCreate('direct')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-[#19181d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"><Plus className="h-4 w-4" /> Tạo Bọc thẳng</button><button disabled={!optionsReady || busy} onClick={() => startCreate('telegram')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài Telegram</button></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-sky-600">Nội dung</p><h1 className="mt-1 text-2xl font-bold text-gray-950 sm:text-3xl">Quản lý bài viết</h1><p className="mt-2 text-sm text-gray-600">Mỗi popup được chọn sẽ tạo một bài viết riêng khi xuất bản hàng loạt.</p><p className="mt-1 text-xs text-gray-500">Loại ưu tiên của tài khoản: {telegramDefaults.enabled ? 'Bài Telegram' : 'Bài thường'}. Bạn có thể tạo nhanh Bọc thẳng ngay bên cạnh.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setShowTelegramDefaults(true)} className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">Mặc định Telegram</button><button onClick={openBlocks} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700">Nội dung cố định</button><button disabled={!optionsReady || busy} onClick={() => startCreate('standard')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Plus className="h-4 w-4" /> Tạo bài thường</button><button disabled={!optionsReady || busy} onClick={() => startCreate('direct')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-[#19181d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"><Plus className="h-4 w-4" /> Tạo Bọc thẳng</button><button disabled={!optionsReady || busy} onClick={() => startCreate('telegram')} className="disabled:opacity-50 inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700"><Plus className="h-4 w-4" /> Tạo bài Telegram</button></div></div>
     <div role="group" aria-label="Lọc loại bài viết" className="flex flex-wrap gap-2">
       {([{ value: 'all', label: 'Tất cả bài' }, { value: 'standard', label: 'Bài thường' }, { value: 'telegram', label: 'Bài Telegram' }, { value: 'direct', label: 'Bọc thẳng' }] as const).map(type => <button key={type.value} type="button" aria-pressed={postType === type.value} onClick={() => { setPostType(type.value); setPage(1) }} className={`rounded-xl border px-4 py-2.5 text-sm font-semibold ${postType === type.value ? 'border-sky-600 bg-sky-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}>{type.label}</button>)}
     </div>

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { BookOpen, CalendarDays } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
@@ -20,6 +20,7 @@ import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
 import { getPopupStep } from '@/lib/popup-settings'
 import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
+import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
 
 type Context = { params: Promise<{ slug: string }> }
 
@@ -31,7 +32,6 @@ async function findPost(slug: string) {
       select: {
         status: true,
         deletedAt: true,
-        numericFallbackEnabled: true,
         managedContentBlocks: { where: { isActive: true }, orderBy: [{ placement: 'asc' as const }, { sortOrder: 'asc' as const }] },
       },
     },
@@ -40,18 +40,24 @@ async function findPost(slug: string) {
     where: { slug, isPublished: true, user: { status: 'active', deletedAt: null } },
     include,
   })
-  if (exact) return { post: exact, isFallback: false }
+  if (exact) return { kind: 'post' as const, post: exact, isFallback: false }
 
-  if (!isNumericPostSlug(slug)) return null
-  const fallback = await prisma.managedPost.findFirst({
-    where: { isPublished: true, user: { status: 'active', deletedAt: null, numericFallbackEnabled: true } },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    include,
-  })
-  return fallback?.user?.numericFallbackEnabled === true ? { post: fallback, isFallback: true } : null
+  // Missing /posts/<slug> routes resolve the Admin-configured global fallback across the system.
+  const fallback = await resolveSystemPostFallback((targetSlug) =>
+    prisma.managedPost.findFirst({
+      where: { slug: targetSlug, isPublished: true, user: { status: 'active', deletedAt: null } },
+      include,
+    }),
+  )
+  if (!fallback) return null
+  return fallback.kind === 'post'
+    ? { kind: 'post' as const, post: fallback.post, isFallback: true }
+    : { kind: 'redirect' as const, redirectUrl: fallback.redirectUrl }
 }
 
-function publicUrl(post: NonNullable<Awaited<ReturnType<typeof findPost>>>['post']) {
+type LoadedPost = Extract<NonNullable<Awaited<ReturnType<typeof findPost>>>, { kind: 'post' }>['post']
+
+function publicUrl(post: LoadedPost) {
   const domain = post?.domain?.domain || post?.sharedDomain || getSiteHostname()
   return `https://${domain}${getPublicPostPath(post?.slug || '')}`
 }
@@ -61,7 +67,7 @@ const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|m
 export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const { slug } = await params
   const match = await findPost(slug)
-  if (!match) return { title: 'Không tìm thấy bài viết', robots: { index: false } }
+  if (!match || match.kind === 'redirect') return { title: 'Không tìm thấy bài viết', robots: { index: false } }
   const { post } = match
   const canonical = publicUrl(post)
   const plainText = (post.content || '').replace(/<[^>]+>/g, '').trim().slice(0, 160)
@@ -103,7 +109,9 @@ export default async function ManagedPostPage({ params }: Context) {
   const { slug } = await params
   const match = await findPost(slug)
   if (!match) notFound()
+  if (match.kind === 'redirect') redirect(match.redirectUrl)
   const { post, isFallback } = match
+  const fallbackCanonicalPath = isNumericPostSlug(post.slug) ? getPublicPostPath(post.slug) : `/posts/${encodeURIComponent(post.slug)}`
   const telegram = normalizeTelegramSettings(post.telegramSettings)
   const isDirectWrapper = Boolean(post.isDirectWrapper)
   const blocks = post.user.managedContentBlocks
@@ -125,7 +133,7 @@ export default async function ManagedPostPage({ params }: Context) {
     {!isFacebookCrawler && <noscript dangerouslySetInnerHTML={{ __html: PUBLIC_POST_NOSCRIPT_HTML }} />}
     <div className="managed-public-post min-h-screen bg-[#f8fafc] text-gray-900">
     {!isFacebookCrawler && <DesktopDevToolsGuard userAgent={userAgent} />}
-    {!isFacebookCrawler && isFallback && <script dangerouslySetInnerHTML={{ __html: `try{if(window.history&&window.history.replaceState)window.history.replaceState(null,"",${JSON.stringify(`/posts/${encodeURIComponent(post.slug)}`)}+window.location.search+window.location.hash)}catch(_){}` }} />}
+    {!isFacebookCrawler && isFallback && <script dangerouslySetInnerHTML={{ __html: `try{if(window.history&&window.history.replaceState)window.history.replaceState(null,"",${JSON.stringify(fallbackCanonicalPath)}+window.location.search+window.location.hash)}catch(_){}` }} />}
     {isFacebookCrawler ? <main /> : isDirectWrapper ? <main data-direct-wrapper="" className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white px-6 py-8 text-center shadow-sm">
         <h1 className="text-xl font-bold leading-snug text-gray-950">{post.title}</h1>

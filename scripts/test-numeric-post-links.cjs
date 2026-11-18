@@ -5,11 +5,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
 const { Prisma } = require('@prisma/client')
-const { NextRequest } = require('next/server')
+const { renderToStaticMarkup } = require('react-dom/server')
+const { NextRequest, NextResponse } = require('next/server')
 
 process.env.NEXTAUTH_URL = 'https://rutgonlink.site'
 const root = path.resolve(__dirname, '..')
-const state = { actor: { id: 'owner', isAdmin: false }, rows: new Map(), calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true }
+const state = { actor: { id: 'owner', isAdmin: false }, adminContext: null, rows: new Map(), appSettings: new Map(), audits: [], calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true }
 const cache = new Map()
 const telegram = { enabled: true, url: 'https://t.me/fixture', buttonText: 'Join', disclaimer: 'Fixture' }
 const legacy = { title: 'Fixture', slug: 'legacy-name', content: '<p>Video fixture</p>', contentFormat: 'rich', isPublished: true, telegramSettings: telegram }
@@ -20,9 +21,7 @@ function matches(row, where) {
     if (key === 'AND') return value.every(item => matches(row, item))
     if (key === 'OR') return value.some(item => matches(row, item))
     if (key === 'user') {
-      return row.user.status === value.status
-        && row.user.deletedAt === value.deletedAt
-        && (value.numericFallbackEnabled === undefined || Boolean(row.user.numericFallbackEnabled) === value.numericFallbackEnabled)
+      return row.user.status === value.status && row.user.deletedAt === value.deletedAt
     }
     return row[key] === value
   })
@@ -35,8 +34,19 @@ const prisma = {
     try { return await operation(prisma) } catch (error) { state.rows = before; throw error }
   },
   user: {
-    findUnique: async () => { state.defaultsRead += 1; return { telegramSettings: telegram, numericFallbackEnabled: Boolean(state.numericFallbackEnabled) } },
-    update: async ({ data }) => { state.numericFallbackEnabled = Boolean(data.numericFallbackEnabled); for (const row of state.rows.values()) row.user.numericFallbackEnabled = state.numericFallbackEnabled; return { numericFallbackEnabled: state.numericFallbackEnabled } },
+    findUnique: async () => { state.defaultsRead += 1; return { telegramSettings: telegram } },
+  },
+  appSetting: {
+    findUnique: async ({ where }) => state.appSettings.get(where.key) || null,
+    upsert: async ({ where, create, update }) => {
+      const existing = state.appSettings.get(where.key)
+      const next = existing ? { ...existing, ...update, updatedAt: new Date() } : { id: `setting-${where.key}`, ...create, createdAt: new Date(), updatedAt: new Date() }
+      state.appSettings.set(where.key, next)
+      return next
+    },
+  },
+  adminAuditLog: {
+    create: async ({ data }) => { state.audits.push(data); return data },
   },
   domain: { findFirst: async ({ where }) => where.domain === 'custom.example.test' ? { id: 'custom' } : null },
   link: { findFirst: async () => { throw new Error('Numeric routes must never resolve a short link') } },
@@ -54,7 +64,7 @@ const prisma = {
       state.calls.push(structuredClone(data))
       if (state.createError) throw state.createError
       if (state.alwaysCollide || state.calls.length === state.failCreate || [...state.rows.values()].some(row => row.slug === data.slug)) throw collision()
-      const row = { id: `post-${++state.nextId}`, popup: null, domain: data.domainId === 'custom' ? { id: 'custom', domain: 'custom.example.test' } : null, user: { status: 'active', deletedAt: null, numericFallbackEnabled: Boolean(state.numericFallbackEnabled), managedContentBlocks: [] }, createdAt: new Date(Date.UTC(2026, 9, 7, 0, state.nextId)), isDirectWrapper: false, ...data }
+      const row = { id: `post-${++state.nextId}`, popup: null, domain: data.domainId === 'custom' ? { id: 'custom', domain: 'custom.example.test' } : null, user: { status: 'active', deletedAt: null, managedContentBlocks: [] }, createdAt: new Date(Date.UTC(2026, 9, 7, 0, state.nextId)), isDirectWrapper: false, ...data }
       state.rows.set(row.id, row)
       return row
     },
@@ -66,7 +76,7 @@ const prisma = {
     },
   },
 }
-const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
+const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
   const module = { exports: {} }
@@ -76,9 +86,18 @@ function load(file) {
     if (id === '@/lib/prisma') return { prisma }
     if (id === 'node:crypto') return { ...require(id), randomInt: (min, max) => { const value = state.codes.length ? state.codes.shift() : state.nextCode++; assert(value >= min && value < max); return value } }
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-only-token' }
+    if (id === '@/lib/admin-auth') return {
+      hasAdminPermission: (admin, permission) => Boolean(admin?.permissions?.includes(permission)),
+      requireAdmin: async permission => state.adminContext?.permissions?.includes(permission)
+        ? { ok: true, admin: state.adminContext }
+        : { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) },
+    }
     if (id === 'next-auth' || id === '@/lib/auth-options') return {}
     if (id === 'next/headers') return { headers: async () => new Headers({ host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0' }) }
-    if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture not found') } }
+    if (id === 'next/navigation') return {
+      notFound: () => { throw new Error('Fixture not found') },
+      redirect: url => { throw Object.assign(new Error('Fixture redirect'), { redirectUrl: url }) },
+    }
     if (id === 'next/link' || id === '@/components/Navbar' || id === '@/components/Footer') return () => null
     if (id.startsWith('@/app/')) return load(id.slice(2) + '.ts')
     if (id.startsWith('./')) return load(path.posix.join(path.posix.dirname(file), id) + '.tsx')
@@ -100,17 +119,17 @@ function load(file) {
 const api = load('app/api/posts/route.ts')
 const item = load('app/api/posts/[id]/route.ts')
 const duplicate = load('app/api/posts/[id]/duplicate/route.ts')
-const fallbackApi = load('app/api/settings/post-fallback/route.ts')
+const adminFallbackApi = load('app/api/admin/post-fallback/route.ts')
 const numericRoute = load('app/p7/[code]/route.ts')
 const slugRoute = load('app/[shortCode]/route.ts')
 const reactPage = load('app/posts/[slug]/page.tsx')
 const links = load('lib/public-post-link.ts')
-const request = body => ({ json: async () => body })
+const request = body => ({ headers: new Headers(), json: async () => body })
 const body = async response => ({ status: response.status, data: await response.json() })
 const tasks = []
 const scenario = (name, run) => tasks.push({ name, run })
 function reset() {
-  Object.assign(state, { actor: { id: 'owner', isAdmin: false }, rows: new Map(), calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true, numericFallbackEnabled: false })
+  Object.assign(state, { actor: { id: 'owner', isAdmin: false }, adminContext: null, rows: new Map(), appSettings: new Map(), audits: [], calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true })
 }
 async function create(patch = {}) { return body(await api.POST(request({ ...legacy, ...patch }))) }
 async function visit(code, host = 'honghotngay228.site') {
@@ -275,23 +294,65 @@ scenario('direct wrapper allocates numeric /p7 link without article body, requir
   assert.equal(copied.data.isDirectWrapper, true)
   assert.equal(copied.data.slug, 'p7-50001')
 })
-scenario('opt-in numericFallbackEnabled routes missing /p7/<code> to newest active post on same domain with replaceState', async () => {
-  await create({ title: 'Older post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })
-  const newest = (await create({ title: 'Newest post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })).data.items[0]
+scenario('admin-only global post fallback routes missing /p7/<code> and /posts/<slug> to Admin target or 302 external URL without loops', async () => {
+  await create({ title: 'User post', publicLinkMode: 'numeric', sharedDomain: 'honghotngay228.site' })
+  state.actor = { id: 'admin-id', isAdmin: true }
+  const adminPost = (await create({ title: 'Admin target post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })).data.items[0]
+
+  assert.equal((await adminFallbackApi.GET()).status, 403, 'Non-admin cannot read fallback setting')
+  assert.equal((await adminFallbackApi.PUT(request({ enabled: true, targetUrl: adminPost.publicUrl }))).status, 403, 'Non-admin cannot write fallback setting')
   assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404, 'Disabled by default')
-  const toggled = await body(await fallbackApi.PUT(request({ enabled: true })))
-  assert.equal(toggled.status, 200)
-  assert.equal(toggled.data.numericFallbackEnabled, true)
-  const fallbackRes = await visit('99999', 'ca33newss.xyz')
-  assert.equal(fallbackRes.status, 200)
-  const html = await fallbackRes.text()
-  assert(html.includes('Newest post'))
-  assert(html.includes(`href="${newest.publicUrl}"`))
-  assert(html.includes('window.history.replaceState(null,"","/p7/50001"'))
-  assert.equal((await visit('99999', 'honghotngay228.site')).status, 404, 'Never cross domains on fallback')
-  const toggledOff = await body(await fallbackApi.PUT(request({ enabled: false })))
-  assert.equal(toggledOff.data.numericFallbackEnabled, false)
+
+  state.adminContext = { id: 'admin-id', email: 'admin@example.test', role: 'owner', permissions: ['system.read', 'system.write'] }
+  assert.equal((await adminFallbackApi.PUT(request({ enabled: true, targetUrl: '' }))).status, 400, 'Reject empty URL when enabled')
+  assert.equal((await adminFallbackApi.PUT(request({ enabled: true, targetUrl: '/p7/88888' }))).status, 400, 'Reject non-existent internal /p7 target')
+
+  const savedInternal = await body(await adminFallbackApi.PUT(request({ enabled: true, targetUrl: '/p7/50001' })))
+  assert.equal(savedInternal.status, 200)
+  assert.equal(savedInternal.data.enabled, true)
+  assert.equal(savedInternal.data.targetUrl, 'https://ca33newss.xyz/p7/50001')
+  assert.equal(savedInternal.data.inspection.mode, 'post')
+
+  // Missing /p7/<code> across any valid system domain renders Admin's post in-place with replaceState.
+  for (const host of ['ca33newss.xyz', 'honghotngay228.site', 'rutgonlink.site']) {
+    const res = await visit('99999', host)
+    assert.equal(res.status, 200)
+    const html = await res.text()
+    assert(html.includes('Admin target post'))
+    assert(html.includes(`href="https://${host}/p7/50001"`))
+    assert(html.includes('window.history.replaceState(null,"","/p7/50001"'))
+  }
+  assert.equal((await visit('99999', 'unknown.example.test')).status, 404, 'Unknown hosts stay 404')
+
+  // Missing /posts/<slug> also renders Admin's post and metadata.
+  const aliasMeta = await reactPage.generateMetadata({ params: Promise.resolve({ slug: 'deleted-article' }) })
+  assert.equal(aliasMeta.title.absolute, 'Admin target post')
+  const aliasHtml = renderToStaticMarkup(await reactPage.default({ params: Promise.resolve({ slug: 'deleted-article' }) }))
+  assert(aliasHtml.includes('Video fixture'))
+  assert(aliasHtml.includes('window.history.replaceState(null,"","/p7/50001"'))
+
+  // If Admin's target post is later unpublished, missing links return 404 instead of looping.
+  state.rows.get(adminPost.id).isPublished = false
   assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404)
+  assert.equal((await visit('50001', 'ca33newss.xyz')).status, 404)
+
+  // External target URL issues a no-store 302 redirect on /p7/<code> and Next redirect on /posts/<slug>.
+  const savedExternal = await body(await adminFallbackApi.PUT(request({ enabled: true, targetUrl: 'https://shopee.vn/deal-chung' })))
+  assert.equal(savedExternal.status, 200)
+  assert.equal(savedExternal.data.inspection.mode, 'redirect')
+  const extRes = await visit('99999', 'ca33newss.xyz')
+  assert.equal(extRes.status, 302)
+  assert.equal(extRes.headers.get('location'), 'https://shopee.vn/deal-chung')
+  assert.match(extRes.headers.get('cache-control') || '', /no-store/)
+  await assert.rejects(
+    () => reactPage.default({ params: Promise.resolve({ slug: 'deleted-article' }) }),
+    error => error.redirectUrl === 'https://shopee.vn/deal-chung',
+  )
+
+  const disabled = await body(await adminFallbackApi.PUT(request({ enabled: false, targetUrl: 'https://shopee.vn/deal-chung' })))
+  assert.equal(disabled.data.enabled, false)
+  assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404)
+  assert.equal(state.audits.length, 3)
 })
 
 ;(async () => {

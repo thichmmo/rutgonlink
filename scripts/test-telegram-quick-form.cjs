@@ -66,7 +66,6 @@ global.fetch = async (url, init = {}) => {
   if (url === '/api/posts/options') return optionsPending ? optionsPending.promise : response({ popups: popupOptions, domains: domainOptions, telegramDefaults: defaults })
   if (url === '/api/content-blocks') return response(blocks)
   if (url === '/api/settings/telegram') return response(defaults)
-  if (url === '/api/settings/post-fallback' && init.method === 'PUT') return response({ numericFallbackEnabled: Boolean(JSON.parse(init.body).enabled) })
   if (url === '/api/content/upload') return uploadPending.promise
   if ((url === '/api/posts' && init.method === 'POST') || (/^\/api\/posts\/(telegram|standard)$/.test(url) && init.method === 'PUT')) return saveError ? response({ error: saveError }, false) : response({ id: 'saved' })
   throw new Error('Unexpected fetch ' + url)
@@ -445,10 +444,7 @@ async function run() {
   check(() => assert.equal(lastPayload().slug, standard.slug, 'Standard edit retains its existing link contract'))
   check(() => assert.equal(Object.hasOwn(lastPayload(), 'publicLinkMode'), false))
 
-  check(() => assert.ok(button('Hứng link /p7 cũ: Đang tắt'), 'Numeric fallback starts disabled by default'))
-  await click(button('Hứng link /p7 cũ: Đang tắt'))
-  check(() => assert.ok(button('Hứng link /p7 cũ: Đang bật'), 'Toolbar toggles numeric /p7 fallback via API'))
-  check(() => assert.equal(JSON.parse(calls.find(call => call.url === '/api/settings/post-fallback').body).enabled, true))
+  check(() => assert.equal(document.body.textContent.includes('Hứng link'), false, 'User dashboard hides Admin-only post fallback setting'))
 
   await click(button('Tạo Bọc thẳng'))
   check(() => assert.equal(editor(), null, 'Direct wrapper must not mount the article editor'))

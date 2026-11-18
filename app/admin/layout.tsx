@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import {
   Activity,
   Chrome,
+  CornerDownRight,
   CreditCard,
   ExternalLink,
   Film,
@@ -31,6 +32,7 @@ const navItems: Array<{
   { href: '/admin', label: 'Tổng quan', icon: Gauge, permission: 'overview.read' },
   { href: '/admin/users', label: 'Người dùng', icon: Users, permission: 'users.read' },
   { href: '/admin/links', label: 'Links', icon: Link2, permission: 'links.read' },
+  { href: '/admin/post-fallback', label: 'Hứng link cũ', icon: CornerDownRight, permission: 'system.read' },
   { href: '/admin/domains', label: 'Domains', icon: Globe2, permission: 'domains.read' },
   { href: '/admin/transactions', label: 'Thanh toán', icon: CreditCard, permission: 'billing.read' },
   { href: '/admin/traffic', label: 'Traffic', icon: Activity, permission: 'logs.read' },

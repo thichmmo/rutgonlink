@@ -42,10 +42,11 @@ function load(file) {
     if (file === 'app/posts/[slug]/page.tsx') {
       if (id === '@/lib/prisma') return { prisma: { managedPost: { findFirst: async () => postFixture } } }
       if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': desktop, host: 'fixture.example' }) }
-      if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') } }
+      if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') }, redirect: url => { throw new Error('Fixture redirect: ' + url) } }
       if (id === 'next/link' || id === '@/components/Navbar' || id === '@/components/Footer') return () => null
       if (id.startsWith('./')) return load('app/posts/[slug]/' + id.slice(2) + '.tsx')
     }
+    if (id === '@/lib/post-fallback-config') return { resolveSystemPostFallback: async () => null }
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
