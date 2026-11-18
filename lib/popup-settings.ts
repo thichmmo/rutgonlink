@@ -1,4 +1,5 @@
 import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isAndroidDeviceUserAgent, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { isFacebookUserAgent } from '@/lib/traffic-source'
 
 export type PopupPlatformSettings = {
   enabled: boolean
@@ -21,6 +22,7 @@ export type PopupSettings = {
   shopee: PopupPlatformSettings
   tiktok: PopupTikTokSettings
   cooldownMinutes: number
+  onlyFromFacebook: boolean
   forceChromeAndroid: boolean
   forceSafariIos: boolean
 }
@@ -52,6 +54,7 @@ export const defaultPopupSettings = (firstUrl = '', secondUrl = ''): PopupSettin
     iosMode: 'desktop',
   },
   cooldownMinutes: 30,
+  onlyFromFacebook: true,
   forceChromeAndroid: false,
   forceSafariIos: false,
 })
@@ -90,6 +93,8 @@ export function normalizePopupSettings(value: unknown, firstUrl = '', secondUrl 
       iosMode: usesOneLink ? 'onelink' : 'desktop',
     },
     cooldownMinutes: positiveInteger(input.cooldownMinutes, fallback.cooldownMinutes, 10080),
+    // Default existing and new popups to Facebook-only unless explicitly toggled off.
+    onlyFromFacebook: input.onlyFromFacebook !== false,
     forceChromeAndroid: input.forceChromeAndroid === true,
     forceSafariIos: input.forceSafariIos === true,
   }
@@ -107,9 +112,16 @@ export function isMobileUserAgent(userAgent: string) {
   return isIosUserAgent(userAgent) || isAndroidUserAgent(userAgent)
 }
 
-export function popupAppliesToDevice(settings: PopupSettings, userAgent: string) {
+export type PopupEligibilityOptions = {
+  isFacebookSource?: boolean
+}
+
+export function popupAppliesToDevice(settings: PopupSettings, userAgent: string, options?: PopupEligibilityOptions) {
   // Gate mobile traffic only; desktop visitors read the article directly.
   if (!isMobileUserAgent(userAgent)) return false
+  // Enforce Facebook-only popup visibility fail-closed unless explicitly disabled on the popup.
+  const facebookMatched = options?.isFacebookSource ?? isFacebookUserAgent(userAgent)
+  if (settings.onlyFromFacebook && !facebookMatched) return false
   const platforms = [settings.shopee, settings.tiktok]
   return platforms.every(platform => platform.enabled && (
     isIosUserAgent(userAgent) ? platform.iosEnabled :

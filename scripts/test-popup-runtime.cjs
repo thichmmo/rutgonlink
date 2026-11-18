@@ -50,7 +50,7 @@ function load(file) {
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'tranco-boost-config', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -71,6 +71,9 @@ const shopee = 'https://shopee.vn/product/123/456?affiliate=original'
 const shortTikTok = 'https://vt.tiktok.com/ZS9rPANpNhyeP-JpTZz/'
 const { defaultPopupSettings, getPopupStep, popupAppliesToDevice, updateTikTokPopupUrl } = load('lib/popup-settings.ts')
 const { normalizeSettings, sanitizeRichHtml } = load('lib/content-management.ts')
+const handoffHelper = fs.existsSync(path.join(sourceRoot, 'lib/facebook-handoff-token.ts'))
+  ? load('lib/facebook-handoff-token.ts')
+  : { isServerFacebookTrafficSource: ({ userAgent }) => /fban|fbav|fbios|fb_iab|fb4a/i.test(userAgent || ''), createFacebookHandoffToken: () => '' }
 const prepareSettings = fs.existsSync(path.join(sourceRoot, 'lib/popup-settings-server.ts'))
   ? load('lib/popup-settings-server.ts').preparePopupSettingsForRequest
   : async settings => settings
@@ -83,7 +86,9 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 
 async function mount(kind, options = {}) {
   const dom = new JSDOM('<!doctype html><html><body><main>Article</main><div id="root"></div></body></html>', {
-    url: options.currentHref || 'https://fixture.example/post', pretendToBeVisual: true,
+    url: options.currentHref || 'https://fixture.example/post',
+    referrer: options.referrer || undefined,
+    pretendToBeVisual: true,
   })
   const doc = dom.window.document
   const ua = options.ua ?? facebookIos
@@ -149,7 +154,7 @@ async function mount(kind, options = {}) {
     innerHeight: options.innerHeight ?? 768,
     outerHeight: options.outerHeight ?? 768,
     performance: { getEntriesByType: type => type === 'navigation' ? [{ type: options.navType || 'navigate' }] : [] },
-    location: { href: dom.window.location.href, hostname: options.hostname || dom.window.location.hostname, replace(url) {
+    location: { href: dom.window.location.href, hostname: options.hostname || dom.window.location.hostname, search: dom.window.location.search, replace(url) {
       calls.push({ mode: url === 'https://mesale.vn' ? 'devtools-redirect' : 'same-tab', url, state: state(), session: [...storage.session] })
       if (options.replaceThrows) throw new Error('Navigation failed')
     } },
@@ -197,8 +202,9 @@ async function mount(kind, options = {}) {
   global.document = doc
   global.HTMLElement = dom.window.HTMLElement
   const settings = defaultPopupSettings(shopee, product)
-  // Existing Facebook fixtures exercise affiliate sequencing independently of the opt-in browser gate.
+  // Existing Facebook/Chrome fixtures exercise affiliate sequencing independently unless testing Facebook-only gating.
   settings.forceChromeAndroid = options.forceChromeAndroid ?? false
+  settings.onlyFromFacebook = options.onlyFromFacebook ?? false
   if (options.cooldownMinutes !== undefined) settings.cooldownMinutes = options.cooldownMinutes
   settings.shopee.delaySeconds = options.firstDelay || 0
   settings.tiktok.delaySeconds = options.secondDelay || 0
@@ -238,9 +244,20 @@ async function mount(kind, options = {}) {
       now = until
     })
   }
+  const hostForHandoff = options.hostname || dom.window.location.hostname || 'fixture.example'
+  const isFacebookSource = handoffHelper.isServerFacebookTrafficSource({
+    userAgent: ua,
+    referer: options.referrer || '',
+    url: options.currentHref || 'https://fixture.example/post',
+    host: hostForHandoff,
+    now,
+  })
+  const fbHandoffToken = settings.onlyFromFacebook && isFacebookSource
+    ? handoffHelper.createFacebookHandoffToken(hostForHandoff, now)
+    : ''
   if (kind === 'route') {
     const html = await prepareMount(() => buildPage({ id: 'post1', slug: 'post', title: 'Fixture', content: 'Article', contentFormat: 'plain',
-      user: { managedContentBlocks: [] }, popup: options.noPopup ? null : { ...popup, updatedAt: new Date(popup.updatedAt) } }, 'fixture.example', ua))
+      user: { managedContentBlocks: [] }, popup: options.noPopup ? null : { ...popup, updatedAt: new Date(popup.updatedAt) } }, hostForHandoff, ua, false, { isFacebookSource, fbHandoffToken }))
     doc.body.className = /<body class="([^"]*)"/.exec(html)?.[1] || ''
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1])
     for (const script of scripts) {
@@ -248,11 +265,12 @@ async function mount(kind, options = {}) {
         sessionStorage: overrides.sessionStorage, localStorage: overrides.localStorage, Date, URL })
     }
   } else {
-    if (popup.isActive) popup.settings = await prepareMount(() => prepareSettings(settings, ua))
+    if (popup.isActive) popup.settings = await prepareMount(() => prepareSettings(settings, ua, { isFacebookSource }))
     root = createRoot(doc.querySelector('#root'))
     await React.act(async () => root.render(React.createElement(React.Fragment, null,
       React.createElement(DesktopDevToolsGuard, { userAgent: ua }),
       options.noPopup ? null : React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua,
+        isFacebookSource, fbHandoffToken,
         tracking: { postId: 'post1', popupId: 'popup1', token: 'fixture-popup-click-token' } }),
     )))
     await tick()
@@ -361,10 +379,10 @@ async function androidScenarios() {
     for (const ua of [android, androidChrome]) {
       const step = getPopupStep(settings, 1, ua)
       assert.equal(step.url, shortTikTok)
-      assert.equal(step.launchUrl, shortTikTok)
+      assert.equal(step.launchUrl, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', ua))
       assert.equal(step.openMode, 'anchor-same-tab')
-      assert.equal(getPopupStep(settings, 0, ua).launchUrl, shopee)
-      assert.equal(getPopupStep(settings, 0, ua).openMode, 'anchor-new-tab')
+      assert.equal(getPopupStep(settings, 0, ua).launchUrl, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
+      assert.equal(getPopupStep(settings, 0, ua).openMode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
     }
     for (const iosUa of [facebookIos, safariIos]) {
       const iosStep = getPopupStep(settings, 1, iosUa)
@@ -391,7 +409,7 @@ async function androidScenarios() {
         assert.equal(result.tiktok.iosUrl, settings.tiktok.iosUrl)
         assert.equal(result.tiktok.androidLaunchUrl, undefined)
         assert.equal(getPopupStep(result, 1, ua).url, source)
-        assert.equal(getPopupStep(result, 1, ua).launchUrl, source)
+        assert.equal(getPopupStep(result, 1, ua).launchUrl, helper.buildAndroidPopupLaunchUrl(source, 'TIKTOK', ua))
         assert.equal(JSON.stringify(settings), saved, 'Preparation must not mutate persisted settings')
       })
     }
@@ -401,7 +419,7 @@ async function androidScenarios() {
     const valid = helper.buildTikTokAndroidLaunchUrl(product, shortTikTok)
     for (const value of [valid, valid.replace('com.ss.android.ugc.trill', 'evil.app'), 'javascript:alert(1)', valid + ';evil=1']) {
       settings.tiktok.androidLaunchUrl = value
-      for (const ua of [android, androidChrome]) assert.equal(getPopupStep(settings, 1, ua).launchUrl, shortTikTok)
+      for (const ua of [android, androidChrome]) assert.equal(getPopupStep(settings, 1, ua).launchUrl, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', ua))
       assert.equal(normalizeSettings(settings, shopee, shortTikTok).tiktok.androidLaunchUrl, undefined)
     }
   })
@@ -514,7 +532,7 @@ async function androidScenarios() {
         assert.equal(h.clickEvents.length, 0)
       })
     })
-    await scenario(kind + ' Chrome continuation starts countdown and raw HTTPS affiliate sequence only after user taps', async () => {
+    await scenario(kind + ' Chrome continuation starts countdown and native scheme=https intent affiliate sequence only after user taps', async () => {
       await using(kind, { ua: androidChrome, forceChromeAndroid: true, androidUrl: shortTikTok, cooldownMinutes: 0, firstDelay: 2, secondDelay: 3 }, async h => {
         assert.equal(h.state(), 'Shopee')
         assert.equal(h.doc.querySelector('[data-popup-browser-gate]'), null)
@@ -522,14 +540,14 @@ async function androidScenarios() {
         assert.equal(h.calls.length, 0)
         assert.equal(h.clickEvents.length, 0)
         await h.click()
-        assert.equal(h.calls[0].url, shopee)
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.calls[0].url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', androidChrome))
+        assert.equal(h.calls[0].mode, 'anchor-same-tab')
         await h.away(3500); await h.back()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.calls.length, 1)
-        assert.equal(h.button().href, shortTikTok)
+        assert.equal(h.button().href, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', androidChrome))
         await h.click()
-        assert.equal(h.calls[1].url, shortTikTok)
+        assert.equal(h.calls[1].url, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', androidChrome))
         assert.equal(h.calls[1].mode, 'anchor-same-tab')
         await h.blur(); await h.focus()
         assert.equal(h.state(), 'TikTok')
@@ -593,20 +611,20 @@ async function androidScenarios() {
         await h.click(); await h.click()
         assert.equal(h.calls.length, 1, 'Pending launch blocks an immediate second tap')
         const first = h.calls[0]
-        assert.equal(first.mode, 'anchor-new-tab')
-        assert.equal(first.target, '_blank')
+        assert.equal(first.mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
+        assert.equal(first.target, ua === android ? '_blank' : '_self')
         assert.equal(first.attached, true)
         assert.equal(first.hidden, false)
         assert.equal(first.nativeAction, true)
         assert.equal(h.button(), originalAnchor, 'Do not detach the tapped link before its default action')
-        assert.equal(first.url, shopee)
+        assert.equal(first.url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
         assert.equal(first.state, 'Shopee', 'Pending app handoff keeps the clicked popup visible')
         assert.match(first.session[0][1], /^1\|/)
         assert.equal(h.doc.querySelector('a[hidden]'), null)
         assert.equal(h.clickEvents.length, 1)
         await h.away(2000); await h.back(); await h.click()
         assert.equal(h.calls[1].mode, 'anchor-same-tab')
-        assert.equal(h.calls[1].url, shortTikTok)
+        assert.equal(h.calls[1].url, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', ua))
         assert.equal(h.calls[1].nativeAction, true)
         assert.equal(h.calls[1].hidden, false)
         assert.equal(h.calls[1].state, 'TikTok', 'The article stays covered until a confirmed departure and return')
@@ -626,8 +644,14 @@ async function androidScenarios() {
             await h.click(); await h.away(); await h.back()
             const anchor = h.button()
             assert.equal(anchor.tagName, 'A')
-            assert.equal(anchor.getAttribute('href'), source)
-            assert.equal(anchor.href, new URL(source).href, 'Only the browser URL serializer may escape an unencoded quote')
+            const expectedLaunch = helper.buildAndroidPopupLaunchUrl(source, 'TIKTOK', ua)
+            assert.equal(anchor.getAttribute('href'), expectedLaunch)
+            if (ua === android) {
+              assert.equal(anchor.href, new URL(source).href, 'Only the browser URL serializer may escape an unencoded quote')
+            } else {
+              assert.ok(expectedLaunch.startsWith('intent://' + source.slice('https://'.length) + '#Intent;scheme=https;'))
+              assert.ok(expectedLaunch.includes('S.browser_fallback_url=' + encodeURIComponent(source)))
+            }
             await h.click()
             assert.equal(h.calls[1].url, anchor.href)
             assert.equal(h.calls[1].nativeAction, true)
@@ -663,7 +687,7 @@ async function androidScenarios() {
         assert.ok(fallback, 'The user can explicitly open the unchanged web link')
         await h.click(fallback)
         assert.equal(h.calls.length, 2)
-        assert.equal(h.calls[1].mode, 'anchor-new-tab')
+        assert.equal(h.calls[1].mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
         assert.equal(h.calls[1].url, shopee)
         await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
@@ -893,6 +917,119 @@ async function androidScenarios() {
         assert.equal(h.calls.length, 0)
         assert.equal(h.doc.documentElement.hasAttribute('data-post-guard-blocked'), false)
       })
+    })
+    await scenario(kind + ' onlyFromFacebook=true blocks non-Facebook mobile visits and preserves signed Facebook->Chrome handoff + 1-tap native intents', async () => {
+      assert.equal(defaultPopupSettings(shopee, product).onlyFromFacebook, true)
+      assert.equal(normalizeSettings({}, shopee, product).onlyFromFacebook, true, 'Legacy DB popups without onlyFromFacebook default to Facebook-only')
+      assert.equal(normalizeSettings({ onlyFromFacebook: false }, shopee, product).onlyFromFacebook, false)
+
+      // 1) Non-Facebook mobile visits (Safari iOS, Chrome Android direct, Samsung Internet, Zalo, Telegram, TikTok, Instagram) show ARTICLE directly with zero popup/gate
+      for (const nonFbUa of [
+        safariIos,
+        androidChrome,
+        'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 SamsungBrowser/27.0 Chrome/125 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 14; SM-A546E; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Zalo Android 241002',
+        'Mozilla/5.0 (Linux; Android 15; Pixel 8 Pro; wv) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36 Telegram-Android/11.4.2',
+        'Mozilla/5.0 (Linux; Android 13; 23021RAA2Y; wv) AppleWebKit/537.36 Chrome/128 Mobile Safari/537.36 musical_ly_2023603040 BytedanceWebview/d8a21c6',
+        'Mozilla/5.0 (Linux; Android 14; CPH2581; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Instagram 357.1.0.52.100 Android',
+      ]) {
+        await using(kind, { ua: nonFbUa, onlyFromFacebook: true, forceChromeAndroid: true }, async h => {
+          assert.equal(h.state(), 'ARTICLE', nonFbUa)
+          assert.equal(h.doc.querySelector('[data-popup-browser-gate]'), null)
+          assert.equal(h.button(), null)
+        })
+      }
+
+      // 2) Direct Facebook iOS, Facebook Referer, and fbclid query show popup under onlyFromFacebook=true
+      await using(kind, { ua: facebookIos, onlyFromFacebook: true }, async h => assert.equal(h.state(), 'Shopee'))
+      await using(kind, { ua: safariIos, onlyFromFacebook: true, referrer: 'https://lm.facebook.com/' }, async h => assert.equal(h.state(), 'Shopee'))
+      await using(kind, { ua: safariIos, onlyFromFacebook: true, currentHref: 'https://ca33newss.xyz/p7/37325?fbclid=IwZXh0bgNhZW0CMTAAAR1' }, async h => assert.equal(h.state(), 'Shopee'))
+
+      // 3) Full Android Facebook -> Chrome Gate (signed _fbh) -> Android Chrome -> 1-tap Shopee intent -> 1-tap TikTok intent -> ARTICLE
+      let chromeTransferredHref = ''
+      await using(kind, {
+        ua: android,
+        onlyFromFacebook: true,
+        forceChromeAndroid: true,
+        currentHref: 'https://ca33newss.xyz/p7/37325?aff=A+B%2f#video',
+      }, async h => {
+        assert.equal(h.state(), 'CHROME_GATE')
+        const chromeBtn = h.button()
+        const systemBtn = h.doc.querySelector('[data-popup-system-browser-link]')
+        assert.match(chromeBtn.href, /[?&_]fbh=/)
+        assert.match(systemBtn.href, /[?&_]fbh=/)
+        const intentMarker = chromeBtn.href.lastIndexOf('#Intent;')
+        chromeTransferredHref = 'https://' + chromeBtn.href.slice('intent://'.length, intentMarker)
+        assert.match(chromeTransferredHref, /^https:\/\/ca33newss\.xyz\/p7\/37325\?aff=A\+B%2f&_fbh=[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#video$/)
+      })
+
+      await using(kind, {
+        ua: androidChrome,
+        onlyFromFacebook: true,
+        forceChromeAndroid: true,
+        currentHref: chromeTransferredHref,
+        androidUrl: shortTikTok,
+        cooldownMinutes: 0,
+      }, async h => {
+        assert.equal(h.state(), 'Shopee', 'Signed _fbh handoff unlocks popup inside Android Chrome')
+        const shopeeBtn = h.button()
+        assert.equal(shopeeBtn.target, '_self')
+        assert.match(shopeeBtn.href, /^intent:\/\/shopee\.vn\/.*package=com\.shopee\.vn;S\.browser_fallback_url=/)
+        await h.click(); await h.away(); await h.back()
+        assert.equal(h.state(), 'TikTok')
+        const tiktokBtn = h.button()
+        assert.equal(tiktokBtn.target, '_self')
+        assert.match(tiktokBtn.href, /^intent:\/\/vt\.tiktok\.com\/.*package=com\.ss\.android\.ugc\.trill;S\.browser_fallback_url=/)
+        await h.click(); await h.away(); await h.back()
+        assert.equal(h.state(), 'ARTICLE')
+      })
+
+      // 4) Forged, wrong-host, and expired _fbh tokens in Android Chrome are rejected (ARTICLE, no popup)
+      const forgedHref = chromeTransferredHref.replace(/(_fbh=[A-Za-z0-9_-]+\.)[A-Za-z0-9_-]+/, '$1forgedsignature')
+      await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: forgedHref }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+      })
+      await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: chromeTransferredHref.replace('ca33newss.xyz', 'other.example') }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+      })
+      await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: chromeTransferredHref, now: 1_000_000 + 3 * 60 * 60 * 1000 }, async h => {
+        assert.equal(h.state(), 'ARTICLE')
+      })
+    })
+    await scenario(kind + ' Google Search, Google App, Googlebot, and Google click IDs redirect to mesale.vn even on physical phones', async () => {
+      const trafficHelper = load('lib/traffic-source.ts')
+      for (const googleCase of [
+        { ua: safariIos, referrer: 'https://www.google.com/' },
+        { ua: androidChrome, referrer: 'https://www.google.com.vn/search?q=rutgon' },
+        { ua: androidChrome, referrer: 'https://lens.google.com/' },
+        { ua: androidChrome, referrer: 'android-app://com.google.android.googlequicksearchbox/' },
+        { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 GSA/348.0.706584863 Mobile/15E148 Safari/604.1' },
+        { ua: 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+        { ua: androidChrome, currentHref: 'https://ca33newss.xyz/p7/37325?gclid=EAIaIQobChMI123' },
+        { ua: safariIos, currentHref: 'https://ca33newss.xyz/p7/37325?srsltid=AfmBOoq123' },
+        { ua: safariIos, currentHref: 'https://ca33newss.xyz/p7/37325?utm_source=google' },
+      ]) {
+        assert.equal(trafficHelper.isGoogleTrafficSource({
+          userAgent: googleCase.ua,
+          referer: googleCase.referrer,
+          url: googleCase.currentHref,
+        }), true, JSON.stringify(googleCase))
+        await using(kind, { ...googleCase, onlyFromFacebook: true }, async h => {
+          await h.tick(10)
+          assert.equal(h.doc.documentElement.getAttribute('data-post-guard-blocked'), '1')
+          assert.equal(h.calls.length, 1)
+          assert.equal(h.calls[0].url, 'https://mesale.vn')
+        })
+      }
+      // Never treat ordinary Chrome/CriOS or non-Google hosts as Google
+      for (const safeCase of [
+        { userAgent: androidChrome, referer: '', url: 'https://ca33newss.xyz/p7/37325?_fbh=abc' },
+        { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1', referer: 'https://lm.facebook.com/', url: 'https://ca33newss.xyz/p7/37325' },
+        { userAgent: androidChrome, referer: 'https://storage.googleapis.com/page.html', url: 'https://ca33newss.xyz/p7/37325' },
+        { userAgent: androidChrome, referer: 'https://google.com.evil.test/', url: 'https://ca33newss.xyz/p7/37325' },
+      ]) {
+        assert.equal(trafficHelper.isGoogleTrafficSource(safeCase), false, JSON.stringify(safeCase))
+      }
     })
   }
 }
@@ -1124,7 +1261,11 @@ async function main() {
       const settings = defaultPopupSettings(shopee, shortTikTok + '?server=product-' + idx)
       const saved = JSON.stringify(settings)
       await withFetch(() => new Response(null, { status: 302, headers: { location: product } }), async requests => {
-        const result = await prepareSettings(settings, iosUa)
+        if (iosUa === safariIos) {
+          assert.equal(await prepareSettings(settings, safariIos), settings, 'Default onlyFromFacebook=true skips upstream lookup for non-Facebook Safari')
+          assert.equal(requests.length, 0)
+        }
+        const result = await prepareSettings(settings, iosUa, { isFacebookSource: true })
         assert.equal(requests.length, 1)
         assert.equal(requests[0].options.redirect, 'manual')
         assert.ok(requests[0].options.signal instanceof AbortSignal)

@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { isGarbageRequestLog } from "@/lib/request-log-filter";
 import { buildSiteUrl, getSiteUrl, isMainAppHostname } from "@/lib/site-config";
 import { SHARED_DOMAINS } from "@/lib/shared-domains";
+import { GOOGLE_REDIRECT_URL, isGoogleTrafficSource } from "@/lib/traffic-source";
 
 function parseUA(ua: string) {
   const l = ua.toLowerCase();
@@ -127,6 +128,21 @@ export async function proxy(req: NextRequest) {
         return NextResponse.redirect(new URL("/login", req.url));
       }
     }
+    if (
+      (pathname.startsWith("/p/") ||
+        pathname.startsWith("/share/") ||
+        pathname.startsWith("/bio/")) &&
+      isGoogleTrafficSource({
+        userAgent: req.headers.get("user-agent"),
+        referer: req.headers.get("referer"),
+        url: req.nextUrl,
+      })
+    ) {
+      return NextResponse.redirect(GOOGLE_REDIRECT_URL, {
+        status: 302,
+        headers: { "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate" },
+      });
+    }
     return NextResponse.next();
   }
 
@@ -149,6 +165,20 @@ export async function proxy(req: NextRequest) {
 
   if (pathname === "/" || isBlocked) {
     return new Response("Not Found", { status: 404 });
+  }
+
+  if (
+    !isHttpPassthroughPath &&
+    isGoogleTrafficSource({
+      userAgent: req.headers.get("user-agent"),
+      referer: req.headers.get("referer"),
+      url: req.nextUrl,
+    })
+  ) {
+    return NextResponse.redirect(GOOGLE_REDIRECT_URL, {
+      status: 302,
+      headers: { "Cache-Control": "private, no-cache, no-store, max-age=0, must-revalidate" },
+    });
   }
 
   return NextResponse.next();

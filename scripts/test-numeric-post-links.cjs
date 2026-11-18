@@ -82,7 +82,7 @@ const prisma = {
     },
   },
 }
-const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'post-default-domain-config', 'tranco-boost-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
+const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'post-default-domain-config', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
   const module = { exports: {} }

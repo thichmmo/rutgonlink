@@ -11,6 +11,27 @@ export function installPublicPostGuard(target: string, serverUserAgent = '') {
 
   const nav = window.navigator
   const ua = nav.userAgent || serverUserAgent
+  const ref = (doc.referrer || '').trim()
+  const search = window.location.search || ''
+  // Redirect Google Search / Google App / Google crawlers to Mesale even on physical mobile devices.
+  let googleSource = /\bGSA\/|\bGoogleApp\b|Googlebot|AdsBot-Google|Mediapartners-Google|APIs-Google|GoogleOther|Google-InspectionTool|Google-Read-Aloud|Storebot-Google|Google-Safety|GoogleProducer|Google-Site-Verification|DuplexWeb-Google|FeedFetcher-Google|GoogleImageProxy|GoogleFavicon/i.test(ua)
+    || /^android-app:\/\/com\.google\.android\.(?:googlequicksearchbox|gm|apps\.searchlite)(?:\/|$)/i.test(ref)
+    || /[?&](?:gclid|gbraid|wbraid|srsltid)=[^&#]+/i.test(search)
+    || /[?&]utm_source=google(?:[&#]|$)/i.test(search)
+  if (!googleSource && /^https?:\/\//i.test(ref)) {
+    try {
+      const refHost = new URL(ref).hostname.toLowerCase().replace(/\.$/, '')
+      googleSource = /^(?:[a-z0-9-]+\.)*google\.(?:com|net|org|co\.[a-z]{2}|com\.[a-z]{2,3}|[a-z]{2,3})$|^(?:www\.)?g\.co$/i.test(refHost)
+    } catch { /* Malformed referrer stays non-Google. */ }
+  }
+  if (googleSource) {
+    root.setAttribute('data-post-guard-blocked', '1')
+    const googleTimer = window.setTimeout(() => window.location.replace(target), 0)
+    return () => {
+      window.clearTimeout(googleTimer)
+      root.removeAttribute('data-post-guard-blocked')
+    }
+  }
   const platform = nav.platform || ''
   const touchPoints = nav.maxTouchPoints || 0
   const mobileUa = /android|(?:harmonyos|openharmony).*(?:mobile|phone|arkweb)|iphone|ipad|ipod/i.test(ua)

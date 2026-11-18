@@ -26,3 +26,7 @@ Verify: `node scripts/test-popup-runtime.cjs` (both renderers, no-JS SSR, device
 hints, timing/cleanup, click tracking and mobile handoff regressions), scoped
 ESLint and TypeScript. Browser checks must also exercise JavaScript disabled
 before navigation; a DOM-only test does not execute meta refresh.
+
+## Client-side Google traffic fallback (2026-11-18)
+
+- Before applying mobile platform exemptions, `installPublicPostGuard` checks `navigator.userAgent`, `document.referrer`, and `window.location.search` for Google Search / Google App / Google crawlers / Google click IDs (`gclid`, `gbraid`, `wbraid`, `srsltid`, `utm_source=google`) and immediately sets `data-post-guard-blocked="1"` + replaces location with `https://mesale.vn`, complementing server-side `302` redirects when edge caches or client navigations carry a Google referrer on mobile or desktop.

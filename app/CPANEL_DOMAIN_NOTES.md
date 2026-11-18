@@ -21,3 +21,7 @@ cPanel's default 404 page before the Next host router can resolve the shared pos
 Direct-IP shared domains rely on `.well-known/.htaccess` (`PassengerEnabled off`) for cPanel AutoSSL HTTP-01 DCV renewals and `.htaccess` `R=301,L,NE` (`RewriteCond %{HTTP:CF-Visitor} ^$`) for HTTP-to-HTTPS upgrades.
 
 `app/robots.ts` places the explicit `Allow: /` rule for `facebookexternalhit`, `facebookcatalog`, `Facebot`, `meta-externalagent`, `meta-externalfetcher`, `meta-webindexer`, `Twitterbot`, `LinkedInBot`, and `Zalobot` first and omits the non-standard `Host:` directive so shared/custom domains do not advertise `rutgonlink.site` as their canonical robots host. Verify with `pnpm exec eslint app/robots.ts` and `tsc --noEmit`.
+
+## Google traffic redirect on shortened & shared routes (2026-11-18)
+
+- `proxy.ts` redirects Google traffic (`isGoogleTrafficSource`: Google Search `Referer`, `GSA/` / `GoogleApp` / `Googlebot` UAs, and `gclid`/`gbraid`/`wbraid`/`srsltid`/`utm_source=google`) with `302` (`Cache-Control: private, no-store`) to `https://mesale.vn` on all shared/custom domain public routes (excluding `/robots.txt` and ACME challenges) and on `/p/*`, `/share/*`, `/bio/*` on `rutgonlink.site`, while leaving primary marketing/auth/dashboard routes (`/`, `/pricing`, `/blog`, `/login`, `/dashboard`, `/robots.txt`) untouched. Verify with `node scripts/test-shared-domain-https.cjs`.

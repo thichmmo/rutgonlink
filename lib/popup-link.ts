@@ -13,6 +13,8 @@ const ANDROID_DEVICE_UA_PATTERN = /android|(?:harmonyos|openharmony).*(?:mobile|
 // and non-FB4A in-app webviews (FBLite, Zalo, Messenger, Instagram, Threads, Telegram, TikTok, LINE)
 // suppress automatic https:// App Links or drop _blank windows unless wrapped in a scheme=https intent.
 const ANDROID_OEM_BROWSER_PATTERN = /samsungbrowser|miuibrowser|heytapbrowser|oppobrowser|realmelink|vivobrowser|huaweibrowser|arkweb|ucbrowser|firefox\/|fblite|orca-android|messenger|instagram|barcelona|\bzalo\b|bytedancewebview|musical_ly|telegram-android|\bline\//i
+// Exclude only legacy FB4A WebView (gated to Chrome when forceChromeAndroid is enabled) and Presto Opera Mini.
+const ANDROID_SKIP_INTENT_PATTERN = /fban\/fb4a|fb_iab\/fb4a|opera mini\//i
 const MAX_ANDROID_LAUNCH_URL_LENGTH = 8192
 
 export function isAndroidDeviceUserAgent(userAgent: string) {
@@ -21,6 +23,10 @@ export function isAndroidDeviceUserAgent(userAgent: string) {
 
 export function isAndroidOemBrowserUserAgent(userAgent: string) {
   return isAndroidDeviceUserAgent(userAgent) && ANDROID_OEM_BROWSER_PATTERN.test(userAgent)
+}
+
+export function isAndroidIntentBrowserUserAgent(userAgent: string) {
+  return isAndroidDeviceUserAgent(userAgent) && !ANDROID_SKIP_INTENT_PATTERN.test(userAgent)
 }
 
 function parseSafeHttpsAppUrl(value: string, allowedHosts: readonly string[]) {
@@ -86,7 +92,9 @@ export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: str
 export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform, userAgent = '') {
   // Omit userAgent only in legacy compatibility callers; active Android requests pass userAgent.
   if (!userAgent) return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
-  if (!isAndroidOemBrowserUserAgent(userAgent)) return value
+  // Standard Chrome and all standalone/OEM Android browsers invoke PackageManager directly via scheme=https
+  // intent:// so Shopee & TikTok jump natively on one tap without stopping on web cards or unverified App Links.
+  if (!isAndroidIntentBrowserUserAgent(userAgent)) return value
   return platform === 'SHOPEE'
     ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
     : buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
@@ -216,8 +224,8 @@ export function getPopupLinkOpenMode(
   options: { userAgent: string },
 ): PopupLinkOpenMode {
   if (isAndroidDeviceUserAgent(options.userAgent)) {
-    // OEM browsers and explicit intent:// URIs must navigate in _self to avoid blank orphan tabs and popup blockers.
-    if (isAndroidOemBrowserUserAgent(options.userAgent) || value.startsWith('intent://')) return 'anchor-same-tab'
+    // Standalone Android browsers and explicit intent:// URIs must navigate in _self to avoid blank orphan tabs and popup blockers.
+    if (isAndroidIntentBrowserUserAgent(options.userAgent) || value.startsWith('intent://')) return 'anchor-same-tab'
     return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
   // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context

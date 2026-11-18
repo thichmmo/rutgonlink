@@ -27,3 +27,8 @@ ESLint and shared runtime checks passed. Four isolated HTTPS phone trials on
 2026-10-07 passed for standalone/React through Facebook→Chrome and directly in
 Chrome; the user chose to retain the Chrome button and Facebook confirmation.
 iOS remained automated-only. Production deployment is verified separately.
+
+## Facebook-only popup visibility toggle (2026-11-18)
+
+- `PopupManager.tsx` exposes the **Chỉ hiện popup từ Facebook** (`onlyFromFacebook`) toggle, enabled (`true`) by default for both newly created and existing saved popups (`settings.onlyFromFacebook !== false`).
+- When enabled, public posts hide popups on non-Facebook visits while preserving Facebook -> Chrome Android handoffs via signed `_fbh` tokens. Verify with `node scripts/test-popup-affiliate.cjs` and `node scripts/test-popup-runtime.cjs`.

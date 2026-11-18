@@ -1,5 +1,5 @@
 import { buildTikTokIosLaunchUrl, isIosUserAgent, isTikTokIosRedirectUrl, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
-import { popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
+import { popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
 const shortLinkCache = new Map<string, { value: Promise<string>; expiresAt: number }>()
@@ -35,14 +35,14 @@ async function resolvePopupShortLink(url: string) {
   return entry.value
 }
 
-export async function preparePopupSettingsForRequest(settings: PopupSettings, userAgent: string): Promise<PopupSettings> {
+export async function preparePopupSettingsForRequest(settings: PopupSettings, userAgent: string, options?: PopupEligibilityOptions): Promise<PopupSettings> {
   // Never reuse client-supplied or stale request metadata. Saved source fields are
   // immutable here, and both renderers receive only independently derived data.
   if (settings.tiktok.androidLaunchUrl !== undefined) {
     settings = { ...settings, tiktok: { ...settings.tiktok } }
     delete settings.tiktok.androidLaunchUrl
   }
-  if (!isIosUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent)) return settings
+  if (!isIosUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent, options)) return settings
   const url = settings.tiktok.iosUrl || settings.tiktok.url
   if (!isTikTokShortUrl(url)) return settings
   const launchUrl = await resolvePopupShortLink(url)

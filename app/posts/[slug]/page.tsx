@@ -23,8 +23,13 @@ import { getPopupStep } from '@/lib/popup-settings'
 import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
 import { resolveTrancoPingTargets } from '@/lib/tranco-boost-config'
+import { GOOGLE_REDIRECT_URL, isGoogleTrafficSource } from '@/lib/traffic-source'
+import { createFacebookHandoffToken, isServerFacebookTrafficSource } from '@/lib/facebook-handoff-token'
 
-type Context = { params: Promise<{ slug: string }> }
+type Context = {
+  params: Promise<{ slug: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}
 
 async function findPost(slug: string) {
   const include = {
@@ -107,8 +112,15 @@ function RenderContent({ content, format }: { content: string; format: string })
       : <p key={index} className="whitespace-pre-wrap">{block}</p>)}</>
 }
 
-export default async function ManagedPostPage({ params }: Context) {
+export default async function ManagedPostPage({ params, searchParams }: Context) {
   const { slug } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
+  const requestHeaders = await headers()
+  const userAgent = requestHeaders.get('user-agent') || ''
+  const referer = requestHeaders.get('referer') || ''
+  if (isGoogleTrafficSource({ userAgent, referer, url: resolvedSearchParams })) {
+    redirect(GOOGLE_REDIRECT_URL)
+  }
   const match = await findPost(slug)
   if (!match) notFound()
   if (match.kind === 'redirect') redirect(match.redirectUrl)
@@ -119,16 +131,23 @@ export default async function ManagedPostPage({ params }: Context) {
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
-  const requestHeaders = await headers()
-  const userAgent = requestHeaders.get('user-agent') || ''
-  const requestHost = (requestHeaders.get('host') || getSiteHostname()).split(':')[0]
+  const requestHost = (requestHeaders.get('host') || getSiteHostname()).split(':')[0].toLowerCase()
   const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
+  const isFacebookSource = isServerFacebookTrafficSource({
+    userAgent,
+    referer,
+    url: resolvedSearchParams,
+    host: requestHost,
+  })
   const trancoTargets = isFacebookCrawler ? [] : await resolveTrancoPingTargets(requestHost)
   const tracking = post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, requestHeaders.get('host') || getSiteHostname()) } : undefined
   const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const settings = !isFacebookCrawler && post.popup?.isActive && normalizedSettings
-    ? await preparePopupSettingsForRequest(normalizedSettings, userAgent)
+    ? await preparePopupSettingsForRequest(normalizedSettings, userAgent, { isFacebookSource })
     : normalizedSettings
+  const fbHandoffToken = !isFacebookCrawler && settings?.onlyFromFacebook && isFacebookSource
+    ? createFacebookHandoffToken(requestHost)
+    : ''
   const directSteps = !isFacebookCrawler && isDirectWrapper && settings
     ? [getPopupStep(settings, 0, userAgent), getPopupStep(settings, 1, userAgent)].filter(item => item.url)
     : []
@@ -170,6 +189,6 @@ export default async function ManagedPostPage({ params }: Context) {
     <Footer /></>}
     {!isFacebookCrawler && <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>}
     {!isFacebookCrawler && trancoTargets.length > 0 && <TrancoDomainBooster targets={trancoTargets} />}
-    {!isFacebookCrawler && post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
+    {!isFacebookCrawler && post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} isFacebookSource={isFacebookSource} fbHandoffToken={fbHandoffToken} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div></>
 }

@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
   })
   if (!post?.popup || post.popup.userId !== post.userId) return new NextResponse(null, { status: 404 })
   const settings = normalizePopupSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl)
-  if (!popupAppliesToDevice(settings, ua)) return new NextResponse(null, { status: 204 })
+  // verifyPopupClickToken already proved the server rendered an eligible popup (including Chrome handoff).
+  if (!popupAppliesToDevice(settings, ua, { isFacebookSource: true })) return new NextResponse(null, { status: 204 })
   try {
     // The unique event ID makes browser retransmissions idempotent across server processes.
     await prisma.popupClick.create({ data: { userId: post.userId, postId, popupId, platform, eventId, createdAt: new Date() } })

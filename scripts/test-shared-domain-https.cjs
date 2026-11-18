@@ -193,5 +193,42 @@ async function scenario(name, run) { token = null; await run(); scenarios++; con
     }
   })
   assert.equal(networkCalls, 0, 'Fixture requests must not dispatch telemetry or external fetches')
+  await scenario('Google traffic redirects to mesale.vn on shared/custom short links and /p /share /bio while leaving app pages intact', async () => {
+    for (const host of [SHARED_DOMAINS[0], 'custom-short.example']) {
+      for (const pathname of ['/p7/61720', '/abc123', '/can-nhac-khi-xem']) {
+        redirected(await proxy(request(host, pathname, {
+          visitor: '{"scheme":"https"}',
+          url: `https://${host}${pathname}`,
+          headers: { 'user-agent': 'Mozilla/5.0 Chrome/140', referer: 'https://www.google.com/' },
+        })), 'https://mesale.vn/', 302)
+        redirected(await proxy(request(host, pathname, {
+          visitor: '{"scheme":"https"}',
+          url: `https://${host}${pathname}`,
+          headers: { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+        })), 'https://mesale.vn/', 302)
+      }
+      // /robots.txt passthrough stays 200 next
+      next(await proxy(request(host, '/robots.txt', {
+        visitor: '{"scheme":"https"}',
+        url: `https://${host}/robots.txt`,
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' },
+      })))
+    }
+    for (const pathname of ['/p/secret123', '/share/tok123', '/bio/profile1']) {
+      redirected(await proxy(request('rutgonlink.site', pathname, {
+        visitor: '{"scheme":"https"}',
+        url: `https://rutgonlink.site${pathname}`,
+        headers: { 'user-agent': 'Mozilla/5.0 iPhone GSA/348.0 Mobile/15E148 Safari/604.1' },
+      })), 'https://mesale.vn/', 302)
+    }
+    // Main app homepage, pricing, login stay untouched when visited from Google
+    for (const pathname of ['/', '/pricing', '/login', '/robots.txt']) {
+      next(await proxy(request('rutgonlink.site', pathname, {
+        visitor: '{"scheme":"https"}',
+        url: `https://rutgonlink.site${pathname}`,
+        headers: { 'user-agent': 'Mozilla/5.0 Chrome/140', referer: 'https://www.google.com/' },
+      })))
+    }
+  })
   console.log('RESULT=PASS shared-domain-https-scenarios=' + scenarios)
 })().catch(error => { console.error(error); process.exitCode = 1 })

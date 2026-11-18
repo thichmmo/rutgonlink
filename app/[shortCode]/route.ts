@@ -21,6 +21,8 @@ import { normalizeTelegramSettings } from '@/lib/telegram-settings'
 import { renderTelegramHeader, renderTelegramFooter, TELEGRAM_POST_CSS } from '@/lib/telegram-render'
 import { installPublicPostGuard, PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
+import { GOOGLE_REDIRECT_URL, isFacebookUserAgent, isGoogleTrafficSource } from '@/lib/traffic-source'
+import { createFacebookHandoffToken, isServerFacebookTrafficSource } from '@/lib/facebook-handoff-token'
 import {
   buildTrancoHeadHintsHtml,
   buildTrancoIdleBeaconScript,
@@ -327,7 +329,7 @@ const FACEBOOK_CRAWLER_UA_REGEX = /facebookexternalhit|facebookcatalog|Facebot|m
 
 // Route handlers return a standalone HTML document so custom domains keep the public slug.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildManagedPostPage(post: any, hostname: string, userAgent: string, isFallback = false) {
+async function buildManagedPostPage(post: any, hostname: string, userAgent: string, isFallback = false, trafficContext?: { isFacebookSource?: boolean; fbHandoffToken?: string }) {
   const telegram = normalizeTelegramSettings(post.telegramSettings)
   const isDirectWrapper = Boolean(post.isDirectWrapper)
   const absoluteImage = getPostPreviewImageUrl(post)
@@ -341,15 +343,20 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const after = blocks.filter((block: any) => block.placement !== 'before').map((block: any) => block.contentFormat === 'raw-html' ? block.content : `<div>${sanitizeRichHtml(block.content)}</div>`).join('')
   const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
+  const isFacebookSource = trafficContext?.isFacebookSource ?? isFacebookUserAgent(userAgent)
+  const eligibility = { isFacebookSource }
   const normalizedPopupSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const popupSettings = !isFacebookCrawler && post.popup?.isActive && normalizedPopupSettings
-    ? await preparePopupSettingsForRequest(normalizedPopupSettings, userAgent)
+    ? await preparePopupSettingsForRequest(normalizedPopupSettings, userAgent, eligibility)
     : normalizedPopupSettings
   const popup = !isFacebookCrawler && post.popup && popupSettings
-    ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
+    ? { isActive: post.popup.isActive, applies: popupAppliesToDevice(popupSettings, userAgent, eligibility), imageUrl: post.popup.imageUrl, updatedAt: post.popup.updatedAt.toISOString(), settings: popupSettings }
     : null
   // Share URL selection with the React alias; serialize data rather than duplicating regexes inside a script string.
   const popupSteps = !isFacebookCrawler && popupSettings ? [getPopupStep(popupSettings, 0, userAgent), getPopupStep(popupSettings, 1, userAgent)] : []
+  const fbHandoffToken = popupSettings?.onlyFromFacebook
+    ? (trafficContext?.fbHandoffToken ?? (isFacebookSource ? createFacebookHandoffToken(hostname) : ''))
+    : ''
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
   const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
@@ -373,12 +380,13 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const popup = ${popupJson};
   const steps = ${escapeInlineJson(popupSteps)};
   if (!popup || !popup.isActive || !popup.applies || document.documentElement.hasAttribute('data-post-guard-blocked')) return;
-  if (${escapeInlineJson(Boolean(popupSettings && shouldGatePopupToChrome(popupSettings, userAgent)))}) {
+  if (${escapeInlineJson(Boolean(popupSettings && shouldGatePopupToChrome(popupSettings, userAgent, eligibility)))}) {
     // Browser transfer runs before any affiliate progress, countdown or tracking.
+    const fbHandoffToken = ${escapeInlineJson(fbHandoffToken)};
     const buildChromeUrl = ${buildChromeBrowserLaunchUrl.toString()};
     const buildSystemUrl = ${buildSystemBrowserLaunchUrl.toString()};
-    const launchUrl = buildChromeUrl(window.location.href);
-    const systemLaunchUrl = buildSystemUrl(window.location.href);
+    const launchUrl = buildChromeUrl(window.location.href, fbHandoffToken);
+    const systemLaunchUrl = buildSystemUrl(window.location.href, fbHandoffToken);
     const gate = document.createElement('div');
     gate.className = 'managed-browser-gate';
     gate.setAttribute('data-popup-browser-gate', '');
@@ -692,6 +700,16 @@ export async function GET(
     return NextResponse.next()
   }
 
+  const requestUserAgent = req.headers.get('user-agent') || ''
+  const requestReferer = req.headers.get('referer') || ''
+  // Redirect all Google Search, Google App, and Google crawler visits on any short link or post route to mesale.vn.
+  if (isGoogleTrafficSource({ userAgent: requestUserAgent, referer: requestReferer, url: req.nextUrl })) {
+    return NextResponse.redirect(GOOGLE_REDIRECT_URL, {
+      status: 302,
+      headers: { 'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate' },
+    })
+  }
+
   const host = req.headers.get('host') || ''
   const hostname = host.split(':')[0]
 
@@ -710,7 +728,19 @@ export async function GET(
       })
     }
 
-    return new Response(await buildManagedPostPage(managedMatch.post, hostname.toLowerCase(), req.headers.get('user-agent') || '', managedMatch.isFallback), {
+    const normalizedHost = hostname.toLowerCase()
+    const isFacebookSource = isServerFacebookTrafficSource({
+      userAgent: requestUserAgent,
+      referer: requestReferer,
+      url: req.nextUrl,
+      host: normalizedHost,
+    })
+    const fbHandoffToken = isFacebookSource ? createFacebookHandoffToken(normalizedHost) : ''
+
+    return new Response(await buildManagedPostPage(managedMatch.post, normalizedHost, requestUserAgent, managedMatch.isFallback, {
+      isFacebookSource,
+      fbHandoffToken,
+    }), {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate',

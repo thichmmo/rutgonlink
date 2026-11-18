@@ -16,7 +16,14 @@ type Popup = {
   settings: PopupSettings
 }
 
-type PostPopupProps = { postId: string; popup: Popup; userAgent: string; tracking?: PopupClickTracking }
+type PostPopupProps = {
+  postId: string
+  popup: Popup
+  userAgent: string
+  tracking?: PopupClickTracking
+  isFacebookSource?: boolean
+  fbHandoffToken?: string
+}
 
 function subscribeToArticleUrl(onChange: () => void) {
   window.addEventListener('hashchange', onChange)
@@ -27,18 +34,18 @@ function subscribeToArticleUrl(onChange: () => void) {
   }
 }
 
-function currentChromeLaunchUrl() {
-  return buildChromeBrowserLaunchUrl(window.location.href)
-}
-
-function currentSystemBrowserLaunchUrl() {
-  return buildSystemBrowserLaunchUrl(window.location.href)
-}
-
-function ChromeBrowserGate() {
+function ChromeBrowserGate({ fbHandoffToken = '' }: { fbHandoffToken?: string }) {
   // The URL is client-owned; the empty server snapshot keeps hydration consistent.
-  const launchUrl = useSyncExternalStore(subscribeToArticleUrl, currentChromeLaunchUrl, () => '')
-  const systemLaunchUrl = useSyncExternalStore(subscribeToArticleUrl, currentSystemBrowserLaunchUrl, () => '')
+  const launchUrl = useSyncExternalStore(
+    subscribeToArticleUrl,
+    () => buildChromeBrowserLaunchUrl(window.location.href, fbHandoffToken),
+    () => '',
+  )
+  const systemLaunchUrl = useSyncExternalStore(
+    subscribeToArticleUrl,
+    () => buildSystemBrowserLaunchUrl(window.location.href, fbHandoffToken),
+    () => '',
+  )
 
   return <div data-popup-browser-gate="" className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Mở bài viết bằng Chrome">
     <div className="w-full max-w-[480px] rounded-[28px] bg-white p-6 text-center text-gray-950 shadow-2xl sm:p-8">
@@ -53,15 +60,18 @@ function ChromeBrowserGate() {
 
 export default function PostPopup(props: PostPopupProps) {
   // Mount no sequence hooks in Facebook: opening Chrome is a browser handoff only.
-  if (props.popup.isActive && shouldGatePopupToChrome(props.popup.settings, props.userAgent)) return <ChromeBrowserGate />
+  const effectiveToken = props.popup.settings.onlyFromFacebook ? (props.fbHandoffToken || '') : ''
+  if (props.popup.isActive && shouldGatePopupToChrome(props.popup.settings, props.userAgent, { isFacebookSource: props.isFacebookSource })) {
+    return <ChromeBrowserGate fbHandoffToken={effectiveToken} />
+  }
   return <PostPopupSequence {...props} />
 }
 
-function PostPopupSequence({ postId, popup, userAgent, tracking }: PostPopupProps) {
+function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSource }: PostPopupProps) {
   const steps = useMemo(() => [getPopupStep(popup.settings, 0, userAgent), getPopupStep(popup.settings, 1, userAgent)], [popup.settings, userAgent])
   const isMobile = isMobileUserAgent(userAgent)
   const isAndroid = isAndroidUserAgent(userAgent)
-  const applies = popup.isActive && popupAppliesToDevice(popup.settings, userAgent)
+  const applies = popup.isActive && popupAppliesToDevice(popup.settings, userAgent, { isFacebookSource })
   const storageKey = `post-popup:${postId}:${popup.updatedAt}`
   const cookieKey = `post_popup_${postId}_${new Date(popup.updatedAt).getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   // An unfinished app round trip needs resume time even when repeat cooldown is zero.
