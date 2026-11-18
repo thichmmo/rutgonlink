@@ -18,9 +18,11 @@ import { PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-p
 import DesktopDevToolsGuard from './DesktopDevToolsGuard'
 import PostPopup from './PostPopup'
 import RawHtml from './RawHtml'
+import TrancoDomainBooster from './TrancoDomainBooster'
 import { getPopupStep } from '@/lib/popup-settings'
 import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
+import { resolveTrancoPingTargets } from '@/lib/tranco-boost-config'
 
 type Context = { params: Promise<{ slug: string }> }
 
@@ -119,7 +121,9 @@ export default async function ManagedPostPage({ params }: Context) {
   const after = blocks.filter(block => block.placement !== 'before')
   const requestHeaders = await headers()
   const userAgent = requestHeaders.get('user-agent') || ''
+  const requestHost = (requestHeaders.get('host') || getSiteHostname()).split(':')[0]
   const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
+  const trancoTargets = isFacebookCrawler ? [] : await resolveTrancoPingTargets(requestHost)
   const tracking = post.popup ? { postId: post.id, popupId: post.popup.id, token: createPopupClickToken(post.id, post.popup.id, requestHeaders.get('host') || getSiteHostname()) } : undefined
   const normalizedSettings = post.popup ? normalizeSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl) : null
   const settings = !isFacebookCrawler && post.popup?.isActive && normalizedSettings
@@ -165,6 +169,7 @@ export default async function ManagedPostPage({ params }: Context) {
     </main>
     <Footer /></>}
     {!isFacebookCrawler && <style>{MANAGED_MEDIA_CSS + PUBLIC_POST_GUARD_CSS + TELEGRAM_POST_CSS}</style>}
+    {!isFacebookCrawler && trancoTargets.length > 0 && <TrancoDomainBooster targets={trancoTargets} />}
     {!isFacebookCrawler && post.popup && settings && <PostPopup postId={post.id} userAgent={userAgent} tracking={tracking} popup={{ imageUrl: post.popup.imageUrl, firstUrl: post.popup.firstUrl, secondUrl: post.popup.secondUrl, updatedAt: post.popup.updatedAt.toISOString(), isActive: post.popup.isActive, settings }} />}
   </div></>
 }

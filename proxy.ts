@@ -71,8 +71,8 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(secureUrl, permanentRedirectStatus);
   }
 
-  // Fire-and-forget request log (skip all API calls, only log page navigations)
-  if (!pathname.startsWith("/api/") && process.env.LOG_SECRET) {
+  // Fire-and-forget request log (skip all API calls and static beacon pixel, only log page navigations)
+  if (!pathname.startsWith("/api/") && pathname !== "/t.gif" && process.env.LOG_SECRET) {
     const ua = req.headers.get("user-agent") || "";
     const ip =
       req.headers.get("cf-connecting-ip") ||
@@ -155,5 +155,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|t\\.gif).*)"],
 };

@@ -14,6 +14,7 @@ import {
   Link2,
   ScrollText,
   ServerCog,
+  TrendingUp,
   Users,
 } from 'lucide-react'
 import AdminSignOut from './AdminSignOut'
@@ -33,6 +34,7 @@ const navItems: Array<{
   { href: '/admin/users', label: 'Người dùng', icon: Users, permission: 'users.read' },
   { href: '/admin/links', label: 'Links', icon: Link2, permission: 'links.read' },
   { href: '/admin/post-fallback', label: 'Hứng link cũ', icon: CornerDownRight, permission: 'system.read' },
+  { href: '/admin/tranco', label: 'Kéo Tranco Top-1M', icon: TrendingUp, permission: 'system.read' },
   { href: '/admin/domains', label: 'Domains', icon: Globe2, permission: 'domains.read' },
   { href: '/admin/transactions', label: 'Thanh toán', icon: CreditCard, permission: 'billing.read' },
   { href: '/admin/traffic', label: 'Traffic', icon: Activity, permission: 'logs.read' },

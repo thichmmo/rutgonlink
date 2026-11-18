@@ -10,7 +10,7 @@ missing articles never accessing short-link analytics. No real database is used.
 The existing popup/Telegram render loaders include the pure public-path helper;
 their old fixtures retain the same URL and popup behavior.
 
-## Direct Wrapper & Admin Global Post Fallback Coverage (2026-11-18)
+## Direct Wrapper, Admin Global Post Fallback & Tranco Top-1M Booster Coverage (2026-11-18)
 
-- `scripts/test-numeric-post-links.cjs` covers `isDirectWrapper: true` creation (empty content, required popup, `/p7/<code>` allocation, `data-direct-wrapper=""` HTML rendering, duplication) and Admin-only `GET/PUT /api/admin/post-fallback` (`system_post_fallback`) routing missing `/p7/<code>` and `/posts/<slug>` paths across system domains to the Admin's internal post (with `history.replaceState` and loop prevention if unpublished) or `302` external URL, while keeping unknown hosts at `404` and recording `AdminAuditLog` entries.
-- Verify: `node scripts/test-numeric-post-links.cjs` (16 scenarios).
+- `scripts/test-numeric-post-links.cjs` covers `isDirectWrapper: true` creation, Admin-only `GET/PUT /api/admin/post-fallback` (`system_post_fallback`), and Admin-only `GET/PUT /api/admin/tranco` (`system_tranco_boost`, verifying default `honghotngay228.site` DNS/Edge beacon emission on `ca33newss.xyz`, self-ping suppression on `honghotngay228.site`, strict crawler isolation for `facebookexternalhit` / `meta-externalagent`, and multi-domain updates).
+- Verify: `node scripts/test-numeric-post-links.cjs` (17 scenarios).

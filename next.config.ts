@@ -35,6 +35,15 @@ const nextConfig: NextConfig = {
         source: '/(dashboard|admin|login|register|checkout|api)(/.*)?',
         headers: frameProtectedHeader,
       },
+      // Long-lived Cloudflare Edge cache + cross-origin CORP for the 43-byte Tranco DNS beacon pixel.
+      {
+        source: '/t.gif',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=2592000, s-maxage=2592000, immutable' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+        ],
+      },
     ]
   },
 };

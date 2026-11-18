@@ -136,5 +136,5 @@ render regression suites.
 ## iOS Universal Link handoff, Direct Wrapper & Anti-404 `/p7` Fallback (2026-11-18)
 
 - `PostPopup` renders a visible `<a data-popup-native-link>` for both iOS (`_self` Universal Link) and Android (`_blank` Shopee, `_self` TikTok), pinning `retryStep` during synchronous `flushSync` so `href` does not mutate before WebKit's default link navigation and clearing `retryStep` on a `0ms` timer for iOS.
-- `ManagedPostPage` supports `post.isDirectWrapper` (`data-direct-wrapper=""`) and resolves the Admin-configured global fallback (`resolveSystemPostFallback`) for missing `/posts/<slug>` routes (rendering internal `ManagedPost` targets + Popup in-place with client `history.replaceState`, or issuing a redirect for external URLs).
+- `ManagedPostPage` supports `post.isDirectWrapper` (`data-direct-wrapper=""`), resolves the Admin-configured global fallback (`resolveSystemPostFallback`) for missing `/posts/<slug>` routes, and mounts `TrancoDomainBooster` for non-crawler visitors (`!isFacebookCrawler`) to warm Tranco Top-1M DNS/Edge popularity on configured domains (`honghotngay228.site`).
 - Verify: `node scripts/test-popup-runtime.cjs` and `node scripts/test-numeric-post-links.cjs`.

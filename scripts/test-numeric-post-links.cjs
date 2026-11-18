@@ -76,7 +76,7 @@ const prisma = {
     },
   },
 }
-const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
+const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'tranco-boost-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
   const module = { exports: {} }
@@ -120,6 +120,8 @@ const api = load('app/api/posts/route.ts')
 const item = load('app/api/posts/[id]/route.ts')
 const duplicate = load('app/api/posts/[id]/duplicate/route.ts')
 const adminFallbackApi = load('app/api/admin/post-fallback/route.ts')
+const adminTrancoApi = load('app/api/admin/tranco/route.ts')
+const trancoConfig = load('lib/tranco-boost-config.ts')
 const numericRoute = load('app/p7/[code]/route.ts')
 const slugRoute = load('app/[shortCode]/route.ts')
 const reactPage = load('app/posts/[slug]/page.tsx')
@@ -129,6 +131,7 @@ const body = async response => ({ status: response.status, data: await response.
 const tasks = []
 const scenario = (name, run) => tasks.push({ name, run })
 function reset() {
+  trancoConfig.clearTrancoBoostCache()
   Object.assign(state, { actor: { id: 'owner', isAdmin: false }, adminContext: null, rows: new Map(), appSettings: new Map(), audits: [], calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true })
 }
 async function create(patch = {}) { return body(await api.POST(request({ ...legacy, ...patch }))) }
@@ -353,6 +356,52 @@ scenario('admin-only global post fallback routes missing /p7/<code> and /posts/<
   assert.equal(disabled.data.enabled, false)
   assert.equal((await visit('99999', 'ca33newss.xyz')).status, 404)
   assert.equal(state.audits.length, 3)
+})
+
+scenario('Tranco Top-1M booster warms honghotngay228.site by default for real browsers, skips self-pings and Facebook crawlers, and supports Admin updates', async () => {
+  await create({ title: 'Active ca33 post', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })
+  await create({ title: 'Active honghot post', publicLinkMode: 'numeric', sharedDomain: 'honghotngay228.site' })
+
+  assert.equal((await adminTrancoApi.GET()).status, 403)
+  assert.equal((await adminTrancoApi.PUT(request({ enabled: true, domains: ['honghotngay228.site'] }))).status, 403)
+
+  // Real mobile/desktop visitor on ca33newss.xyz receives dns-prefetch, preconnect, and /t.gif beacon for honghotngay228.site.
+  const browserRes = await visit('50000', 'ca33newss.xyz')
+  assert.equal(browserRes.status, 200)
+  const browserHtml = await browserRes.text()
+  assert(browserHtml.includes('rel="dns-prefetch" href="//honghotngay228.site"'))
+  assert(browserHtml.includes('rel="preconnect" href="https://honghotngay228.site" crossorigin'))
+  assert(browserHtml.includes('https://honghotngay228.site/t.gif'))
+
+  // Self-ping suppression: visiting honghotngay228.site itself does not emit cross-domain hints for honghotngay228.site.
+  const selfHtml = await (await visit('50001', 'honghotngay228.site')).text()
+  assert(!selfHtml.includes('https://honghotngay228.site/t.gif'))
+  assert(!selfHtml.includes('rel="dns-prefetch" href="//honghotngay228.site"'))
+
+  // Facebook/Meta crawlers on ca33newss.xyz must never see honghotngay228.site or any script/preconnect hint.
+  for (const ua of ['facebookexternalhit/1.1', 'meta-externalagent/1.1']) {
+    const crawlerReq = new NextRequest('https://ca33newss.xyz/p7/50000', { headers: { host: 'ca33newss.xyz', 'user-agent': ua } })
+    const crawlerHtml = await (await numericRoute.GET(crawlerReq, { params: Promise.resolve({ code: '50000' }) })).text()
+    assert(!crawlerHtml.includes('honghotngay228.site'))
+    assert(!crawlerHtml.includes('dns-prefetch'))
+    assert(!crawlerHtml.includes('<script>'))
+  }
+
+  // Admin can add external domains (mesale.vn -> /favicon.ico) or pause boosting.
+  state.adminContext = { id: 'admin-id', email: 'admin@example.test', role: 'owner', permissions: ['system.read', 'system.write'] }
+  const initial = await body(await adminTrancoApi.GET())
+  assert.deepEqual(initial.data.domains, ['honghotngay228.site'])
+  const updated = await body(await adminTrancoApi.PUT(request({ enabled: true, domains: ['https://honghotngay228.site/p7/1', 'mesale.vn'] })))
+  assert.equal(updated.status, 200)
+  assert.deepEqual(updated.data.domains, ['honghotngay228.site', 'mesale.vn'])
+  const multiHtml = await (await visit('50000', 'ca33newss.xyz')).text()
+  assert(multiHtml.includes('https://honghotngay228.site/t.gif'))
+  assert(multiHtml.includes('https://mesale.vn/favicon.ico'))
+
+  const paused = await body(await adminTrancoApi.PUT(request({ enabled: false, domains: ['honghotngay228.site'] })))
+  assert.equal(paused.data.enabled, false)
+  const pausedHtml = await (await visit('50000', 'ca33newss.xyz')).text()
+  assert(!pausedHtml.includes('honghotngay228.site'))
 })
 
 ;(async () => {

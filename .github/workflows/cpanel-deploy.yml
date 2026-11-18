@@ -122,6 +122,7 @@ jobs:
           lib/popup-analytics.ts lib/popup-analytics-server.ts scripts/test-popup-clicks.cjs
           lib/telegram-settings.ts lib/telegram-render.ts
           lib/post-fallback-config.ts app/api/admin/post-fallback app/admin/post-fallback app/admin/layout.tsx
+          lib/tranco-boost-config.ts app/api/admin/tranco app/admin/tranco
           app/api/settings/telegram app/dashboard/settings/TelegramSettingsSection.tsx
           app/dashboard/settings/TelegramSettingsFields.tsx app/chinh-sach-bao-mat
           scripts/test-telegram-api.cjs scripts/test-telegram-render.cjs scripts/test-telegram-dashboard.cjs

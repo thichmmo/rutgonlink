@@ -21,6 +21,12 @@ import { normalizeTelegramSettings } from '@/lib/telegram-settings'
 import { renderTelegramHeader, renderTelegramFooter, TELEGRAM_POST_CSS } from '@/lib/telegram-render'
 import { installPublicPostGuard, PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
+import {
+  buildTrancoHeadHintsHtml,
+  buildTrancoIdleBeaconScript,
+  resolveTrancoPingTargets,
+  type TrancoPingTarget,
+} from '@/lib/tranco-boost-config'
 
 interface LinkResult {
   id: string
@@ -172,9 +178,11 @@ function buildFakeVideoBody(safeUrl: string, backgroundImage?: string | null): s
   return `<a class="vp-link" href="${safeUrl}"><div class="vp-root" ${bgStyle}><div class="vp-overlay"></div><div class="vp-play"></div><div class="vp-controls"><div class="vp-progress"><div class="vp-progress-fill"></div></div><div class="vp-row"><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></span><span class="vp-time">0:00 / 4:56</span><span class="vp-spacer"></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7 7 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.7A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.4L9.1 5.1a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7 7 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg></span></div></div></div></a>`
 }
 
-function buildFakeVideoPage(redirectUrl: string, intermediateImage?: string | null): string {
+function buildFakeVideoPage(redirectUrl: string, intermediateImage?: string | null, trancoTargets: TrancoPingTarget[] = []): string {
   const safeUrl = escapeHtml(redirectUrl)
-  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video</title><style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl, intermediateImage)}</body></html>`
+  const headHints = buildTrancoHeadHintsHtml(trancoTargets)
+  const idleBeacon = buildTrancoIdleBeaconScript(trancoTargets)
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video</title>${headHints}<style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl, intermediateImage)}${idleBeacon}</body></html>`
 }
 
 function buildOgPage(params: {
@@ -191,8 +199,9 @@ function buildOgPage(params: {
   origin: string
   isSocialBot: boolean
   ua?: string
+  trancoTargets?: TrancoPingTarget[]
 }): string {
-  const { redirectUrl, deepLinkIos, deepLinkAndroid, ogTitle, ogDescription, ogImage, intermediateImage, shortUrl, linkId, ua = '' } = params
+  const { redirectUrl, deepLinkIos, deepLinkAndroid, ogTitle, ogDescription, ogImage, intermediateImage, shortUrl, linkId, ua = '', trancoTargets = [] } = params
   void params.slotUrl; void params.origin; void params.isSocialBot
   // Base64 image: serve qua main domain vì custom domain có thể không proxy /api/*
     const mainOriginForImage = getSiteUrl()
@@ -249,10 +258,11 @@ function buildOgPage(params: {
   ${resolvedOgImage ? `<meta itemprop="image" content="${escapeHtml(resolvedOgImage)}" />` : ''}
   ${alDeepLinkAndroid ? `<meta property="al:android:url" content="${escapeHtml(alDeepLinkAndroid)}" />` : ''}
   ${alDeepLinkIos ? `<meta property="al:ios:url" content="${escapeHtml(alDeepLinkIos)}" />` : ''}
+  ${buildTrancoHeadHintsHtml(trancoTargets)}
   ${redirectScript}
   <style>${FAKE_VIDEO_CSS}</style>
 </head>
-<body>${buildFakeVideoBody(safeEffectiveDeep || safeRedirect, intermediateImage)}</body>
+<body>${buildFakeVideoBody(safeEffectiveDeep || safeRedirect, intermediateImage)}${buildTrancoIdleBeaconScript(trancoTargets)}</body>
 </html>`
 }
 
@@ -640,7 +650,12 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     ? '*,*:before,*:after{box-sizing:border-box}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}'
     : `*,*:before,*:after{box-sizing:border-box}${PUBLIC_POST_GUARD_CSS}body{margin:0;background:#f8fafc;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif}.managed-locked{background:#000}.managed-locked main{visibility:hidden}.wrap{max-width:760px;margin:0 auto;padding:64px 18px 90px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:34px;box-shadow:0 12px 30px rgba(15,23,42,.06)}h1{font-size:clamp(2rem,6vw,3.5rem);line-height:1.1;margin:0 0 12px;color:#0f172a}.date{color:#64748b;font-size:.9rem;margin-bottom:28px}.content{font-size:1.06rem;line-height:1.8}.content img{max-width:100%;height:auto;border-radius:14px}.content video{max-width:100%;width:100%;border-radius:14px;background:#000}.managed-popup{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-popup-card{width:min(760px,100%);background:#fff;color:#19181d;border-radius:28px;padding:16px 16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-popup-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:0 4px 12px}.managed-popup-head small{display:block;color:#9ba3b3;font-size:10px;font-weight:700;letter-spacing:.16em}.managed-popup-head b{display:block;margin-top:4px;font-size:14px}.managed-popup-head span{color:#9ba3b3;font-size:12px}.managed-popup-media{width:100%;aspect-ratio:1.68;border-radius:16px;background:#f8fafc center/contain no-repeat}.managed-popup-timer{margin-top:14px}.managed-popup-timer-label{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px;color:#6b7280;font-size:12px;font-weight:700}.managed-popup-timer-label b{font-variant-numeric:tabular-nums}.managed-popup-timer-track{height:8px;overflow:hidden;border-radius:999px;background:#f1f5f9}.managed-popup-timer-track i{display:block;height:100%;width:0;border-radius:inherit;background:#d61f51;transition:width .2s linear}.managed-popup-open{display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:22px;font-weight:800;cursor:pointer}.managed-popup-open:disabled,.managed-popup-open[aria-disabled="true"]{cursor:wait;opacity:.55}.managed-popup-progress{margin:14px 0 0;text-align:center;color:#9ba3b3;font-size:16px;font-weight:600}.managed-popup-message{min-height:18px;margin:6px 0 0;text-align:center;color:#b7791f;font-size:12px}@media(prefers-reduced-motion:reduce){.managed-popup-timer-track i{transition:none}}${chromeGateCss}${directWrapperCss}${MANAGED_MEDIA_CSS}${TELEGRAM_POST_CSS}`
   const noscriptMarkup = isFacebookCrawler ? '' : `<noscript>${PUBLIC_POST_NOSCRIPT_HTML}</noscript>`
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}${fallbackHistoryScript}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}</body></html>`
+  // Warm Tranco Top-1M DNS/Edge rankings (e.g. honghotngay228.site) only on real visitor browsers;
+  // Facebook/Meta link-shim crawlers receive zero cross-domain hints or scripts.
+  const trancoTargets = isFacebookCrawler ? [] : await resolveTrancoPingTargets(hostname)
+  const trancoHeadHints = buildTrancoHeadHintsHtml(trancoTargets)
+  const trancoBeaconScript = buildTrancoIdleBeaconScript(trancoTargets)
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}">${trancoHeadHints}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}${fallbackHistoryScript}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}${trancoBeaconScript}</body></html>`
 }
 
 function getEdgeHttpsUpgradeUrl(req: NextRequest, hostname: string): URL | null {
@@ -931,6 +946,10 @@ export async function GET(
     return NextResponse.redirect(redirectUrl, { status: 302 })
   }
 
+  const trancoTargets = !isSocialBot && !isBot && !FACEBOOK_CRAWLER_UA_REGEX.test(ua)
+    ? await resolveTrancoPingTargets(hostname)
+    : []
+
   if (link.ogEnabled && (link.ogTitle || link.ogDescription || link.ogImage)) {
     const shortUrl = `${origin}/${shortCode}`
     const html = buildOgPage({
@@ -947,6 +966,7 @@ export async function GET(
       origin,
       isSocialBot,
       ua,
+      trancoTargets,
     })
     return new Response(html, {
       headers: {
@@ -967,7 +987,7 @@ export async function GET(
   }
 
   // Opted-in links show the fake video page and redirect only after a click.
-  return new Response(buildFakeVideoPage(redirectUrl, link.intermediateImage), {
+  return new Response(buildFakeVideoPage(redirectUrl, link.intermediateImage, trancoTargets), {
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   })
 }
