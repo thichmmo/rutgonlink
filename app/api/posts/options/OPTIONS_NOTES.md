@@ -16,4 +16,6 @@ the latest remaining popup. Existing post selections are handled by the editor.
 
 Verification: `node scripts/test-telegram-api.cjs` checks authentication,
 owner/active scope, and this ordering contract. Global post fallback is configured
-only in Admin (`/api/admin/post-fallback`), so user post options omit fallback state.
+only in Admin (`/api/admin/post-fallback`), while `defaultPostDomain` exposes the
+Admin-configured default publication domain (`ca33newss.xyz` by default) so every
+new post composer starts on that domain for all members.

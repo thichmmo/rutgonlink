@@ -142,8 +142,9 @@ Verify: `node scripts/test-telegram-quick-form.cjs` (164 assertions),
 `node scripts/test-fixed-content-composer.cjs` (60). These are actual TSX/JSDOM tests
 with local API fixtures; backend allocation/routing has separate coverage.
 
-## Bọc thẳng composer (2026-11-18)
+## Bọc thẳng composer & Admin default domain (2026-11-18)
 
-- `Tạo Bọc thẳng` (`type=direct`) opens a compact composer with `ca33newss.xyz` (or preferred domain), newest active popup, and `Xuất bản ngay` selected by default, allocating a `/p7/<code>` numeric path without mounting `RichEditor` or `TelegramPostEditor`. Filter bar and list cards include `Bọc thẳng`.
+- All three creation buttons (`Tạo bài thường`, `Tạo Bọc thẳng`, `Tạo bài Telegram`) initialize `domainKey` via `defaultPostDomainKey(domains, defaultPostDomain)` using the Admin-configured system default domain (`ca33newss.xyz` by default, editable in `/admin/domains`), while members remain free to switch domains in the composer and edits preserve the post's saved domain.
+- `Tạo Bọc thẳng` (`type=direct`) opens a compact composer with the default domain, newest active popup, and `Xuất bản ngay` selected by default, allocating a `/p7/<code>` numeric path without mounting `RichEditor` or `TelegramPostEditor`. Filter bar and list cards include `Bọc thẳng`.
 - Post fallback for deleted/missing `/p7/<code>` and `/posts/<slug>` links is an Admin-only backend setting (`/admin/post-fallback`), intentionally hidden from `/dashboard/posts`.
 - Verify: `node scripts/test-telegram-quick-form.cjs`, `node scripts/test-post-types-dashboard.cjs`, and `node scripts/test-fixed-content-composer.cjs`.

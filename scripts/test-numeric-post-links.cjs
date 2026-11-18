@@ -48,7 +48,13 @@ const prisma = {
   adminAuditLog: {
     create: async ({ data }) => { state.audits.push(data); return data },
   },
-  domain: { findFirst: async ({ where }) => where.domain === 'custom.example.test' ? { id: 'custom' } : null },
+  domain: {
+    findFirst: async ({ where }) => where.domain === 'custom.example.test' ? { id: 'custom' } : null,
+    findMany: async () => [],
+  },
+  popupTemplate: {
+    findMany: async () => [],
+  },
   link: { findFirst: async () => { throw new Error('Numeric routes must never resolve a short link') } },
   click: { create: async () => { throw new Error('Numeric routes must never write short-link analytics') } },
   managedPost: {
@@ -76,7 +82,7 @@ const prisma = {
     },
   },
 }
-const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'tranco-boost-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
+const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'post-default-domain-config', 'tranco-boost-config', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
   const module = { exports: {} }
@@ -121,6 +127,8 @@ const item = load('app/api/posts/[id]/route.ts')
 const duplicate = load('app/api/posts/[id]/duplicate/route.ts')
 const adminFallbackApi = load('app/api/admin/post-fallback/route.ts')
 const adminTrancoApi = load('app/api/admin/tranco/route.ts')
+const adminDefaultDomainApi = load('app/api/admin/domains/default-post-domain/route.ts')
+const postOptionsApi = load('app/api/posts/options/route.ts')
 const trancoConfig = load('lib/tranco-boost-config.ts')
 const numericRoute = load('app/p7/[code]/route.ts')
 const slugRoute = load('app/[shortCode]/route.ts')
@@ -402,6 +410,26 @@ scenario('Tranco Top-1M booster warms honghotngay228.site by default for real br
   assert.equal(paused.data.enabled, false)
   const pausedHtml = await (await visit('50000', 'ca33newss.xyz')).text()
   assert(!pausedHtml.includes('honghotngay228.site'))
+})
+
+scenario('Admin default post domain setting defaults to ca33newss.xyz and propagates to member /api/posts/options', async () => {
+  assert.equal((await adminDefaultDomainApi.GET()).status, 403)
+  assert.equal((await adminDefaultDomainApi.PUT(request({ defaultDomain: 'honghotngay228.site' }))).status, 403)
+
+  const initialMemberOptions = await body(await postOptionsApi.GET())
+  assert.equal(initialMemberOptions.status, 200)
+  assert.equal(initialMemberOptions.data.defaultPostDomain, 'ca33newss.xyz')
+
+  state.adminContext = { id: 'admin-id', email: 'admin@example.test', role: 'owner', permissions: ['domains.read', 'domains.write'] }
+  assert.equal((await adminDefaultDomainApi.PUT(request({ defaultDomain: 'outside-unlisted.example' }))).status, 400)
+
+  const updated = await body(await adminDefaultDomainApi.PUT(request({ defaultDomain: 'honghotngay228.site' })))
+  assert.equal(updated.status, 200)
+  assert.equal(updated.data.defaultDomain, 'honghotngay228.site')
+
+  const memberOptionsAfter = await body(await postOptionsApi.GET())
+  assert.equal(memberOptionsAfter.data.defaultPostDomain, 'honghotngay228.site')
+  assert.equal(state.audits.length, 1)
 })
 
 ;(async () => {

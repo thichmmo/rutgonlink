@@ -81,6 +81,7 @@ function load(file) {
     if (id === '@/lib/telegram-settings') return load('lib/telegram-settings.ts')
     if (id === '@/lib/public-post-link') return load('lib/public-post-link.ts')
     if (id === '@/lib/numeric-post-link-server') return load('lib/numeric-post-link-server.ts')
+    if (id === '@/lib/post-default-domain-config') return { getSystemDefaultPostDomain: async () => ({ defaultDomain: 'ca33newss.xyz', updatedAt: null, updatedBy: null }) }
     if (id === '@prisma/client') return { Prisma: { PrismaClientKnownRequestError: class extends Error {} } }
     return require(id)
   }

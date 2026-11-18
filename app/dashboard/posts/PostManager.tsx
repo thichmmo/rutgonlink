@@ -11,7 +11,7 @@ import TelegramSettingsSection from '../settings/TelegramSettingsSection'
 import { defaultTelegramSettings, normalizeTelegramSettings, telegramSettingsSchema, type TelegramSettings } from '@/lib/telegram-settings'
 import { getPublicPostPath } from '@/lib/public-post-link'
 import { appendQuickMedia, quickMediaTitle, quickMediaSlug } from './telegram-media'
-import { refreshCreatePopupSelection, telegramCreateDefaults } from './post-create-defaults'
+import { defaultPostDomainKey, refreshCreatePopupSelection, telegramCreateDefaults } from './post-create-defaults'
 import { popupTiming, popupTimingLabel, type PopupTimingSettings } from '@/app/dashboard/popup-timing'
 import { PopupTimingPreview } from '@/app/dashboard/PopupTiming'
 import { PopupClickBadge, PopupClickSummary, usePopupCounts } from '@/app/dashboard/PopupClickStats'
@@ -34,6 +34,7 @@ export default function PostManager() {
   const clickStats = usePopupCounts('post', posts.map(post => post.id))
   const [popups, setPopups] = useState<Popup[]>([])
   const [domains, setDomains] = useState<DomainOption[]>([])
+  const [defaultPostDomain, setDefaultPostDomain] = useState<string | null>(null)
   const [canUseRawHtml, setCanUseRawHtml] = useState(false)
   const [form, setForm] = useState<Form>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -88,6 +89,7 @@ export default function PostManager() {
       const refreshedPopups: Popup[] = optionsData.popups || []
       setPopups(refreshedPopups)
       setDomains(optionsData.domains || [])
+      setDefaultPostDomain(typeof optionsData.defaultPostDomain === 'string' ? optionsData.defaultPostDomain : null)
       setForm(current => {
         if (!createPopupDefault.current || (!current.telegramSettings.enabled && !current.isDirectWrapper)) return current
         const popupIds = refreshCreatePopupSelection(current.popupIds, refreshedPopups, createPopupDefault.current.automatic)
@@ -150,10 +152,12 @@ export default function PostManager() {
     setEditingId(null)
     const quickMode = type === 'telegram' || type === 'direct'
     createPopupDefault.current = quickMode ? { automatic: true } : null
-    // Explicit creation wins over the account/API default; direct wrapper reuses preferred domain + newest popup.
+    // Every new post composer starts on the Admin-configured default domain (ca33newss.xyz by default);
+    // members can freely pick another domain before saving.
     setForm({
       ...emptyForm,
-      ...(quickMode ? telegramCreateDefaults(domains, popups) : {}),
+      domainKey: defaultPostDomainKey(domains, defaultPostDomain),
+      ...(quickMode ? telegramCreateDefaults(domains, popups, defaultPostDomain) : {}),
       isDirectWrapper: type === 'direct',
       telegramSettings: { ...telegramDefaults, enabled: type === 'telegram' },
     })

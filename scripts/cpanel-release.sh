@@ -151,6 +151,7 @@ test "$root_http" = 200; test "$popups_http" = 401; test "$posts_http" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/post-fallback)" = 403
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/tranco)" = 403
+test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/domains/default-post-domain)" = 403
 test "$(origin_curl -o /dev/null -w '%{http_code}' https://ca33newss.xyz/t.gif)" = 200
 test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
 test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401

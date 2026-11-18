@@ -48,6 +48,7 @@ const initialPopups = [{ id: 'popup', name: 'Fixture popup' }, { id: 'older', na
 const initialDomains = [{ id: null, domain: 'fixture.example', kind: 'primary' }, { id: null, domain: 'honghotngay228.site', kind: 'shared' }, { id: 'custom', domain: 'custom.example', kind: 'custom' }]
 let popupOptions = initialPopups
 let domainOptions = initialDomains
+let defaultPostDomain = 'ca33newss.xyz'
 let optionsPending
 const calls = []
 const copiedLinks = []
@@ -63,7 +64,7 @@ window.confirm = () => true
 global.fetch = async (url, init = {}) => {
   calls.push({ url, ...init })
   if (url.startsWith('/api/posts?')) return response({ items: [telegram, standard, numeric], total: 3 })
-  if (url === '/api/posts/options') return optionsPending ? optionsPending.promise : response({ popups: popupOptions, domains: domainOptions, telegramDefaults: defaults })
+  if (url === '/api/posts/options') return optionsPending ? optionsPending.promise : response({ popups: popupOptions, domains: domainOptions, telegramDefaults: defaults, defaultPostDomain })
   if (url === '/api/content-blocks') return response(blocks)
   if (url === '/api/settings/telegram') return response(defaults)
   if (url === '/api/content/upload') return uploadPending.promise
@@ -316,7 +317,7 @@ async function run() {
   await click(button('Tạo bài thường'))
   check(() => assert.ok(editor()))
   check(() => assert.equal(field('Xuất bản ngay').checked, false, 'Standard creation retains its default draft state'))
-  check(() => assert.equal(field('Domain').value, 'primary'))
+  check(() => assert.equal(field('Domain').value, 'shared:honghotngay228.site', 'Standard creation also starts on the preferred shared domain'))
   check(() => assert.equal(field('Fixture popup').checked, false))
   check(() => assert.ok(field('Định dạng')))
   check(() => assert.ok(button('Thêm / chỉnh nội dung cố định', composer())))
@@ -461,6 +462,30 @@ async function run() {
   check(() => assert.equal(lastPayload().content, ''))
   check(() => assert.equal(lastPayload().telegramSettings.enabled, false))
   check(() => assert.deepEqual(lastPayload().popupIds, ['popup']))
+
+  // Admin-configured defaultPostDomain applies across all 3 create modes while letting members change it freely.
+  domainOptions = [
+    ...initialDomains,
+    { id: null, domain: 'ca33newss.xyz', kind: 'shared' },
+    { id: null, domain: 'phimngay.site', kind: 'shared' },
+  ]
+  defaultPostDomain = 'ca33newss.xyz'
+  await refreshOptions()
+  for (const label of ['Tạo bài thường', 'Tạo Bọc thẳng', 'Tạo bài Telegram']) {
+    await click(button(label))
+    check(() => assert.equal(field('Domain').value, 'shared:ca33newss.xyz', `${label} defaults to ca33newss.xyz`))
+    await click(button('Hủy', composer()))
+  }
+
+  defaultPostDomain = 'phimngay.site'
+  await refreshOptions()
+  for (const label of ['Tạo bài thường', 'Tạo Bọc thẳng', 'Tạo bài Telegram']) {
+    await click(button(label))
+    check(() => assert.equal(field('Domain').value, 'shared:phimngay.site', `${label} honors Admin-configured defaultPostDomain`))
+    await input(field('Domain'), 'custom')
+    check(() => assert.equal(field('Domain').value, 'custom', 'Members can still pick another domain freely'))
+    await click(button('Hủy', composer()))
+  }
 
   await React.act(async () => root.unmount())
   dom.window.close()

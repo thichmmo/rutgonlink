@@ -77,6 +77,7 @@ const mocks = {
   '@/lib/site-config': { getSiteHostname: () => 'rutgonlink.site' },
   '@/lib/public-post-link': publicLinks,
   '@/lib/numeric-post-link-server': numericLinks,
+  '@/lib/post-default-domain-config': { getSystemDefaultPostDomain: async () => ({ defaultDomain: 'ca33newss.xyz', updatedAt: null, updatedBy: null }) },
   '@/lib/content-management': {
     postSchema: schemaModule.postSchema,
     createPostSchema: schemaModule.createPostSchema,
