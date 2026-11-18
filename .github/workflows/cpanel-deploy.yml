@@ -111,8 +111,8 @@ jobs:
           app/api/popups app/api/posts app/api/content-blocks app/api/content
           app/dashboard/popups app/dashboard/posts
           app/dashboard/popup-timing.ts app/dashboard/PopupTiming.tsx
-          'app/posts/[slug]' 'app/[shortCode]/route.ts'
-          lib/content-management.ts lib/popup-settings.ts lib/popup-settings-server.ts lib/popup-link.ts lib/popup-browser-gate.ts lib/public-post-guard.ts
+          'app/posts/[slug]' 'app/[shortCode]/route.ts' 'app/p/[shortCode]/page.tsx' proxy.ts
+          lib/content-management.ts lib/popup-settings.ts lib/popup-settings-server.ts lib/popup-link.ts lib/popup-browser-gate.ts lib/public-post-guard.ts lib/traffic-source.ts lib/facebook-handoff-token.ts
           lib/popup-affiliate-url.ts lib/tiktok-link.ts scripts/test-popup-affiliate.cjs
           app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx app/dashboard/CreateLinkButton.tsx app/dashboard/layout.tsx
           lib/dashboard-nav-visibility.ts lib/dashboard-nav-visibility-server.ts app/api/settings/navigation

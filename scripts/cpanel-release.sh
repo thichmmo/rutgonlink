@@ -48,13 +48,35 @@ test -f "$app/.env"
 test -x "$node"
 test -d "$live"
 test ! -e "$backup"
+
+# Reclaim cPanel disk/inode quota from older releases while keeping the latest rollback backup.
+ls -1dt "$app"/.next/standalone.failed-* 2>/dev/null | xargs -r rm -rf || true
+ls -1dt "$app"/.next/standalone.before-* 2>/dev/null | tail -n +2 | xargs -r rm -rf || true
+for old_dir in "$app"/.deploy/*; do
+  [ -d "$old_dir" ] || continue
+  [ "$(basename "$old_dir")" = "$release_id" ] && continue
+  rm -rf "$old_dir/release.tar.gz" "$old_dir/unpacked" "$old_dir/.running" || true
+done
+ls -1dt "$app"/.deploy/* 2>/dev/null | tail -n +6 | xargs -r rm -rf || true
+
 # Keep both preflight and the new Passenger process on the persistent media path.
 export CONTENT_UPLOAD_DIR="$app/uploads/content"
-# GitHub release downloads can briefly reset on shared hosting; retry before marking the release failed.
-curl --fail --silent --show-error --location --max-time 300 --retry 3 --retry-delay 5 "$artifact_url" -o "$archive"
+# Retry in bash with capped rate & HTTP/1.1 so transient CloudLinux LVE kills (137) or resets recover cleanly.
+download_ok=0
+for dl_attempt in 1 2 3 4; do
+  if curl --http1.1 --fail --silent --show-error --location --limit-rate 15M --max-time 300 --retry 2 --retry-delay 5 "$artifact_url" -o "$archive"; then
+    download_ok=1
+    break
+  fi
+  echo "download_retry=$dl_attempt"
+  rm -f "$archive"
+  sleep 5
+done
+test "$download_ok" = 1
 actual_sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 test "$actual_sha" = "$(printf '%s' "$expected_sha" | tr -d '\r\n')"
 tar -xzf "$archive" -C "$release/unpacked"
+rm -f "$archive"
 test -f "$stage/server.js"
 test -f "$stage/.next/BUILD_ID"
 test -d "$stage/.next/static"

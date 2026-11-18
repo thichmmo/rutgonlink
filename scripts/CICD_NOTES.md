@@ -26,3 +26,8 @@ Required GitHub Actions secrets:
 
 The workflow does not read or commit `host.txt`, `.env`, or any production secret. Existing cPanel databases are baselined from `database.sql`; deploy migrations with names at or after `20260926000000` are tracked in `RutgonlinkMigration` so the first CI deploy does not replay the old baseline migrations.
 
+## Release retention & CloudLinux download resilience (2026-11-18)
+
+- `scripts/cpanel-release.sh` prunes stale `.next/standalone.failed-*`, older `.next/standalone.before-*` backups (retaining the latest rollback backup), and unpacked/archive artifacts from completed `.deploy/*` directories before downloading, and deletes `release.tar.gz` right after extraction so repeated deployments do not exhaust cPanel disk/inode quotas.
+- Archive downloads run inside a 4-attempt bash `if curl --http1.1 --limit-rate 15M ...` loop so a transient CloudLinux LVE SIGKILL (`137`) or reset retries cleanly instead of triggering `FAILED_PRE_SWAP` on the first burst. Verify with `bash -n scripts/cpanel-release.sh`.
+
