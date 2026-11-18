@@ -13,12 +13,13 @@ export function installPublicPostGuard(target: string, serverUserAgent = '') {
   const ua = nav.userAgent || serverUserAgent
   const platform = nav.platform || ''
   const touchPoints = nav.maxTouchPoints || 0
-  const mobileUa = /android|iphone|ipad|ipod/i.test(ua)
+  const mobileUa = /android|(?:harmonyos|openharmony).*(?:mobile|phone|arkweb)|iphone|ipad|ipod/i.test(ua)
   // Chrome device emulation changes the UA but normally retains Win32/MacIntel/Linux x86.
-  // Real iPads can report MacIntel with multiple touch points; do not redirect those devices.
+  // Real iPads (MacIntel) and unfolded Android foldables/tablets in desktop-site mode (Linux armv8/aarch64)
+  // report multi-touch hardware on non-x86/Win platforms; do not redirect those physical devices.
   const desktopPlatform = /win|linux.*(?:x86|x64)/i.test(platform) || (/mac/i.test(platform) && touchPoints <= 1)
   const emulatedMobile = mobileUa && desktopPlatform
-  const physicalMobile = !desktopPlatform && (mobileUa || (/mac/i.test(platform) && touchPoints > 1))
+  const physicalMobile = !desktopPlatform && (mobileUa || ((/mac/i.test(platform) || /linux.*(?:arm|aarch64)/i.test(platform)) && touchPoints > 1))
   if (physicalMobile) return () => {}
 
   let redirected = false

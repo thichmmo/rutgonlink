@@ -1,4 +1,4 @@
-import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isAndroidDeviceUserAgent, isTikTokOneLinkUrl } from '@/lib/popup-link'
 
 export type PopupPlatformSettings = {
   enabled: boolean
@@ -100,7 +100,7 @@ export function isIosUserAgent(userAgent: string) {
 }
 
 export function isAndroidUserAgent(userAgent: string) {
-  return /android/i.test(userAgent)
+  return isAndroidDeviceUserAgent(userAgent)
 }
 
 export function isMobileUserAgent(userAgent: string) {
@@ -121,11 +121,12 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   const forceBrowser = isAndroidUserAgent(userAgent) && settings.forceChromeAndroid ? 'Chrome'
     : isIosUserAgent(userAgent) && settings.forceSafariIos ? 'Safari' : null
   if (step === 0) {
+    const launchUrl = isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(settings.shopee.url, 'SHOPEE', userAgent) : settings.shopee.url
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
-      launchUrl: isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(settings.shopee.url, 'SHOPEE') : settings.shopee.url,
-      openMode: getPopupLinkOpenMode(settings.shopee.url, 'SHOPEE', { userAgent }),
+      launchUrl,
+      openMode: getPopupLinkOpenMode(launchUrl, 'SHOPEE', { userAgent }),
       imageUrl: settings.shopee.imageUrl,
       delaySeconds: settings.shopee.delaySeconds,
       forceBrowser,
@@ -133,13 +134,13 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   }
 
   const url = getTikTokIosLaunchUrl((isIosUserAgent(userAgent) ? settings.tiktok.iosUrl : settings.tiktok.androidUrl) || settings.tiktok.url, userAgent)
+  const launchUrl = isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(url, 'TIKTOK', userAgent) : url
   return {
     platform: 'TikTok',
     url,
-    // The original Android HTTPS link works through TikTok's own shared-item
-    // screen; the derived ec/pdp URI can open TikTok with a product-load error.
-    launchUrl: url,
-    openMode: getPopupLinkOpenMode(url, 'TIKTOK', { userAgent }),
+    // Chrome keeps raw HTTPS; OEM browsers that disable https App Links receive a scheme=https intent with web fallback.
+    launchUrl,
+    openMode: getPopupLinkOpenMode(launchUrl, 'TIKTOK', { userAgent }),
     imageUrl: settings.tiktok.imageUrl,
     delaySeconds: settings.tiktok.delaySeconds,
     forceBrowser,

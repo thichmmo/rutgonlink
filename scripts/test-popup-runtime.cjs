@@ -87,10 +87,11 @@ async function mount(kind, options = {}) {
   })
   const doc = dom.window.document
   const ua = options.ua ?? facebookIos
-  const mobileUa = /iphone|ipad|ipod|android/i.test(ua)
+  const androidDeviceUa = /android|(?:harmonyos|openharmony).*(?:mobile|phone|arkweb)/i.test(ua)
+  const mobileUa = /iphone|ipad|ipod/i.test(ua) || androidDeviceUa
   Object.defineProperties(dom.window.navigator, {
     userAgent: { value: ua },
-    platform: { value: options.platform ?? (mobileUa ? (/android/i.test(ua) ? 'Linux armv8l' : 'iPhone') : 'Win32') },
+    platform: { value: options.platform ?? (mobileUa ? (androidDeviceUa ? 'Linux armv8l' : 'iPhone') : 'Win32') },
     maxTouchPoints: { value: options.maxTouchPoints ?? (mobileUa ? 5 : 0) },
   })
   let now = options.now ?? 1_000_000
@@ -164,7 +165,7 @@ async function mount(kind, options = {}) {
   })
   dom.window.HTMLAnchorElement.prototype.click = function clickAnchor() {
     const nativeAction = this.hasAttribute('data-popup-native-link')
-    const browserGateAction = this.hasAttribute('data-popup-chrome-link')
+    const browserGateAction = this.hasAttribute('data-popup-chrome-link') || this.hasAttribute('data-popup-system-browser-link')
     if (nativeAction || browserGateAction) {
       // Run the real handler, observing its default-action decision at the end of
       // propagation. Only this test listener cancels external JSDOM navigation.
@@ -262,7 +263,7 @@ async function mount(kind, options = {}) {
     state, calls, clickEvents, storage, storageReads, storageWrites, button, doc, tick, cookieWrites, preparationRequests,
     cookie: cookies,
     snapshot: () => ({ now, session: [...storage.session], local: [...storage.local], cookie: cookies() }),
-    async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()); if (!/android/i.test(ua)) await tick(0) },
+    async click(element = button()) { assert.ok(element, 'Popup button exists'); await React.act(async () => element.click()); if (!androidDeviceUa) await tick(0) },
     async keydown(key, modifiers = {}, flush = true) {
       const event = new dom.window.KeyboardEvent('keydown', { key, keyCode: key === 'F12' ? 123 : undefined, bubbles: true, cancelable: true, ...modifiers })
       await React.act(async () => win.dispatchEvent(event))
@@ -796,6 +797,101 @@ async function androidScenarios() {
         await h.click(); await h.away(); await h.back(); await h.tick(1000)
         assert.equal(h.state(), 'ARTICLE')
         assert.equal(h.calls.length, 2)
+      })
+    })
+    await scenario(kind + ' Android social/chat In-App WebViews gate to Chrome with default-browser fallback for Huawei/no-Chrome phones', async () => {
+      const href = 'https://ca33newss.xyz/p7/37325?aff=A+B%2F#video'
+      const inAppUas = [
+        'Mozilla/5.0 (Linux; Android 13; RMX3890; wv) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36 [FBAN/FBLite;FBAV/432.0.0.14.111;]',
+        'Mozilla/5.0 (Linux; Android 14; V2247; wv) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36 Orca-Android',
+        'Mozilla/5.0 (Linux; Android 14; CPH2581; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Instagram 357.1.0.52.100 Android',
+        'Mozilla/5.0 (Linux; Android 14; SM-S711B; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Barcelona 355.0.0.38.109 Android',
+        'Mozilla/5.0 (Linux; Android 14; SM-A546E; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Zalo Android 241002',
+        'Mozilla/5.0 (Linux; Android 13; 23021RAA2Y; wv) AppleWebKit/537.36 Chrome/128 Mobile Safari/537.36 musical_ly_2023603040 BytedanceWebview/d8a21c6',
+        'Mozilla/5.0 (Linux; Android 15; Pixel 8 Pro; wv) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36 Telegram-Android/11.4.2',
+        'Mozilla/5.0 (Linux; Android 14; SM-S901E; wv) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36 Line/14.18.0/IAB',
+        'Mozilla/5.0 (Linux; Android 12; HarmonyOS; MAO-LX9; HMSCore 6.13.0.300; wv) AppleWebKit/537.36 Chrome/99 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/485;]',
+      ]
+      for (const inAppUa of inAppUas) {
+        await using(kind, { ua: inAppUa, forceChromeAndroid: true, currentHref: href }, async h => {
+          assert.equal(h.state(), 'CHROME_GATE', inAppUa)
+          assert.equal(h.timerCount(), 0)
+          const chromeBtn = h.button()
+          const systemBtn = h.doc.querySelector('[data-popup-system-browser-link]')
+          assert.ok(systemBtn, 'Gate provides a package-free system-browser intent for Huawei/no-Chrome Android devices')
+          assert.equal(chromeBtn.href, gateHelper.buildChromeBrowserLaunchUrl(href))
+          assert.equal(systemBtn.href, gateHelper.buildSystemBrowserLaunchUrl(href))
+          assert.doesNotMatch(systemBtn.href, /package=com\.android\.chrome/)
+          await h.click(systemBtn)
+          assert.equal(h.calls.length, 1)
+          assert.equal(h.calls[0].browserGateAction, true)
+          assert.equal(h.calls[0].url, gateHelper.buildSystemBrowserLaunchUrl(href))
+          assert.equal(h.timerCount(), 0)
+          assert.deepEqual(h.storageWrites, [])
+          assert.deepEqual(h.clickEvents, [])
+        })
+      }
+    })
+    await scenario(kind + ' Android OEM browsers (Samsung, Xiaomi, OPPO, Vivo, Huawei/OpenHarmony, Firefox, UC) launch scheme=https intents and preserve raw web fallback', async () => {
+      const oemProfiles = [
+        { ua: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36', platform: 'Linux armv81' },
+        { ua: 'Mozilla/5.0 (Linux; U; Android 14; Redmi Note 13 Pro 5G) AppleWebKit/537.36 Version/4.0 Chrome/116.0.0.0 Mobile Safari/537.36 XiaoMi/MiuiBrowser/18.5.210514', platform: 'Linux aarch64' },
+        { ua: 'Mozilla/5.0 (Linux; Android 14; CPH2591) AppleWebKit/537.36 Chrome/115.0.0.0 Mobile Safari/537.36 HeyTapBrowser/45.11.4.1', platform: 'Linux armv8l' },
+        { ua: 'Mozilla/5.0 (Linux; Android 14; V2318) AppleWebKit/537.36 Chrome/116.0.0.0 Mobile Safari/537.36 VivoBrowser/21.6.0.0', platform: 'Linux armv8l' },
+        { ua: 'Mozilla/5.0 (Linux; Android 12; HarmonyOS; JAD-LX9; HMSCore 6.14.0.302) AppleWebKit/537.36 Chrome/114 HuaweiBrowser/15.0.4.312 Mobile Safari/537.36', platform: 'Linux aarch64' },
+        { ua: 'Mozilla/5.0 (Phone; OpenHarmony 5.0) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/15.0.6.301', platform: 'Linux aarch64' },
+        { ua: 'Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0', platform: 'Linux aarch64' },
+        { ua: 'Mozilla/5.0 (Linux; U; Android 13; TECNO KI5q) AppleWebKit/537.36 Chrome/100 UCBrowser/13.7.8.1322 Mobile Safari/537.36', platform: 'Linux armv8l' },
+      ]
+      for (const profile of oemProfiles) {
+        await using(kind, { ua: profile.ua, platform: profile.platform, forceChromeAndroid: true, androidUrl: shortTikTok, cooldownMinutes: 0 }, async h => {
+          assert.equal(h.doc.querySelector('[data-popup-browser-gate]'), null, 'Standalone OEM browser must not show Chrome gate')
+          assert.equal(h.state(), 'Shopee')
+          assert.equal(await h.mouse('contextmenu'), false, 'Long-press on physical Android/OpenHarmony must not redirect to mesale')
+          const firstBtn = h.button()
+          assert.equal(firstBtn.target, '_self', 'OEM intent:// must use _self to avoid blank orphan tabs and popup blockers')
+          assert.match(firstBtn.href, /^intent:\/\/shopee\.vn\/.*#Intent;scheme=https;action=android\.intent\.action\.VIEW;category=android\.intent\.category\.BROWSABLE;package=com\.shopee\.vn;S\.browser_fallback_url=/)
+          assert.ok(firstBtn.href.includes('S.browser_fallback_url=' + encodeURIComponent(shopee)))
+          await h.click()
+          assert.equal(h.calls[0].mode, 'anchor-same-tab')
+          // Verify timeout web fallback opens raw HTTPS in _self without popup-blocker _blank failure
+          await h.tick(2600)
+          const webFallback = h.doc.querySelector('[data-popup-web-fallback]')
+          assert.ok(webFallback)
+          await h.click(webFallback)
+          assert.equal(h.calls[1].url, shopee)
+          assert.equal(h.calls[1].mode, 'anchor-same-tab')
+          await h.away(); await h.back()
+          assert.equal(h.state(), 'TikTok')
+          const secondBtn = h.button()
+          assert.equal(secondBtn.target, '_self')
+          assert.match(secondBtn.href, /^intent:\/\/vt\.tiktok\.com\/.*#Intent;scheme=https;action=android\.intent\.action\.VIEW;category=android\.intent\.category\.BROWSABLE;package=com\.ss\.android\.ugc\.trill;S\.browser_fallback_url=/)
+          assert.ok(secondBtn.href.includes('S.browser_fallback_url=' + encodeURIComponent(shortTikTok)))
+          await h.click(); await h.away(); await h.back()
+          assert.equal(h.state(), 'ARTICLE')
+        })
+      }
+      // Unverified Shopee short domains (shope.ee / shp.ee) without assetlinks.json stay raw HTTPS so PackageManager never fails
+      for (const unverifiedShopee of ['https://shope.ee/9zX12345', 'https://shp.ee/abc123']) {
+        await using(kind, { ua: oemProfiles[0].ua, shopeeUrl: unverifiedShopee }, async h => {
+          assert.equal(h.button().href, unverifiedShopee)
+        })
+      }
+    })
+    await scenario(kind + ' unfolded Android foldables/tablets in desktop-site mode on ARM Linux never redirect to mesale', async () => {
+      await using(kind, {
+        ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        platform: 'Linux armv81',
+        maxTouchPoints: 5,
+        outerWidth: 980,
+        innerWidth: 980,
+        outerHeight: 828,
+        innerHeight: 520,
+      }, async h => {
+        await h.tick(2000)
+        assert.equal(await h.mouse('contextmenu'), false)
+        assert.equal(h.calls.length, 0)
+        assert.equal(h.doc.documentElement.hasAttribute('data-post-guard-blocked'), false)
       })
     })
   }

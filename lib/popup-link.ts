@@ -6,13 +6,28 @@ const TIKTOK_HOST_PATTERN = /(^|\.)tiktok\.com$/i
 const TIKTOK_DEEP_LINK_LABEL = 'click_wap_p_product_detail_t_launch_pop_up_s_product_detail_e__f_product_detail_fp__fps_affiliate_links_rf_product_detail'
 
 export const TIKTOK_ANDROID_HOSTS = ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com']
+// Verified against live /.well-known/assetlinks.json for package com.shopee.vn (shp.ee/shope.ee return 404 and must redirect over HTTPS first).
+export const SHOPEE_ANDROID_HOSTS = ['shopee.vn', 'www.shopee.vn', 's.shopee.vn', 'vn.shp.ee']
+const ANDROID_DEVICE_UA_PATTERN = /android|(?:harmonyos|openharmony).*(?:mobile|phone|arkweb)/i
+// OEM browsers (Samsung Internet, Xiaomi Mi Browser, OPPO/Realme HeyTap, Vivo, Huawei, UC, Firefox)
+// and non-FB4A in-app webviews (FBLite, Zalo, Messenger, Instagram, Threads, Telegram, TikTok, LINE)
+// suppress automatic https:// App Links or drop _blank windows unless wrapped in a scheme=https intent.
+const ANDROID_OEM_BROWSER_PATTERN = /samsungbrowser|miuibrowser|heytapbrowser|oppobrowser|realmelink|vivobrowser|huaweibrowser|arkweb|ucbrowser|firefox\/|fblite|orca-android|messenger|instagram|barcelona|\bzalo\b|bytedancewebview|musical_ly|telegram-android|\bline\//i
 const MAX_ANDROID_LAUNCH_URL_LENGTH = 8192
 
-function parseAndroidTikTokUrl(value: string) {
+export function isAndroidDeviceUserAgent(userAgent: string) {
+  return ANDROID_DEVICE_UA_PATTERN.test(userAgent)
+}
+
+export function isAndroidOemBrowserUserAgent(userAgent: string) {
+  return isAndroidDeviceUserAgent(userAgent) && ANDROID_OEM_BROWSER_PATTERN.test(userAgent)
+}
+
+function parseSafeHttpsAppUrl(value: string, allowedHosts: readonly string[]) {
   try {
     const parsed = new URL(value)
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port
-      || !TIKTOK_ANDROID_HOSTS.includes(parsed.hostname)
+      || !allowedHosts.includes(parsed.hostname.toLowerCase())
       || value.length > MAX_ANDROID_LAUNCH_URL_LENGTH
       || !value.startsWith('https://') || /[#\s\\]/.test(value)) return null
     // Reject malformed UTF-16 before intent encoding rather than throwing on tap.
@@ -21,6 +36,18 @@ function parseAndroidTikTokUrl(value: string) {
   } catch {
     return null
   }
+}
+
+function parseAndroidTikTokUrl(value: string) {
+  return parseSafeHttpsAppUrl(value, TIKTOK_ANDROID_HOSTS)
+}
+
+export function buildAndroidHttpsAppIntentUrl(value: string, allowedHosts: readonly string[], packageName: string) {
+  if (!parseSafeHttpsAppUrl(value, allowedHosts)) return value
+  // Pass the exact unmodified HTTPS URL via scheme=https so OEM browsers invoke Android's native app
+  // handler without guessing custom schemes, and fall back to the original web URL when uninstalled.
+  const result = `intent://${value.slice('https://'.length)}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=${packageName};S.browser_fallback_url=${encodeURIComponent(value)};end`
+  return result.length <= MAX_ANDROID_LAUNCH_URL_LENGTH ? result : value
 }
 
 export function buildTikTokAndroidLaunchUrl(productUrl: string, fallbackUrl = productUrl) {
@@ -56,9 +83,13 @@ export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: str
   return buildTikTokAndroidLaunchUrl(value)
 }
 
-export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform) {
-  // The user verified the original HTTPS Shopee anchor, not an intent wrapper.
-  return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
+export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform, userAgent = '') {
+  // Omit userAgent only in legacy compatibility callers; active Android requests pass userAgent.
+  if (!userAgent) return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
+  if (!isAndroidOemBrowserUserAgent(userAgent)) return value
+  return platform === 'SHOPEE'
+    ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
+    : buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
 }
 
 export function isTikTokOneLinkUrl(value: string) {
@@ -180,11 +211,13 @@ export function isIosFacebookUserAgent(userAgent: string) {
 }
 
 export function getPopupLinkOpenMode(
-  _value: string,
+  value: string,
   platform: PopupLinkPlatform,
   options: { userAgent: string },
 ): PopupLinkOpenMode {
-  if (/android/i.test(options.userAgent)) {
+  if (isAndroidDeviceUserAgent(options.userAgent)) {
+    // OEM browsers and explicit intent:// URIs must navigate in _self to avoid blank orphan tabs and popup blockers.
+    if (isAndroidOemBrowserUserAgent(options.userAgent) || value.startsWith('intent://')) return 'anchor-same-tab'
     return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
   // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context

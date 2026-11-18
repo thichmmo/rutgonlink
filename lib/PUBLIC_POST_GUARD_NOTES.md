@@ -7,7 +7,11 @@ or a mobile UA paired with a desktop platform redirects once to Mesale. Capture
 listeners block clicks while a detected panel is pending, so popup tracking and
 affiliate navigation do not race the redirect. F12 and right-click still redirect.
 
-Real mobile platform hints and multi-touch iPads bypass the desktop heuristic.
+Real mobile platform hints, Huawei HarmonyOS/OpenHarmony mobile UAs, multi-touch
+iPads (`MacIntel`), and multi-touch ARM Linux Android foldables/tablets in
+desktop-site mode (`Linux armv8*` / `aarch64` with `maxTouchPoints > 1`) bypass
+the desktop heuristic while `Win32`, `MacIntel` (`touchPoints <= 1`), and
+`Linux x86_64` desktop/emulated environments stay guarded.
 Proportional zoom, invalid dimensions and transient resize are ignored. No browser
 API reliably identifies DevTools: undocked tools, spoofed hints or disabled scripts
 can defeat detection; large browser sidebars can resemble a docked panel. This is

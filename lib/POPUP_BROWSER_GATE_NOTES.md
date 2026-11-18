@@ -43,3 +43,9 @@ blank page/Shopee replay, and restarted locked Shopee on cooldown-zero reload.
 The tested six source hashes matched the fixtures. These were isolated fixture
 analytics, not production database or commission validation; iOS was covered by
 automated regressions only. Production deployment verification remains separate.
+
+## Multi-app Android WebView gate & system-browser fallback (2026-11-18)
+
+- `shouldGatePopupToChrome` (`ANDROID_IN_APP_WEBVIEW_PATTERN`) now gates all restricted Android social/chat in-app webviews when `forceChromeAndroid` is enabled: Facebook (`FB4A`, `FBAN`, `FBAV`, `FB_IAB`, `FBLite`), Messenger (`Orca-Android`, `Messenger`), Instagram (`Instagram`), Threads (`Barcelona`), Zalo (`Zalo`), TikTok (`BytedanceWebview`, `musical_ly`), Telegram (`Telegram-Android`), and LINE (`Line/`), while leaving standalone Android browsers untouched.
+- Alongside `[data-popup-chrome-link]` (`package=com.android.chrome`), `buildSystemBrowserLaunchUrl` renders a package-free `[data-popup-system-browser-link]` (`intent://<article>#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`) so Huawei HMS / HarmonyOS, China-ROM Xiaomi/Vivo/OPPO, and disabled-Chrome phones open their installed default system browser without timers, storage mutations, or fallback loops.
+- Verify: `node scripts/test-popup-runtime.cjs --android-native-check` (48 scenarios) and `node scripts/test-popup-runtime.cjs` (141 scenarios).

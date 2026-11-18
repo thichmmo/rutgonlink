@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
 import { sendPopupClick, type PopupClickTracking } from '@/lib/popup-click-client'
 import { getPopupStep, isAndroidUserAgent, isMobileUserAgent, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
-import { buildChromeBrowserLaunchUrl, shouldGatePopupToChrome } from '@/lib/popup-browser-gate'
+import { buildChromeBrowserLaunchUrl, buildSystemBrowserLaunchUrl, shouldGatePopupToChrome } from '@/lib/popup-browser-gate'
 
 type Popup = {
   imageUrl: string | null
@@ -31,16 +31,22 @@ function currentChromeLaunchUrl() {
   return buildChromeBrowserLaunchUrl(window.location.href)
 }
 
+function currentSystemBrowserLaunchUrl() {
+  return buildSystemBrowserLaunchUrl(window.location.href)
+}
+
 function ChromeBrowserGate() {
   // The URL is client-owned; the empty server snapshot keeps hydration consistent.
   const launchUrl = useSyncExternalStore(subscribeToArticleUrl, currentChromeLaunchUrl, () => '')
+  const systemLaunchUrl = useSyncExternalStore(subscribeToArticleUrl, currentSystemBrowserLaunchUrl, () => '')
 
   return <div data-popup-browser-gate="" className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Mở bài viết bằng Chrome">
     <div className="w-full max-w-[480px] rounded-[28px] bg-white p-6 text-center text-gray-950 shadow-2xl sm:p-8">
       <h2 className="text-xl font-bold sm:text-2xl">Mở bài viết bằng Chrome</h2>
       <p className="mt-3 text-sm leading-6 text-gray-600">Nhấn nút bên dưới để tiếp tục xem bài viết.</p>
       <a data-popup-chrome-link="" href={launchUrl || undefined} target="_self" rel="noopener noreferrer" aria-disabled={!launchUrl} tabIndex={launchUrl ? 0 : -1} onClick={event => { if (!launchUrl || document.documentElement.hasAttribute('data-post-guard-blocked')) event.preventDefault() }} className={`mt-5 flex h-14 w-full items-center justify-center rounded-full bg-[#19181d] text-lg font-bold text-white no-underline ${launchUrl ? '' : 'opacity-60'}`}>Mở Chrome</a>
-      <p className="mt-3 text-xs leading-5 text-gray-500">Nếu Facebook hỏi mở ứng dụng, chọn Tiếp tục.</p>
+      <p className="mt-3 text-xs leading-5 text-gray-500">Nếu ứng dụng hỏi mở trình duyệt ngoài, chọn Tiếp tục.</p>
+      <a data-popup-system-browser-link="" href={systemLaunchUrl || undefined} target="_self" rel="noopener noreferrer" aria-disabled={!systemLaunchUrl} tabIndex={systemLaunchUrl ? 0 : -1} onClick={event => { if (!systemLaunchUrl || document.documentElement.hasAttribute('data-post-guard-blocked')) event.preventDefault() }} className={`mt-2.5 inline-block text-xs font-semibold text-[#d61f51] hover:underline ${systemLaunchUrl ? '' : 'opacity-60'}`}>Máy không có Chrome? Mở trình duyệt mặc định</a>
     </div>
   </div>
 }
