@@ -29,6 +29,8 @@ rollback_on_error() {
   code=$?
   trap - ERR
   set +e
+  # Subshells (command substitutions) must not run rollback twice against the parent's backup directory.
+  if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then exit "$code"; fi
   [ -n "$preflight_pid" ] && kill "$preflight_pid" 2>/dev/null
   if [ "$swapped" -eq 1 ] && [ -d "$backup" ]; then
     [ -d "$live" ] && mv "$live" "$failed"
@@ -147,18 +149,34 @@ wait "$preflight_pid" 2>/dev/null || true
 preflight_pid=""
 echo preflight_ok
 
-# Enter the swap window before moving live so a failed second move restores it.
+# Enter the swap window from $app before moving live so a failed second move restores it cleanly.
+cd "$app"
 swapped=1
 mv "$live" "$backup"
 mv "$stage" "$live"
 touch "$app/tmp/restart.txt"
 origin_curl() {
-  curl -k -sS --max-time 10 \
+  curl -k -sS --max-time 20 --retry 2 --retry-delay 2 \
     --resolve rutgonlink.site:443:103.57.221.79 \
     --resolve ca33newss.xyz:443:103.57.221.79 \
     --resolve 6739dd4f.nip.io:443:103.57.221.79 \
     "$@"
 }
+expect_origin_http() {
+  local expected="$1"
+  shift
+  local code=""
+  for _ in 1 2 3 4 5; do
+    code="$(origin_curl -o /dev/null -w '%{http_code}' "$@" || true)"
+    if [ "$code" = "$expected" ]; then return 0; fi
+    sleep 2
+  done
+  echo "origin_smoke_mismatch expected=$expected actual=$code args=$*"
+  return 1
+}
+# Trigger Passenger's restart.txt stat check once, then wait briefly so the cold worker boots before smoke checks.
+origin_curl -o /dev/null https://rutgonlink.site/ || true
+sleep 4
 for attempt in $(seq 1 30); do
   root_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/ || true)"
   popups_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/popups || true)"
@@ -170,21 +188,26 @@ done
 test "$root_http" = 200; test "$popups_http" = 401; test "$posts_http" = 401
 # Run full origin route and shared-domain checks locally on cPanel so regressions roll back before SUCCESS
 # and Imunify360 datacenter challenges on GitHub Actions IPs do not cause false post-deploy 503 failures.
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/telegram)" = 401
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/settings/navigation)" = 401
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/post-fallback)" = 403
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/tranco)" = 403
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/domains/default-post-domain)" = 403
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://ca33newss.xyz/t.gif)" = 200
-test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video)" = 401
-test "$(origin_curl -o /dev/null -w '%{http_code}' --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload)" = 401
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/users)" = 403
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/api/admin/users/anonymous-probe)" = 403
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/chinh-sach-bao-mat)" = 200
-dashboard_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/dashboard/posts)"
+expect_origin_http 401 https://rutgonlink.site/api/settings/telegram
+expect_origin_http 401 https://rutgonlink.site/api/settings/navigation
+expect_origin_http 403 https://rutgonlink.site/api/admin/post-fallback
+expect_origin_http 403 https://rutgonlink.site/api/admin/tranco
+expect_origin_http 403 https://rutgonlink.site/api/admin/domains/default-post-domain
+expect_origin_http 200 https://ca33newss.xyz/t.gif
+expect_origin_http 401 --request POST --header 'Content-Type: application/json' --data '{"url":"https://example.com/article"}' https://rutgonlink.site/api/content/resolve-video
+expect_origin_http 401 --request POST --data 'upload-auth-probe' https://rutgonlink.site/api/content/upload
+expect_origin_http 403 https://rutgonlink.site/api/admin/users
+expect_origin_http 403 https://rutgonlink.site/api/admin/users/anonymous-probe
+expect_origin_http 200 https://rutgonlink.site/chinh-sach-bao-mat
+dashboard_http=""
+for _ in 1 2 3 4 5; do
+  dashboard_http="$(origin_curl -o /dev/null -w '%{http_code}' https://rutgonlink.site/dashboard/posts || true)"
+  if [ "$dashboard_http" = 302 ] || [ "$dashboard_http" = 307 ]; then break; fi
+  sleep 2
+done
 test "$dashboard_http" = 302 || test "$dashboard_http" = 307
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://ca33newss.xyz/robots.txt)" = 200
-test "$(origin_curl -o /dev/null -w '%{http_code}' https://6739dd4f.nip.io/robots.txt)" = 200
+expect_origin_http 200 https://ca33newss.xyz/robots.txt
+expect_origin_http 200 https://6739dd4f.nip.io/robots.txt
 echo smoke_routes_verified=1
 echo SUCCESS > "$status"
 echo "deploy_success=$(date -Is)"
