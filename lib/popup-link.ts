@@ -71,6 +71,17 @@ export function isTikTokOneLinkUrl(value: string) {
   }
 }
 
+export function isTikTokIosRedirectUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.port
+      && ['tiktokv.com', 'www.tiktokv.com'].includes(parsed.hostname.toLowerCase())
+      && parsed.pathname.startsWith('/redirect')
+  } catch {
+    return false
+  }
+}
+
 export function isTikTokShortUrl(value: string) {
   try {
     const parsed = new URL(value)
@@ -81,22 +92,27 @@ export function isTikTokShortUrl(value: string) {
   }
 }
 
-// Keep the original affiliate URL inside TikTok's product deep link, not the reference site's tracking.
-export function buildTikTokOneLinkUrl(value: string) {
-  if (isTikTokOneLinkUrl(value)) return value
-
+function parseTikTokProductDeepLink(value: string) {
   let parsed: URL
   try {
     parsed = new URL(value)
   } catch {
-    return value
+    return null
   }
 
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !TIKTOK_HOST_PATTERN.test(parsed.hostname)) return value
-  if (!parsed.pathname.includes('/view/product/') && !parsed.pathname.includes('/pdp/')) return value
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || !TIKTOK_HOST_PATTERN.test(parsed.hostname)) return null
+  if (!parsed.pathname.includes('/view/product/') && !parsed.pathname.includes('/pdp/')) return null
   const productId = parsed.pathname.match(/\/(\d{15,25})\/?$/)?.[1]
-  if (!productId) return value
+  if (!productId) return null
 
+  const requestParams = JSON.stringify({ product_id: [productId] })
+  const trackParams = parsed.searchParams.get('trackParams') || JSON.stringify({
+    enable_shop_tab_popup: 1,
+    traffic_source_list: [3],
+    traffic_source: 3,
+  })
+
+  // Keep the original affiliate URL inside TikTok's product deep link, not the reference site's tracking.
   const deepLink = new URL('snssdk1180://ec/pdp')
   deepLink.searchParams.set('biz_type', '0')
   deepLink.searchParams.set('gd_label', TIKTOK_DEEP_LINK_LABEL)
@@ -105,24 +121,49 @@ export function buildTikTokOneLinkUrl(value: string) {
   deepLink.searchParams.set('page_name', 'reflow_pdp')
   deepLink.searchParams.set('params_url', value)
   deepLink.searchParams.set('refer', 'web')
-  deepLink.searchParams.set('requestParams', JSON.stringify({ product_id: [productId] }))
-  deepLink.searchParams.set('trackParams', parsed.searchParams.get('trackParams') || JSON.stringify({
-    enable_shop_tab_popup: 1,
-    traffic_source_list: [3],
-    traffic_source: 3,
-  }))
+  deepLink.searchParams.set('requestParams', requestParams)
+  deepLink.searchParams.set('trackParams', trackParams)
+  return { deepLink, requestParams, trackParams }
+}
 
-  const oneLink = new URL('https://snssdk1180.onelink.me/BAuo')
+export function buildTikTokOneLinkUrl(value: string) {
+  if (isTikTokOneLinkUrl(value) || isTikTokIosRedirectUrl(value)) return value
+  const parsed = parseTikTokProductDeepLink(value)
+  if (!parsed) return value
+
+  // snssdk1180.onelink.me AASA registers "/BAuo/*", requiring the trailing slash;
+  // af_force_deeplink prevents a 301 fallback to the regional App Store.
+  const oneLink = new URL('https://snssdk1180.onelink.me/BAuo/')
   oneLink.searchParams.set('domain_source', 'tiktok')
-  oneLink.searchParams.set('af_dp', deepLink.toString())
+  oneLink.searchParams.set('af_dp', parsed.deepLink.toString())
+  oneLink.searchParams.set('af_force_deeplink', 'true')
+  oneLink.searchParams.set('refer', 'web')
+  oneLink.searchParams.set('requestParams', parsed.requestParams)
+  oneLink.searchParams.set('trackParams', parsed.trackParams)
   const result = oneLink.toString()
   return result.length <= 8192 ? result : value
 }
 
+export function buildTikTokIosLaunchUrl(value: string) {
+  if (isTikTokOneLinkUrl(value) || isTikTokIosRedirectUrl(value)) return value
+  const parsed = parseTikTokProductDeepLink(value)
+  if (!parsed) return value
+
+  // Use TikTok's first-party Universal Link endpoint (/redirect* on www.tiktokv.com)
+  // with the signed product URL as HTTP fallback so Facebook iOS never warns on onelink.me.
+  const redirect = new URL('https://www.tiktokv.com/redirect/')
+  redirect.searchParams.set('redirect_url', parsed.deepLink.toString())
+  redirect.searchParams.set('dl', value)
+  redirect.searchParams.set('ug_source', 'Facebook')
+  redirect.searchParams.set('decode_once', '1')
+  const result = redirect.toString()
+  return result.length <= 8192 ? result : buildTikTokOneLinkUrl(value)
+}
+
 export function getTikTokIosLaunchUrl(value: string, userAgent: string) {
-  // Wrap product URLs into OneLink across all iOS browsers so Safari and in-app webviews launch TikTok directly.
+  // Wrap product URLs into TikTok's first-party Universal Link across all iOS browsers.
   return isIosUserAgent(userAgent)
-    ? buildTikTokOneLinkUrl(value)
+    ? buildTikTokIosLaunchUrl(value)
     : value
 }
 

@@ -1,4 +1,4 @@
-import { buildTikTokOneLinkUrl, isIosUserAgent, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
+import { buildTikTokIosLaunchUrl, isIosUserAgent, isTikTokIosRedirectUrl, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
 import { popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
@@ -20,9 +20,9 @@ async function resolvePopupShortLink(url: string) {
     stopAtProduct: true,
     signal: AbortSignal.timeout(4000),
   })
-    .then(productUrl => buildTikTokOneLinkUrl(productUrl))
+    .then(productUrl => buildTikTokIosLaunchUrl(productUrl))
     .then(launchUrl => {
-      if (isTikTokOneLinkUrl(launchUrl)) return launchUrl
+      if (isTikTokIosRedirectUrl(launchUrl) || isTikTokOneLinkUrl(launchUrl)) return launchUrl
       entry.expiresAt = Date.now() + 15_000
       return url
     })
@@ -48,6 +48,6 @@ export async function preparePopupSettingsForRequest(settings: PopupSettings, us
   const launchUrl = await resolvePopupShortLink(url)
   return launchUrl === url ? settings : {
     ...settings,
-    tiktok: { ...settings.tiktok, iosUrl: launchUrl, iosMode: 'onelink' },
+    tiktok: { ...settings.tiktok, iosUrl: launchUrl, iosMode: isTikTokOneLinkUrl(launchUrl) ? 'onelink' : settings.tiktok.iosMode },
   }
 }

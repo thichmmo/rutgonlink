@@ -968,14 +968,41 @@ async function main() {
 
   const helper = load('lib/popup-link.ts')
   await androidScenarios()
-  await scenario('OneLink preserves raw affiliate URL and tracking', async () => {
+  await scenario('TikTok iOS Universal Link and OneLink preserve raw affiliate URL and tracking', async () => {
+    const launch = helper.buildTikTokIosLaunchUrl(product)
+    const launchParsed = new URL(launch)
+    assert.equal(launchParsed.origin + launchParsed.pathname, 'https://www.tiktokv.com/redirect/')
+    assert.equal(launchParsed.searchParams.get('dl'), product)
+    assert.equal(launchParsed.searchParams.get('ug_source'), 'Facebook')
+    assert.equal(launchParsed.searchParams.get('decode_once'), '1')
+    const redirectDeep = new URL(launchParsed.searchParams.get('redirect_url'))
+    assert.equal(redirectDeep.searchParams.get('params_url'), product)
+    assert.equal(redirectDeep.searchParams.get('trackParams'), new URL(product).searchParams.get('trackParams'))
+    assert.deepEqual(JSON.parse(redirectDeep.searchParams.get('requestParams')), { product_id: ['1729605979383696179'] })
+    assert.equal(helper.buildTikTokIosLaunchUrl(launch), launch)
+    assert.equal(helper.isTikTokIosRedirectUrl(launch), true)
+    assert.equal(helper.isTikTokIosRedirectUrl('https://tiktokv.com.evil.test/redirect/'), false)
+    assert.equal(helper.isTikTokIosRedirectUrl('http://www.tiktokv.com/redirect/'), false)
+
     const url = helper.buildTikTokOneLinkUrl(product)
-    const deep = new URL(new URL(url).searchParams.get('af_dp'))
+    const oneLinkParsed = new URL(url)
+    assert.equal(oneLinkParsed.pathname, '/BAuo/', 'Trailing slash is required to match /BAuo/* in snssdk1180.onelink.me AASA')
+    assert.equal(oneLinkParsed.searchParams.get('af_force_deeplink'), 'true')
+    const deep = new URL(oneLinkParsed.searchParams.get('af_dp'))
     assert.equal(deep.searchParams.get('params_url'), product)
     assert.equal(deep.searchParams.get('trackParams'), new URL(product).searchParams.get('trackParams'))
     assert.deepEqual(JSON.parse(deep.searchParams.get('requestParams')), { product_id: ['1729605979383696179'] })
     assert.equal(helper.buildTikTokOneLinkUrl(url), url)
-    for (const value of ['https://vt.tiktok.com/short', 'https://tiktok.com.evil.test/view/product/1729605979383696179', 'javascript:alert(1)', 'https://www.tiktok.com/@creator/video/1729605979383696179', 'https://user:pass@www.tiktok.com/view/product/1729605979383696179']) assert.equal(helper.buildTikTokOneLinkUrl(value), value)
+    assert.equal(helper.buildTikTokIosLaunchUrl(url), url)
+    for (const value of ['https://vt.tiktok.com/short', 'https://tiktok.com.evil.test/view/product/1729605979383696179', 'javascript:alert(1)', 'https://www.tiktok.com/@creator/video/1729605979383696179', 'https://user:pass@www.tiktok.com/view/product/1729605979383696179']) {
+      assert.equal(helper.buildTikTokOneLinkUrl(value), value)
+      assert.equal(helper.buildTikTokIosLaunchUrl(value), value)
+    }
+    // Very long signed product URLs (> ~3.7k chars) exceed 8192 when duplicated in redirect_url + dl and fall back cleanly to /BAuo/ OneLink.
+    const mediumLongProduct = product + '&extra=' + 'x'.repeat(3800)
+    const mediumLaunch = helper.buildTikTokIosLaunchUrl(mediumLongProduct)
+    assert.equal(new URL(mediumLaunch).origin + new URL(mediumLaunch).pathname, 'https://snssdk1180.onelink.me/BAuo/')
+    assert.ok(mediumLaunch.length <= 8192)
     assert.equal(helper.isTikTokOneLinkUrl('https://onelink.me.evil.test/'), false)
     assert.equal(helper.isTikTokOneLinkUrl('http://snssdk1180.onelink.me/BAuo'), false)
     assert.equal(helper.isTikTokShortUrl(shortTikTok), true)
@@ -1005,7 +1032,7 @@ async function main() {
         assert.equal(requests.length, 1)
         assert.equal(requests[0].options.redirect, 'manual')
         assert.ok(requests[0].options.signal instanceof AbortSignal)
-        assert.equal(result.tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+        assert.equal(result.tiktok.iosUrl, helper.buildTikTokIosLaunchUrl(product))
         assert.equal(result.tiktok.androidUrl, settings.tiktok.androidUrl)
         assert.equal(JSON.stringify(settings), saved, 'Request preparation must not rewrite saved settings')
       })
@@ -1015,7 +1042,7 @@ async function main() {
     await withFetch(() => { throw new Error('Unexpected request') }, async requests => {
       const settings = defaultPopupSettings(shopee, shortTikTok)
       assert.equal(await prepareSettings(settings, desktop), settings)
-      for (const url of [product, helper.buildTikTokOneLinkUrl(product), 'https://example.com/offer']) {
+      for (const url of [product, helper.buildTikTokIosLaunchUrl(product), helper.buildTikTokOneLinkUrl(product), 'https://example.com/offer']) {
         settings.tiktok.iosUrl = url
         for (const iosUa of [facebookIos, safariIos]) assert.equal(await prepareSettings(settings, iosUa), settings)
       }
@@ -1060,7 +1087,7 @@ async function main() {
         assert.equal(await prepareSettings(settings, facebookIos), settings)
         assert.equal(requests.length, 1)
         now += 15_001
-        assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+        assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokIosLaunchUrl(product))
         assert.equal(requests.length, 2)
       })
     } finally { Date.now = realNow }
@@ -1086,7 +1113,7 @@ async function main() {
     const settings = defaultPopupSettings(shopee, 'https://vm.tiktok.com/fixture/')
     let hop = 0
     await withFetch(() => new Response(null, { status: 302, headers: { location: hop++ ? product : '/next/' } }), async requests => {
-      assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokOneLinkUrl(product))
+      assert.equal((await prepareSettings(settings, facebookIos)).tiktok.iosUrl, helper.buildTikTokIosLaunchUrl(product))
       assert.equal(requests[1].url, 'https://vm.tiktok.com/next/')
     })
     settings.tiktok.iosUrl = shortTikTok + '?server=video'
@@ -1217,7 +1244,7 @@ async function main() {
         await h.click()
         assert.equal(h.calls[1].mode, 'anchor-same-tab')
         assert.equal(h.calls[1].nativeAction, true)
-        assert.equal(new URL(h.calls[1].url).hostname, 'snssdk1180.onelink.me')
+        assert.equal(new URL(h.calls[1].url).hostname, 'www.tiktokv.com')
         assert.equal(h.state(), 'ARTICLE')
         await h.away(); await h.back()
         assert.equal(h.state(), 'ARTICLE')
@@ -1245,7 +1272,7 @@ async function main() {
       })
       await using(kind, { active: false }, async h => assert.equal(h.state(), 'ARTICLE'))
     })
-    await scenario(kind + ' short TikTok resolves to OneLink before clicking on Safari and Facebook iOS', async () => {
+    await scenario(kind + ' short TikTok resolves to TikTok Universal Link before clicking on Safari and Facebook iOS', async () => {
       for (const [idx, iosUa] of [facebookIos, safariIos].entries()) {
         await withFetch(() => new Response(null, { status: 301, headers: { location: product } }), async requests => {
           await using(kind, { ua: iosUa, iosUrl: shortTikTok + '?runtime=' + kind + '-' + idx }, async h => {
@@ -1256,7 +1283,7 @@ async function main() {
             assert.equal(h.calls[0].nativeAction, true)
             assert.equal(h.calls[1].mode, 'anchor-same-tab')
             assert.equal(h.calls[1].nativeAction, true)
-            assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
+            assert.equal(h.calls[1].url, helper.buildTikTokIosLaunchUrl(product))
             assert.equal(h.state(), 'ARTICLE')
           })
         })
@@ -1328,7 +1355,7 @@ async function main() {
         assert.equal(h.state(), 'TikTok')
         await h.click()
         assert.equal(h.calls[0].mode, 'anchor-same-tab')
-        assert.equal(new URL(h.calls[0].url).hostname, 'snssdk1180.onelink.me')
+        assert.equal(new URL(h.calls[0].url).hostname, 'www.tiktokv.com')
         assert.equal(h.state(), 'ARTICLE')
         await h.away(); await h.back()
         assert.equal(h.state(), 'ARTICLE')
@@ -1561,7 +1588,7 @@ async function main() {
           assert.equal(h.calls[1].mode, 'anchor-same-tab')
           assert.equal(h.calls[1].target, '_self')
           assert.equal(h.calls[1].nativeAction, true)
-          assert.equal(h.calls[1].url, helper.buildTikTokOneLinkUrl(product))
+          assert.equal(h.calls[1].url, helper.buildTikTokIosLaunchUrl(product))
           assert.equal(h.state(), 'ARTICLE')
         })
       }
