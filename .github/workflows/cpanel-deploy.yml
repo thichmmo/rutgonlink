@@ -83,7 +83,9 @@ jobs:
           node scripts/test-content-media.cjs
 
       - name: Fixed content composer regressions
-        run: node scripts/test-fixed-content-composer.cjs
+        run: |
+          node scripts/test-fixed-content-composer.cjs
+          node scripts/test-dashboard-nav-visibility.cjs
 
       - name: Post type separation regressions
         run: |
@@ -112,7 +114,9 @@ jobs:
           'app/posts/[slug]' 'app/[shortCode]/route.ts'
           lib/content-management.ts lib/popup-settings.ts lib/popup-settings-server.ts lib/popup-link.ts lib/popup-browser-gate.ts lib/public-post-guard.ts
           lib/popup-affiliate-url.ts lib/tiktok-link.ts scripts/test-popup-affiliate.cjs
-          app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx
+          app/dashboard/DashboardNavLinks.tsx app/dashboard/MobileNav.tsx app/dashboard/CreateLinkButton.tsx app/dashboard/layout.tsx
+          lib/dashboard-nav-visibility.ts lib/dashboard-nav-visibility-server.ts app/api/settings/navigation
+          app/dashboard/settings/MenuVisibilitySection.tsx app/dashboard/settings/page.tsx scripts/test-dashboard-nav-visibility.cjs
           scripts/package-cpanel.mjs scripts/test-popup-runtime.cjs scripts/test-content-upload-path.cjs
           next.config.ts scripts/test-content-upload.cjs scripts/test-rich-editor-upload.cjs
           scripts/test-popup-timing.cjs scripts/test-popup-timing-api.cjs

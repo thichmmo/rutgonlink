@@ -9,6 +9,9 @@ import MobileNav from './MobileNav';
 import DashboardNavLinks from './DashboardNavLinks';
 import CreateLinkButton from './CreateLinkButton';
 import DashboardClock from './DashboardClock';
+import {prisma} from '@/lib/prisma';
+import {defaultDashboardNavVisibility} from '@/lib/dashboard-nav-visibility';
+import {getUserDashboardNavVisibility} from '@/lib/dashboard-nav-visibility-server';
 
 export const metadata: Metadata = {
     robots: {index: false, follow: false},
@@ -29,6 +32,13 @@ export default async function DashboardLayout({children}: {children: React.React
     const userEmail = sessionUser.email || '';
     const userInitial = (sessionUser.name?.[0] || sessionUser.email?.[0] || 'U').toUpperCase();
     const isAdmin = Boolean(sessionUser.isAdmin);
+    const dbUser = await prisma.user.findUnique({
+        where: {email: userEmail},
+        select: {id: true},
+    });
+    const navVisibility = dbUser
+        ? await getUserDashboardNavVisibility(dbUser.id)
+        : defaultDashboardNavVisibility();
 
     return (
         <div className="h-dvh bg-gray-50 flex overflow-hidden">
@@ -51,7 +61,7 @@ export default async function DashboardLayout({children}: {children: React.React
                     </Link>
                 </div>
 
-                <DashboardNavLinks isAdmin={isAdmin} />
+                <DashboardNavLinks isAdmin={isAdmin} initialVisibility={navVisibility} />
 
                 {/* User */}
                 <div className="p-4 border-t border-gray-100">
@@ -81,6 +91,7 @@ export default async function DashboardLayout({children}: {children: React.React
                             userEmail={userEmail}
                             userInitial={userInitial}
                             isAdmin={isAdmin}
+                            initialVisibility={navVisibility}
                         />
                         {/* Mobile: show logo in header */}
                         <Link
@@ -103,7 +114,7 @@ export default async function DashboardLayout({children}: {children: React.React
                     </div>
                     <DashboardClock />
                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                        <CreateLinkButton />
+                        <CreateLinkButton initialVisible={navVisibility.links} />
                     </div>
                 </header>
 

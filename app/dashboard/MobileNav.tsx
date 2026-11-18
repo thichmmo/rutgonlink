@@ -5,13 +5,34 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
-  Menu, X, Link2, LayoutDashboard, BarChart2, NotebookPen, Settings, LogOut, Share2, ShieldCheck, Music2, PanelsTopLeft, FileText,
+  Menu,
+  X,
+  Link2,
+  FolderOpen,
+  LayoutDashboard,
+  BarChart2,
+  NotebookPen,
+  Settings,
+  LogOut,
+  Share2,
+  ShieldCheck,
+  Music2,
+  PanelsTopLeft,
+  FileText,
 } from 'lucide-react'
 import { signOut } from 'next-auth/react'
+import {
+  DASHBOARD_NAV_EVENT,
+  defaultDashboardNavVisibility,
+  isDashboardHrefVisible,
+  normalizeDashboardNavVisibility,
+  type DashboardNavVisibility,
+} from '@/lib/dashboard-nav-visibility'
 
 const navItems = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
   { href: '/dashboard/links', label: 'Links', icon: Link2 },
+  { href: '/dashboard/folders', label: 'Folders', icon: FolderOpen },
   { href: '/dashboard/analytics', label: 'Thống kê', icon: BarChart2 },
   { href: '/dashboard/notes', label: 'Ghi chú', icon: NotebookPen },
   { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
@@ -21,19 +42,59 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 
+const bottomBarMiddleCandidates = [
+  { href: '/dashboard/links', label: 'Links', icon: Link2 },
+  { href: '/dashboard/analytics', label: 'Thống kê', icon: BarChart2 },
+  { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
+  { href: '/dashboard/posts', label: 'Bài viết', icon: FileText },
+  { href: '/dashboard/popups', label: 'Popups', icon: PanelsTopLeft },
+]
+
 interface Props {
   userName: string
   userEmail: string
   userInitial: string
   isAdmin: boolean
+  initialVisibility?: DashboardNavVisibility
 }
 
-export default function MobileNav({ userName, userEmail, userInitial, isAdmin }: Props) {
+export default function MobileNav({
+  userName,
+  userEmail,
+  userInitial,
+  isAdmin,
+  initialVisibility,
+}: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const [override, setOverride] = useState<DashboardNavVisibility | null>(null)
+  const visibility = override ?? initialVisibility ?? defaultDashboardNavVisibility()
+
+  useEffect(() => {
+    const onUpdate = (event: Event) => {
+      const custom = event as CustomEvent<DashboardNavVisibility>
+      setOverride(normalizeDashboardNavVisibility(custom.detail))
+    }
+    window.addEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+    return () => window.removeEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+  }, [])
+
+  const filteredItems = navItems.filter((item) => isDashboardHrefVisible(item.href, visibility))
   const visibleNavItems = isAdmin
-    ? [...navItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
-    : navItems
+    ? [...filteredItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
+    : filteredItems
+
+  // Keep mobile bottom tabs compact (max 3 middle tabs) while filling slots with Posts/Popups if Links/Stats/FB Debug are hidden.
+  const middleBottomTabs = bottomBarMiddleCandidates
+    .filter((item) => isDashboardHrefVisible(item.href, visibility))
+    .slice(0, 3)
+
+  const bottomTabs = [
+    { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+    ...middleBottomTabs,
+    { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
+  ]
 
   // Close drawer on route change
   useEffect(() => {
@@ -129,14 +190,7 @@ export default function MobileNav({ userName, userEmail, userInitial, isAdmin }:
 
       {/* Bottom Tab Bar — mobile only */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 flex lg:hidden pb-[env(safe-area-inset-bottom)]">
-        {[
-          { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
-          { href: '/dashboard/links', label: 'Links', icon: Link2 },
-          { href: '/dashboard/analytics', label: 'Thống kê', icon: BarChart2 },
-          { href: '/dashboard/fb-debug', label: 'FB Debug', icon: Share2 },
-          { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
-          ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
-        ].map((item) => (
+        {bottomTabs.map((item) => (
           <Link
             key={item.href}
             href={item.href}

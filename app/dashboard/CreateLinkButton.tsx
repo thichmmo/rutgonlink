@@ -1,9 +1,14 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { apiFetch } from '@/lib/fetch'
 import { Link2 } from 'lucide-react'
 import CreateLinkModal from '@/components/CreateLinkModal'
+import {
+  DASHBOARD_NAV_EVENT,
+  normalizeDashboardNavVisibility,
+  type DashboardNavVisibility,
+} from '@/lib/dashboard-nav-visibility'
 
 interface Domain {
   id: string
@@ -22,13 +27,24 @@ interface Workspace {
   name: string
 }
 
-export default function CreateLinkButton() {
+export default function CreateLinkButton({ initialVisible = true }: { initialVisible?: boolean }) {
+  const [visibleOverride, setVisibleOverride] = useState<boolean | null>(null)
+  const visible = visibleOverride ?? initialVisible
   const [showModal, setShowModal] = useState(false)
   const [domains, setDomains] = useState<Domain[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [canDeviceRedirect, setCanDeviceRedirect] = useState(true)
   const [canGeoRedirect, setCanGeoRedirect] = useState(true)
+
+  useEffect(() => {
+    const onUpdate = (event: Event) => {
+      const custom = event as CustomEvent<DashboardNavVisibility>
+      setVisibleOverride(normalizeDashboardNavVisibility(custom.detail).links)
+    }
+    window.addEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+    return () => window.removeEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+  }, [])
 
   const openModal = useCallback(async () => {
     const [domainsRes, categoriesRes, workspacesRes, usageRes] = await Promise.all([
@@ -52,6 +68,8 @@ export default function CreateLinkButton() {
     setCanGeoRedirect(usageData?.limits?.canGeoRedirect ?? true)
     setShowModal(true)
   }, [])
+
+  if (!visible) return null
 
   return (
     <>

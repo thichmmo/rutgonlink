@@ -8,6 +8,9 @@ import ChangeNameForm from './ChangeNameForm';
 import ApiKeySection from './ApiKeySection';
 import FolderRotationSection from './FolderRotationSection';
 import TelegramSettingsSection from './TelegramSettingsSection';
+import MenuVisibilitySection from './MenuVisibilitySection';
+import {defaultDashboardNavVisibility} from '@/lib/dashboard-nav-visibility';
+import {getUserDashboardNavVisibility} from '@/lib/dashboard-nav-visibility-server';
 
 export default async function SettingsPage() {
     const session = await getServerSession(authOptions);
@@ -15,11 +18,14 @@ export default async function SettingsPage() {
 
     const user = await prisma.user.findUnique({
         where: {email: session.user.email},
-        select: {apiKey: true, password: true},
+        select: {id: true, apiKey: true, password: true},
     });
 
     const apiKey: string | null = user?.apiKey ?? null;
     const hasPassword = !!user?.password;
+    const navVisibility = user
+        ? await getUserDashboardNavVisibility(user.id)
+        : defaultDashboardNavVisibility();
 
     return (
         <div className="space-y-6 min-w-0">
@@ -47,6 +53,8 @@ export default async function SettingsPage() {
                     </div>
                 </div>
             </div>
+
+            <MenuVisibilitySection initialVisibility={navVisibility} />
 
             <ApiKeySection initialApiKey={apiKey} />
 

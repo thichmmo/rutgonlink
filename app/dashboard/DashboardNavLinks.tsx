@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -15,6 +16,13 @@ import {
   PanelsTopLeft,
   FileText,
 } from 'lucide-react'
+import {
+  DASHBOARD_NAV_EVENT,
+  defaultDashboardNavVisibility,
+  isDashboardHrefVisible,
+  normalizeDashboardNavVisibility,
+  type DashboardNavVisibility,
+} from '@/lib/dashboard-nav-visibility'
 
 const navItems = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
@@ -29,11 +37,30 @@ const navItems = [
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings },
 ]
 
-export default function DashboardNavLinks({ isAdmin }: { isAdmin: boolean }) {
+export default function DashboardNavLinks({
+  isAdmin,
+  initialVisibility,
+}: {
+  isAdmin: boolean
+  initialVisibility?: DashboardNavVisibility
+}) {
   const pathname = usePathname()
+  const [override, setOverride] = useState<DashboardNavVisibility | null>(null)
+  const visibility = override ?? initialVisibility ?? defaultDashboardNavVisibility()
+
+  useEffect(() => {
+    const onUpdate = (event: Event) => {
+      const custom = event as CustomEvent<DashboardNavVisibility>
+      setOverride(normalizeDashboardNavVisibility(custom.detail))
+    }
+    window.addEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+    return () => window.removeEventListener(DASHBOARD_NAV_EVENT, onUpdate)
+  }, [])
+
+  const filteredItems = navItems.filter((item) => isDashboardHrefVisible(item.href, visibility))
   const visibleItems = isAdmin
-    ? [...navItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
-    : navItems
+    ? [...filteredItems, { href: '/admin', label: 'Admin', icon: ShieldCheck }]
+    : filteredItems
 
   return (
     <nav className="flex-1 p-4 space-y-1">
