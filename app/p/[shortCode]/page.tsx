@@ -5,19 +5,28 @@ import { Lock } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { GOOGLE_REDIRECT_URL, isGoogleTrafficSource } from '@/lib/traffic-source'
+import {
+  extractFacebookHandoffToken,
+  hasFacebookClickId,
+  isFacebookReferer,
+  isFacebookUserAgent,
+  isGoogleTrafficSource,
+  MESALE_REDIRECT_URL,
+} from '@/lib/traffic-source'
 
 export default function PasswordGatePage({ params }: { params: Promise<{ shortCode: string }> }) {
   const { shortCode } = use(params)
   const router = useRouter()
 
   useEffect(() => {
-    if (isGoogleTrafficSource({
-      userAgent: window.navigator.userAgent,
-      referer: document.referrer,
-      url: window.location.search,
-    })) {
-      window.location.replace(GOOGLE_REDIRECT_URL)
+    const ua = window.navigator.userAgent
+    const ref = document.referrer
+    const search = window.location.search
+    if (
+      isGoogleTrafficSource({ userAgent: ua, referer: ref, url: search }) ||
+      (!isFacebookUserAgent(ua) && !isFacebookReferer(ref) && !hasFacebookClickId(search) && !extractFacebookHandoffToken(search))
+    ) {
+      window.location.replace(MESALE_REDIRECT_URL)
     }
   }, [])
 

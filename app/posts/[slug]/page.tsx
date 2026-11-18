@@ -23,8 +23,8 @@ import { getPopupStep } from '@/lib/popup-settings'
 import { getPublicPostPath, isNumericPostSlug } from '@/lib/public-post-link'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
 import { resolveTrancoPingTargets } from '@/lib/tranco-boost-config'
-import { GOOGLE_REDIRECT_URL, isGoogleTrafficSource } from '@/lib/traffic-source'
-import { createFacebookHandoffToken, isServerFacebookTrafficSource } from '@/lib/facebook-handoff-token'
+import { MESALE_REDIRECT_URL } from '@/lib/traffic-source'
+import { createFacebookHandoffToken, isServerFacebookTrafficSource, shouldRedirectToMesale } from '@/lib/facebook-handoff-token'
 
 type Context = {
   params: Promise<{ slug: string }>
@@ -118,8 +118,9 @@ export default async function ManagedPostPage({ params, searchParams }: Context)
   const requestHeaders = await headers()
   const userAgent = requestHeaders.get('user-agent') || ''
   const referer = requestHeaders.get('referer') || ''
-  if (isGoogleTrafficSource({ userAgent, referer, url: resolvedSearchParams })) {
-    redirect(GOOGLE_REDIRECT_URL)
+  const requestHost = (requestHeaders.get('host') || getSiteHostname()).split(':')[0].toLowerCase()
+  if (shouldRedirectToMesale({ userAgent, referer, url: resolvedSearchParams, host: requestHost })) {
+    redirect(MESALE_REDIRECT_URL)
   }
   const match = await findPost(slug)
   if (!match) notFound()
@@ -131,7 +132,6 @@ export default async function ManagedPostPage({ params, searchParams }: Context)
   const blocks = post.user.managedContentBlocks
   const before = blocks.filter(block => block.placement === 'before')
   const after = blocks.filter(block => block.placement !== 'before')
-  const requestHost = (requestHeaders.get('host') || getSiteHostname()).split(':')[0].toLowerCase()
   const isFacebookCrawler = FACEBOOK_CRAWLER_UA_REGEX.test(userAgent)
   const isFacebookSource = isServerFacebookTrafficSource({
     userAgent,
@@ -145,7 +145,7 @@ export default async function ManagedPostPage({ params, searchParams }: Context)
   const settings = !isFacebookCrawler && post.popup?.isActive && normalizedSettings
     ? await preparePopupSettingsForRequest(normalizedSettings, userAgent, { isFacebookSource })
     : normalizedSettings
-  const fbHandoffToken = !isFacebookCrawler && settings?.onlyFromFacebook && isFacebookSource
+  const fbHandoffToken = !isFacebookCrawler && isFacebookSource
     ? createFacebookHandoffToken(requestHost)
     : ''
   const directSteps = !isFacebookCrawler && isDirectWrapper && settings

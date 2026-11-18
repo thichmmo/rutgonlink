@@ -60,7 +60,7 @@ function ChromeBrowserGate({ fbHandoffToken = '' }: { fbHandoffToken?: string })
 
 export default function PostPopup(props: PostPopupProps) {
   // Mount no sequence hooks in Facebook: opening Chrome is a browser handoff only.
-  const effectiveToken = props.popup.settings.onlyFromFacebook ? (props.fbHandoffToken || '') : ''
+  const effectiveToken = props.fbHandoffToken || ''
   if (props.popup.isActive && shouldGatePopupToChrome(props.popup.settings, props.userAgent, { isFacebookSource: props.isFacebookSource })) {
     return <ChromeBrowserGate fbHandoffToken={effectiveToken} />
   }

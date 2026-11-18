@@ -99,7 +99,7 @@ function load(file) {
         : { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) },
     }
     if (id === 'next-auth' || id === '@/lib/auth-options') return {}
-    if (id === 'next/headers') return { headers: async () => new Headers({ host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0' }) }
+    if (id === 'next/headers') return { headers: async () => new Headers(state.requestHeaders || { host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0', referer: 'https://lm.facebook.com/' }) }
     if (id === 'next/navigation') return {
       notFound: () => { throw new Error('Fixture not found') },
       redirect: url => { throw Object.assign(new Error('Fixture redirect'), { redirectUrl: url }) },
@@ -143,8 +143,8 @@ function reset() {
   Object.assign(state, { actor: { id: 'owner', isAdmin: false }, adminContext: null, rows: new Map(), appSettings: new Map(), audits: [], calls: [], nextId: 0, nextCode: 50000, codes: [], failCreate: 0, alwaysCollide: false, createError: null, transactions: 0, defaultsRead: 0, popupOwner: true })
 }
 async function create(patch = {}) { return body(await api.POST(request({ ...legacy, ...patch }))) }
-async function visit(code, host = 'honghotngay228.site') {
-  const request = new NextRequest(`https://${host}/p7/${code}`, { headers: { host, 'user-agent': 'Mozilla/5.0' } })
+async function visit(code, host = 'honghotngay228.site', extraHeaders = {}) {
+  const request = new NextRequest(`https://${host}/p7/${code}`, { headers: { host, 'user-agent': 'Mozilla/5.0', referer: 'https://lm.facebook.com/', ...extraHeaders } })
   return numericRoute.GET(request, { params: Promise.resolve({ code }) })
 }
 
@@ -278,8 +278,20 @@ scenario('primary/custom domains, legacy numeric alias and React metadata remain
   assert.equal(unknownHttpRes.status, 404)
   assert.equal(unknownHttpRes.headers.get('location'), null)
   assert.equal((await visit('50001', 'rutgonlink.site')).status, 404)
-  const req = new NextRequest(`https://rutgonlink.site/${primary.slug}`, { headers: { host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0' } })
+  const req = new NextRequest(`https://rutgonlink.site/${primary.slug}`, { headers: { host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0', referer: 'https://lm.facebook.com/' } })
   assert.equal((await slugRoute.GET(req, { params: Promise.resolve({ shortCode: primary.slug }) })).status, 200)
+  // Non-Facebook visits (PC Chrome, mobile Safari/Zalo, direct links) across primary, shared, and custom domains redirect 302 -> mesale.vn
+  for (const [host, code] of [['rutgonlink.site', '50000'], ['honghotngay228.site', '50000'], ['custom.example.test', '50001']]) {
+    const directRes = await visit(code, host, { referer: '' })
+    assert.equal(directRes.status, 302)
+    assert.equal(directRes.headers.get('location'), 'https://mesale.vn/')
+  }
+  state.requestHeaders = { host: 'rutgonlink.site', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140' }
+  await assert.rejects(
+    () => reactPage.default({ params: Promise.resolve({ slug: primary.slug }) }),
+    error => error.redirectUrl === 'https://mesale.vn',
+  )
+  state.requestHeaders = null
   const metadata = await reactPage.generateMetadata({ params: Promise.resolve({ slug: primary.slug }) })
   assert.equal(metadata.alternates.canonical, primary.publicUrl)
   assert.equal(custom.slug, 'p7-50001')

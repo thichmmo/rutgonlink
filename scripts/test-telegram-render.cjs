@@ -29,7 +29,7 @@ function load(file) {
   } }).outputText
   const localRequire = id => {
     if (id === '@/lib/prisma') return { prisma: { managedPost: { findFirst: async () => currentPost } } }
-    if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': currentUserAgent, host: 'fixture.example' }) }
+    if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': currentUserAgent, host: 'fixture.example', referer: 'https://lm.facebook.com/' }) }
     if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') }, redirect: url => { throw new Error('Fixture redirect: ' + url) } }
     if (id === '@/lib/post-fallback-config') return { resolveSystemPostFallback: async () => null }
     if (id === 'next/link') return ({ children, ...props }) => React.createElement('a', props, children)

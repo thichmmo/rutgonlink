@@ -1,5 +1,9 @@
-export const GOOGLE_REDIRECT_URL = 'https://mesale.vn'
+export const MESALE_REDIRECT_URL = 'https://mesale.vn'
+export const GOOGLE_REDIRECT_URL = MESALE_REDIRECT_URL
 export const FACEBOOK_HANDOFF_PARAM = '_fbh'
+
+// Match Facebook/Meta external link-preview crawlers so Open Graph thumbnails & titles stay intact.
+export const FACEBOOK_CRAWLER_UA_PATTERN = /facebookexternalhit|facebookcatalog|Facebot|meta-externalagent|meta-externalfetcher|meta-webindexer/i
 
 // Match Facebook & Messenger In-App WebViews across iOS and Android (excluding external Meta link crawlers).
 const FACEBOOK_IN_APP_UA_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid|fblite|orca-android|messenger/i
@@ -46,6 +50,11 @@ function readParam(source: SearchParamsInput, key: string): string {
     return ''
   }
   return ''
+}
+
+export function isFacebookCrawlerUserAgent(userAgent?: string | null): boolean {
+  if (!userAgent) return false
+  return FACEBOOK_CRAWLER_UA_PATTERN.test(userAgent)
 }
 
 export function isFacebookUserAgent(userAgent?: string | null): boolean {

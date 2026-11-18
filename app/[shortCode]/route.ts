@@ -21,8 +21,8 @@ import { normalizeTelegramSettings } from '@/lib/telegram-settings'
 import { renderTelegramHeader, renderTelegramFooter, TELEGRAM_POST_CSS } from '@/lib/telegram-render'
 import { installPublicPostGuard, PUBLIC_POST_GUARD_CSS, PUBLIC_POST_NOSCRIPT_HTML } from '@/lib/public-post-guard'
 import { resolveSystemPostFallback } from '@/lib/post-fallback-config'
-import { GOOGLE_REDIRECT_URL, isFacebookUserAgent, isGoogleTrafficSource } from '@/lib/traffic-source'
-import { createFacebookHandoffToken, isServerFacebookTrafficSource } from '@/lib/facebook-handoff-token'
+import { isFacebookUserAgent, MESALE_REDIRECT_URL } from '@/lib/traffic-source'
+import { createFacebookHandoffToken, isServerFacebookTrafficSource, shouldRedirectToMesale } from '@/lib/facebook-handoff-token'
 import {
   buildTrancoHeadHintsHtml,
   buildTrancoIdleBeaconScript,
@@ -354,9 +354,9 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     : null
   // Share URL selection with the React alias; serialize data rather than duplicating regexes inside a script string.
   const popupSteps = !isFacebookCrawler && popupSettings ? [getPopupStep(popupSettings, 0, userAgent), getPopupStep(popupSettings, 1, userAgent)] : []
-  const fbHandoffToken = popupSettings?.onlyFromFacebook
-    ? (trafficContext?.fbHandoffToken ?? (isFacebookSource ? createFacebookHandoffToken(hostname) : ''))
-    : ''
+  const fbHandoffToken = trafficContext?.fbHandoffToken !== undefined
+    ? trafficContext.fbHandoffToken
+    : (popupSettings?.onlyFromFacebook && isFacebookSource ? createFacebookHandoffToken(hostname) : '')
   const popupJson = popup ? escapeInlineJson(popup) : 'null'
   const popupCookieKey = post.popup ? `post_popup_${post.id}_${post.popup.updatedAt.getTime()}`.replace(/[^a-zA-Z0-9_-]/g, '_') : ''
   const safeTitle = escapeHtml(post.title).replace(/\r?\n/g, ' ')
@@ -700,18 +700,27 @@ export async function GET(
     return NextResponse.next()
   }
 
-  const requestUserAgent = req.headers.get('user-agent') || ''
-  const requestReferer = req.headers.get('referer') || ''
-  // Redirect all Google Search, Google App, and Google crawler visits on any short link or post route to mesale.vn.
-  if (isGoogleTrafficSource({ userAgent: requestUserAgent, referer: requestReferer, url: req.nextUrl })) {
-    return NextResponse.redirect(GOOGLE_REDIRECT_URL, {
-      status: 302,
-      headers: { 'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate' },
-    })
-  }
-
   const host = req.headers.get('host') || ''
   const hostname = host.split(':')[0]
+  const normalizedHost = hostname.toLowerCase().replace(/\.$/, '')
+  const requestUserAgent = req.headers.get('user-agent') || ''
+  const requestReferer = req.headers.get('referer') || ''
+  const redirectNonFacebook = shouldRedirectToMesale({
+    userAgent: requestUserAgent,
+    referer: requestReferer,
+    url: req.nextUrl,
+    host: normalizedHost,
+  })
+  const mesaleRedirect = () => NextResponse.redirect(MESALE_REDIRECT_URL, {
+    status: 302,
+    headers: { 'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate' },
+  })
+
+  // Redirect all non-Facebook traffic (PC browsers, non-FB mobile browsers, Google) to mesale.vn immediately
+  // on known primary and shared domains while keeping Facebook crawlers on 200 OG metadata.
+  if (redirectNonFacebook && (isMainAppHostname(normalizedHost) || SHARED_DOMAINS.includes(normalizedHost))) {
+    return mesaleRedirect()
+  }
 
   // Managed posts take precedence over short links on the selected public domain.
   const managedMatch = await findManagedPostForHost(shortCode, hostname)
@@ -720,6 +729,7 @@ export async function GET(
     // unverified Hosts; once findManagedPostForHost confirms a verified domain, upgrade cleanly.
     const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
     if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
+    if (redirectNonFacebook) return mesaleRedirect()
 
     if (managedMatch.kind === 'redirect') {
       return NextResponse.redirect(managedMatch.redirectUrl, {
@@ -728,7 +738,6 @@ export async function GET(
       })
     }
 
-    const normalizedHost = hostname.toLowerCase()
     const isFacebookSource = isServerFacebookTrafficSource({
       userAgent: requestUserAgent,
       referer: requestReferer,
@@ -766,6 +775,7 @@ export async function GET(
     const upgradeUrl = getEdgeHttpsUpgradeUrl(req, hostname)
     if (upgradeUrl) return NextResponse.redirect(upgradeUrl, 301)
   }
+  if (redirectNonFacebook) return mesaleRedirect()
 
   if (link.expiresAt && link.expiresAt < new Date()) {
     return NextResponse.redirect(`${mainOrigin}/?error=expired`)

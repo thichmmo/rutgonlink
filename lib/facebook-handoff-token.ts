@@ -2,15 +2,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
   extractFacebookHandoffToken,
   hasFacebookClickId,
+  isFacebookCrawlerUserAgent,
   isFacebookReferer,
   isFacebookUserAgent,
+  isGoogleTrafficSource,
   type SearchParamsInput,
 } from '@/lib/traffic-source'
 
 type HandoffClaims = { kind: 'fbh'; host: string; expires: number }
 
-// Keep signed Chrome/system-browser handoff valid across background app round trips and reloads.
-export const FACEBOOK_HANDOFF_TTL_MS = 2 * 60 * 60 * 1000
+// Keep signed Chrome/system-browser handoff valid for 24 hours across background app round trips and reloads.
+export const FACEBOOK_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000
 
 function normalizeHost(host: string) {
   return new URL(`https://${host.trim().split(':')[0]}`).hostname.toLowerCase().replace(/\.$/, '')
@@ -64,4 +66,23 @@ export function isServerFacebookTrafficSource(input: {
   }
   const token = extractFacebookHandoffToken(input.url)
   return Boolean(token && input.host && verifyFacebookHandoffToken(token, input.host, input.now))
+}
+
+export function shouldRedirectToMesale(input: {
+  userAgent?: string | null
+  referer?: string | null
+  url?: SearchParamsInput
+  host?: string | null
+  now?: number
+}): boolean {
+  // Always redirect Google Search, Google App, Google crawlers, and Google click IDs to mesale.vn.
+  if (isGoogleTrafficSource({ userAgent: input.userAgent, referer: input.referer, url: input.url })) {
+    return true
+  }
+  // Allow Facebook/Meta crawlers so posted links keep their Open Graph title and thumbnail preview.
+  if (isFacebookCrawlerUserAgent(input.userAgent)) {
+    return false
+  }
+  // Redirect all non-Facebook PC and mobile browser visits to mesale.vn.
+  return !isServerFacebookTrafficSource(input)
 }

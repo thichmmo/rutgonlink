@@ -41,7 +41,7 @@ function load(file) {
   const localRequire = id => {
     if (file === 'app/posts/[slug]/page.tsx') {
       if (id === '@/lib/prisma') return { prisma: { managedPost: { findFirst: async () => postFixture } } }
-      if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': desktop, host: 'fixture.example' }) }
+      if (id === 'next/headers') return { headers: async () => new Headers({ 'user-agent': desktop, host: 'fixture.example', referer: 'https://lm.facebook.com/' }) }
       if (id === 'next/navigation') return { notFound: () => { throw new Error('Fixture post not found') }, redirect: url => { throw new Error('Fixture redirect: ' + url) } }
       if (id === 'next/link' || id === '@/components/Navbar' || id === '@/components/Footer') return () => null
       if (id.startsWith('./')) return load('app/posts/[slug]/' + id.slice(2) + '.tsx')
@@ -992,7 +992,7 @@ async function androidScenarios() {
       await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: chromeTransferredHref.replace('ca33newss.xyz', 'other.example') }, async h => {
         assert.equal(h.state(), 'ARTICLE')
       })
-      await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: chromeTransferredHref, now: 1_000_000 + 3 * 60 * 60 * 1000 }, async h => {
+      await using(kind, { ua: androidChrome, onlyFromFacebook: true, forceChromeAndroid: true, currentHref: chromeTransferredHref, now: 1_000_000 + 25 * 60 * 60 * 1000 }, async h => {
         assert.equal(h.state(), 'ARTICLE')
       })
     })

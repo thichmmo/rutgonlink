@@ -4,6 +4,7 @@ import { isGarbageRequestLog } from "@/lib/request-log-filter";
 import { buildSiteUrl, getSiteUrl, isMainAppHostname } from "@/lib/site-config";
 import { SHARED_DOMAINS } from "@/lib/shared-domains";
 import { GOOGLE_REDIRECT_URL, isGoogleTrafficSource } from "@/lib/traffic-source";
+import { shouldRedirectToMesale } from "@/lib/facebook-handoff-token";
 
 function parseUA(ua: string) {
   const l = ua.toLowerCase();
@@ -132,10 +133,11 @@ export async function proxy(req: NextRequest) {
       (pathname.startsWith("/p/") ||
         pathname.startsWith("/share/") ||
         pathname.startsWith("/bio/")) &&
-      isGoogleTrafficSource({
+      shouldRedirectToMesale({
         userAgent: req.headers.get("user-agent"),
         referer: req.headers.get("referer"),
         url: req.nextUrl,
+        host: hostname,
       })
     ) {
       return NextResponse.redirect(GOOGLE_REDIRECT_URL, {
