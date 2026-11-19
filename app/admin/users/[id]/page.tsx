@@ -162,7 +162,7 @@ export default function AdminUserDetailPage() {
             <div>
               <h2 className="font-semibold text-white">Quyền tối ưu ảnh đề xuất Facebook (Ghép ảnh)</h2>
               <p className="mt-1 text-xs text-gray-500">
-                Cho phép tài khoản này dùng chế độ nâng chuẩn HD 2048px / khung 4:5, xóa metadata và làm mới mã ảnh tự nhiên trên tab Ghép ảnh.
+                Xử lý ngầm 100% ở backend (nâng chuẩn HD 2048px, xóa metadata và làm mới mã ảnh tự nhiên trên tab Ghép ảnh). Giao diện người dùng sẽ không hiển thị tùy chọn hay nhãn này.
               </p>
             </div>
             {user.adminRole === 'owner' || user.adminRole === 'ops' ? (

@@ -22,4 +22,4 @@ Verify: `node scripts/test-admin-popup-clicks-ui.cjs` (list and detail, actual T
 with in-memory GET fixtures), scoped ESLint and TypeScript.
 No production data or admin mutation is used by this regression.
 
-When `currentAdmin.permissions` includes `users.write`, a dedicated **Quyền Ghép ảnh Chuẩn đề xuất Facebook** card lets Admin grant or revoke `fbViralCollageEnabled` (`action: 'set-fb-viral-collage'`) with automatic audit logging. Verify with `node scripts/test-reaction-collage.cjs`.
+When `currentAdmin.permissions` includes `users.write`, a dedicated **Quyền tối ưu ảnh đề xuất Facebook (Ghép ảnh)** card lets Admin grant or revoke `fbViralCollageEnabled` (`action: 'set-fb-viral-collage'`) with automatic audit logging. The optimization executes silently in the backend and is hidden from user interfaces. Verify with `node scripts/test-reaction-collage.cjs`.

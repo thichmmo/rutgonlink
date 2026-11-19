@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getManagedContentActor } from '@/lib/content-management'
 import {
-  COLLAGE_ASPECT_PRESETS,
   MAX_COLLAGE_INPUT_BYTES,
   REACTION_CORNERS,
-  type CollageAspectPreset,
   type ReactionCorner,
 } from '@/lib/reaction-collage-config'
 import {
@@ -31,14 +29,13 @@ export async function GET() {
   const actor = await getManagedContentActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [settings, canUseFbViral, items] = await Promise.all([
+  const [settings, items] = await Promise.all([
     getUserCollageSettings(actor.id),
-    canActorUseFbViralCollage(actor),
     getUserCollageHistory(actor.id),
   ])
 
   return NextResponse.json(
-    { settings, canUseFbViral, items },
+    { settings, items },
     { headers: { 'Cache-Control': 'private, no-store' } },
   )
 }
@@ -65,30 +62,21 @@ export async function POST(req: NextRequest) {
       ? (rawCorner as ReactionCorner)
       : undefined
 
-    const rawAspect = String(formData.get('aspectPreset') || '').trim()
-    const aspectPreset = (COLLAGE_ASPECT_PRESETS as readonly string[]).includes(rawAspect)
-      ? (rawAspect as CollageAspectPreset)
-      : undefined
-
     const rawScale = formData.get('scalePercent')
     const scalePercent = rawScale !== null && rawScale !== '' && Number.isFinite(Number(rawScale))
       ? Number(rawScale)
       : undefined
 
-    const rawFbViral = formData.get('fbViralEnabled')
-    const fbViralEnabled = rawFbViral === 'true' ? true : rawFbViral === 'false' ? false : undefined
-
+    // Admin permission is checked silently server-side and never exposed to user UI/JSON.
     const canUseFbViral = await canActorUseFbViralCollage(actor)
     const bytes = Buffer.from(await file.arrayBuffer())
     const { item, items } = await createUserCollageAndPruneHistory(actor.id, bytes, canUseFbViral, {
       corner,
       scalePercent,
-      aspectPreset,
-      fbViralEnabled,
     })
 
     return NextResponse.json(
-      { item, items, canUseFbViral },
+      { item, items },
       { status: 201, headers: { 'Cache-Control': 'private, no-store' } },
     )
   } catch (error) {

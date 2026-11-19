@@ -11,26 +11,22 @@ import {
   Download,
   ImagePlus,
   Settings,
-  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react'
 import {
-  COLLAGE_ASPECT_LABELS,
-  COLLAGE_ASPECT_PRESETS,
   MAX_COLLAGE_HISTORY,
   REACTION_CORNER_LABELS,
   REACTION_CORNERS,
-  type CollageAspectPreset,
   type CollageHistoryItem,
   type ReactionCorner,
   type UserCollageSettings,
 } from '@/lib/reaction-collage-config'
 
 const SCALE_OPTIONS = [
-  { value: 22, label: 'Nhỏ' },
-  { value: 28, label: 'Vừa' },
-  { value: 34, label: 'Lớn' },
+  { value: 30, label: 'Nhỏ' },
+  { value: 38, label: 'Vừa' },
+  { value: 46, label: 'Lớn' },
 ]
 
 function formatBytes(bytes: number): string {
@@ -84,15 +80,12 @@ async function fetchUrlAsPngBlob(imageUrl: string): Promise<Blob> {
 
 export default function ReactionCollageStudio({
   initialSettings,
-  initialCanUseFbViral,
   initialItems,
 }: {
   initialSettings: UserCollageSettings
-  initialCanUseFbViral: boolean
   initialItems: CollageHistoryItem[]
 }) {
   const [settings, setSettings] = useState<UserCollageSettings>(initialSettings)
-  const [canUseFbViral, setCanUseFbViral] = useState<boolean>(initialCanUseFbViral)
   const [items, setItems] = useState<CollageHistoryItem[]>(initialItems)
   const [activeId, setActiveId] = useState<string | null>(initialItems[0]?.id ?? null)
   const [processing, setProcessing] = useState(false)
@@ -118,8 +111,6 @@ export default function ReactionCollageStudio({
       overrides?: {
         corner?: ReactionCorner
         scalePercent?: number
-        aspectPreset?: CollageAspectPreset
-        fbViralEnabled?: boolean
       },
     ) => {
       if (!file.type.startsWith('image/')) {
@@ -132,16 +123,12 @@ export default function ReactionCollageStudio({
 
       const nextCorner = overrides?.corner ?? settings.corner
       const nextScale = overrides?.scalePercent ?? settings.scalePercent
-      const nextAspect = overrides?.aspectPreset ?? settings.aspectPreset
-      const nextViral = overrides?.fbViralEnabled ?? settings.fbViralEnabled
 
       try {
         const form = new FormData()
         form.append('file', file)
         form.append('corner', nextCorner)
         form.append('scalePercent', String(nextScale))
-        form.append('aspectPreset', nextAspect)
-        form.append('fbViralEnabled', String(nextViral))
 
         const response = await fetch('/api/collage', { method: 'POST', body: form })
         const data = await response.json()
@@ -150,13 +137,7 @@ export default function ReactionCollageStudio({
         }
         setItems(data.items || [])
         if (data.item?.id) setActiveId(data.item.id)
-        if (typeof data.canUseFbViral === 'boolean') setCanUseFbViral(data.canUseFbViral)
-        setNotice({
-          text: data.item?.fbOptimized
-            ? 'Đã ghép khung Reaction & làm mới thông số chuẩn đề xuất Facebook!'
-            : 'Đã ghép ảnh Reaction hoàn tất!',
-          type: 'success',
-        })
+        setNotice({ text: 'Đã ghép ảnh hoàn tất!', type: 'success' })
       } catch (err) {
         setNotice({
           text: err instanceof Error ? err.message : 'Không thể xử lý ảnh lúc này',
@@ -166,7 +147,7 @@ export default function ReactionCollageStudio({
         setProcessing(false)
       }
     },
-    [settings.aspectPreset, settings.corner, settings.fbViralEnabled, settings.scalePercent],
+    [settings.corner, settings.scalePercent],
   )
 
   // Support clicking the "Dán ảnh" button directly without pressing Ctrl+V.
@@ -230,7 +211,7 @@ export default function ReactionCollageStudio({
       body: JSON.stringify(patch),
     }).catch(() => {})
 
-    // Re-compose the current session's pasted/uploaded image immediately when tweaking corner/size/preset.
+    // Re-compose the current session's pasted/uploaded image immediately when tweaking corner or size.
     if (lastSourceFileRef.current && !processing) {
       await submitCollage(lastSourceFileRef.current, next)
     }
@@ -239,7 +220,7 @@ export default function ReactionCollageStudio({
   const copyImage = async (item: CollageHistoryItem) => {
     try {
       if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
-        throw new Error('Trình duyệt không hỗ trợ sao chép ảnh trực tiếp; hãy nhấn "Tải về".')
+        throw new Error('Trình duyệt không hỗ trợ sao chép ảnh trực tiếp; hãy nhấn "Tải ảnh về".')
       }
       // Pass a Promise<Blob> directly inside ClipboardItem so Safari/iOS preserves user activation.
       const clipboardItem = new window.ClipboardItem({
@@ -288,7 +269,7 @@ export default function ReactionCollageStudio({
   }
 
   return (
-    <div className="space-y-6 min-w-0">
+    <div className="space-y-5 min-w-0">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -297,7 +278,7 @@ export default function ReactionCollageStudio({
             Ghép ảnh Reaction
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Nhấn <b>Dán ảnh</b> hoặc <b>Upload ảnh</b> để tự động chèn khung cam Reaction cố định vào góc ảnh.
+            Nhấn <b>Dán ảnh</b> hoặc <b>Upload ảnh</b> để tự động ghép ảnh người tách nền sát góc ảnh.
           </p>
         </div>
 
@@ -308,7 +289,7 @@ export default function ReactionCollageStudio({
           <img
             src={settings.templateImageUrl}
             alt="Mẫu Reaction"
-            className="h-6 w-5 rounded-md object-cover object-top ring-1 ring-gray-200"
+            className="h-6 w-6 rounded-md bg-slate-100 object-contain object-bottom ring-1 ring-gray-200"
           />
           <span>{settings.enabled ? 'Đang bật ghép tự động' : 'Đang tắt ghép mẫu'}</span>
           <Settings className="w-3.5 h-3.5 text-gray-400" />
@@ -317,7 +298,7 @@ export default function ReactionCollageStudio({
 
       {!settings.enabled && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          <span>Chế độ tự động đè ảnh mẫu đang tắt trong Cài đặt.</span>
+          <span>Chế độ tự động ghép ảnh mẫu đang tắt trong Cài đặt.</span>
           <button
             type="button"
             onClick={() => void updateQuickSetting({ enabled: true })}
@@ -341,7 +322,7 @@ export default function ReactionCollageStudio({
           const dropped = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'))
           if (dropped && !processing) void submitCollage(dropped)
         }}
-        className={`rounded-3xl border-2 transition-colors bg-white p-5 sm:p-7 shadow-xs ${
+        className={`rounded-3xl border-2 transition-colors bg-white p-5 sm:p-6 shadow-xs ${
           dragging ? 'border-sky-500 bg-sky-50/40' : 'border-dashed border-gray-200'
         }`}
       >
@@ -388,7 +369,7 @@ export default function ReactionCollageStudio({
         {/* Quick Corner & Size Controls */}
         <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-medium text-gray-500 mr-1">Góc cam:</span>
+            <span className="text-xs font-medium text-gray-500 mr-1">Góc ghép:</span>
             {REACTION_CORNERS.map((corner) => (
               <button
                 key={corner}
@@ -407,7 +388,7 @@ export default function ReactionCollageStudio({
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="text-xs font-medium text-gray-500 mr-1">Cỡ khung:</span>
+            <span className="text-xs font-medium text-gray-500 mr-1">Cỡ người:</span>
             {SCALE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -424,41 +405,6 @@ export default function ReactionCollageStudio({
               </button>
             ))}
           </div>
-
-          {canUseFbViral && (
-            <div data-fb-viral-controls="" className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                disabled={processing}
-                onClick={() => void updateQuickSetting({ fbViralEnabled: !settings.fbViralEnabled })}
-                className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  settings.fbViralEnabled
-                    ? 'border-amber-300 bg-amber-50 text-amber-900'
-                    : 'border-gray-200 bg-gray-50 text-gray-500'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                Chuẩn đề xuất FB: {settings.fbViralEnabled ? 'Bật' : 'Tắt'}
-              </button>
-
-              {settings.fbViralEnabled &&
-                COLLAGE_ASPECT_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    disabled={processing}
-                    onClick={() => void updateQuickSetting({ aspectPreset: preset })}
-                    className={`rounded-xl px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                      settings.aspectPreset === preset
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                    }`}
-                  >
-                    {COLLAGE_ASPECT_LABELS[preset]}
-                  </button>
-                ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -477,67 +423,67 @@ export default function ReactionCollageStudio({
         </div>
       )}
 
-      {/* Active Result Card */}
+      {/* Compact Active Result Card */}
       {activeItem && (
-        <div className="rounded-3xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-bold text-gray-900">Ảnh vừa ghép</span>
-              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
-                {activeItem.width} × {activeItem.height}px · {formatBytes(activeItem.sizeBytes)}
-              </span>
-              {canUseFbViral && activeItem.fbOptimized && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
-                  <Sparkles className="w-3 h-3 text-amber-600" />
-                  Chuẩn đề xuất FB
-                </span>
-              )}
+        <div
+          data-collage-active-card=""
+          className="max-w-lg rounded-2xl border border-gray-200 bg-white p-3.5 sm:p-4 shadow-xs"
+        >
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-4">
+            <div className="h-36 w-36 sm:h-40 sm:w-40 shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-1.5 flex items-center justify-center overflow-hidden">
+              <img
+                data-collage-active-preview=""
+                src={activeItem.url}
+                alt="Kết quả ghép ảnh"
+                className="max-h-full max-w-full rounded-lg object-contain"
+              />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                data-collage-copy-btn=""
-                onClick={() => void copyImage(activeItem)}
-                className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black transition cursor-pointer"
-              >
-                {copiedId === activeItem.id ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    Đã copy ảnh
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    Copy ảnh
-                  </>
-                )}
-              </button>
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <div>
+                <div className="text-sm font-bold text-gray-900">Ảnh vừa ghép</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {activeItem.width} × {activeItem.height}px · {formatBytes(activeItem.sizeBytes)}
+                </div>
+              </div>
 
-              <a
-                data-collage-download-btn=""
-                href={activeItem.url}
-                download={activeItem.downloadName}
-                className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700 transition no-underline"
-              >
-                <Download className="w-4 h-4" />
-                Tải ảnh về
-              </a>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-collage-copy-btn=""
+                  onClick={() => void copyImage(activeItem)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3.5 py-2 text-xs font-bold text-white hover:bg-black transition cursor-pointer"
+                >
+                  {copiedId === activeItem.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      Đã copy ảnh
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy ảnh
+                    </>
+                  )}
+                </button>
+
+                <a
+                  data-collage-download-btn=""
+                  href={activeItem.url}
+                  download={activeItem.downloadName}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-sky-700 transition no-underline"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Tải ảnh về
+                </a>
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center justify-center rounded-2xl bg-slate-950/95 p-3 sm:p-5 overflow-hidden">
-            <img
-              src={activeItem.url}
-              alt="Kết quả ghép ảnh Reaction"
-              className="max-h-[620px] w-auto max-w-full rounded-xl object-contain shadow-lg"
-            />
           </div>
         </div>
       )}
 
       {/* Recent 10 History */}
-      <div className="rounded-3xl border border-gray-200 bg-white p-4 sm:p-6 shadow-xs">
+      <div className="rounded-3xl border border-gray-200 bg-white p-4 sm:p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div>
             <h2 className="text-base font-bold text-gray-900">
@@ -564,7 +510,7 @@ export default function ReactionCollageStudio({
             Chưa có ảnh nào được ghép. Hãy nhấn <b>Dán ảnh</b> hoặc <b>Upload ảnh</b> ở phía trên để bắt đầu!
           </p>
         ) : (
-          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-5">
             {items.map((item) => {
               const selected = activeItem?.id === item.id
               return (
@@ -577,18 +523,13 @@ export default function ReactionCollageStudio({
                   <button
                     type="button"
                     onClick={() => setActiveId(item.id)}
-                    className="relative aspect-[4/5] w-full bg-slate-900 overflow-hidden cursor-pointer"
+                    className="h-28 w-full bg-gray-50 p-1 overflow-hidden cursor-pointer"
                   >
                     <img
                       src={item.url}
                       alt={item.downloadName}
                       className="h-full w-full object-contain"
                     />
-                    {canUseFbViral && item.fbOptimized && (
-                      <span className="absolute left-2 top-2 rounded-md bg-amber-500/95 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                        FB HD
-                      </span>
-                    )}
                   </button>
 
                   <div className="flex items-center justify-between gap-1 bg-white p-2 border-t border-gray-100">

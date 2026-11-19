@@ -48,7 +48,6 @@ function transpileTsModule(relFile, customResolve) {
   return mod.exports
 }
 
-// In-memory Prisma mock backing appSetting + user + audit logs.
 const appSettingsMap = new Map()
 const usersMap = new Map()
 const auditLogs = []
@@ -76,7 +75,7 @@ const prismaMock = {
 }
 
 let activeActor = null
-let activeAdminAccess = {
+const activeAdminAccess = {
   ok: true,
   admin: { id: 'admin-owner', email: 'owner@fixture.example', role: 'owner', permissions: ['users.read', 'users.write'] },
 }
@@ -143,31 +142,47 @@ function loadBackend(relFile) {
 }
 
 const collageConfig = loadBackend('lib/reaction-collage-config.ts')
+const collageServer = loadBackend('lib/reaction-collage-server.ts')
 const collageApi = loadBackend('app/api/collage/route.ts')
 const collageSettingsApi = loadBackend('app/api/settings/collage/route.ts')
 const adminUserDetailApi = loadBackend('app/api/admin/users/[id]/route.ts')
 const ReactionCollageStudio = loadBackend('app/dashboard/collage/ReactionCollageStudio.tsx').default
 
-async function makeSampleSourceImage({ width = 1080, height = 1920, withExif = true } = {}) {
+async function makeSampleSourceImage({
+  width = 1080,
+  height = 1920,
+  withExif = true,
+  background = { r: 34, g: 130, b: 210 },
+} = {}) {
   let img = sharp({
-    create: {
-      width,
-      height,
-      channels: 3,
-      background: { r: 34, g: 130, b: 210 },
-    },
+    create: { width, height, channels: 3, background },
   })
   if (withExif) {
     img = img.withMetadata({
       exif: {
-        IFD0: {
-          Software: 'Android Screenshot Tool',
-          Make: 'TestScreenshotDevice',
-        },
+        IFD0: { Software: 'Android Screenshot Tool', Make: 'TestScreenshotDevice' },
       },
     })
   }
   return img.jpeg({ quality: 90 }).toBuffer()
+}
+
+async function makeTransparentCutoutPng(width = 300, height = 360) {
+  // Draw an opaque triangle/person silhouette centered-bottom with fully transparent top corners.
+  const buf = Buffer.alloc(width * height * 4, 0)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const inUpperBg = y < Math.round(height * 0.45) && (x < 60 || x > width - 60)
+      if (!inUpperBg && y > 10) {
+        const idx = (y * width + x) * 4
+        buf[idx] = 220
+        buf[idx + 1] = 80
+        buf[idx + 2] = 120
+        buf[idx + 3] = 255
+      }
+    }
+  }
+  return sharp(buf, { raw: { width, height, channels: 4 } }).png().toBuffer()
 }
 
 function makeMultipartRequest(urlStr, fields) {
@@ -194,13 +209,20 @@ function scenario(name, fn) {
   scenarios.push({ name, fn })
 }
 
-scenario('default pre-cropped reaction template exists and has clean 3:4 portrait dimensions', async () => {
-  const defaultPath = path.join(root, 'public', 'defaults', 'reaction-default.jpg')
-  assert.equal(fs.existsSync(defaultPath), true, 'public/defaults/reaction-default.jpg must exist')
-  const meta = await sharp(defaultPath).metadata()
-  assert.equal(meta.format, 'jpeg')
-  assert.equal(meta.width, 600)
-  assert.equal(meta.height, 800)
+scenario('default transparent cutout PNG exists with RGBA alpha, transparent upper corners, and flush opaque bottom pixels', async () => {
+  const defaultPath = path.join(root, 'public', 'defaults', 'reaction-default.png')
+  assert.equal(fs.existsSync(defaultPath), true, 'public/defaults/reaction-default.png must exist')
+  const { data, info } = await sharp(defaultPath).raw().toBuffer({ resolveWithObject: true })
+  assert.equal(info.channels, 4, 'default template must carry RGBA alpha channel')
+  assert.ok(info.width >= 400 && info.height >= 400)
+
+  // Top-left & top-right corners must be transparent (no rectangular box background).
+  assert.equal(data[3], 0, 'top-left pixel must be transparent')
+  assert.equal(data[(info.width - 1) * 4 + 3], 0, 'top-right pixel must be transparent')
+
+  // Bottom center torso pixel must be opaque and flush with the bottom edge.
+  const bottomMidIdx = ((info.height - 1) * info.width + Math.floor(info.width / 2)) * 4
+  assert.ok(data[bottomMidIdx + 3] > 200, 'bottom torso pixel must sit flush along the bottom edge')
 })
 
 scenario('unauthenticated requests to collage & settings endpoints return 401', async () => {
@@ -213,7 +235,40 @@ scenario('unauthenticated requests to collage & settings endpoints return 401', 
   assert.equal((await collageSettingsApi.POST(makeMultipartRequest('https://fixture.example/api/settings/collage', {}))).status, 401)
 })
 
-scenario('standard user without Admin FB viral permission gets standard <=1280px collage even if requesting fbViralEnabled=true', async () => {
+scenario('flush bottom corner cutout compositing keeps transparent upper pixels white without rectangular frame/border', async () => {
+  const whiteCanvas = await makeSampleSourceImage({
+    width: 1000,
+    height: 1000,
+    withExif: false,
+    background: { r: 255, g: 255, b: 255 },
+  })
+  const baseSettings = collageConfig.defaultUserCollageSettings()
+
+  const leftOut = await collageServer.composeReactionCollageBuffer(whiteCanvas, baseSettings, false, {
+    corner: 'bottom-left',
+    scalePercent: 38,
+  })
+  const { data: leftPixels, info: leftInfo } = await sharp(leftOut.buffer).raw().toBuffer({ resolveWithObject: true })
+  // Bottom-left interior (x=150, y=H-4) must be colored by the flush bottom woman cutout (not pure white).
+  const blIdx = ((leftInfo.height - 4) * leftInfo.width + 150) * 3
+  assert.ok(leftPixels[blIdx] < 240 || leftPixels[blIdx + 1] < 240, 'bottom-left cutout touches bottom flush area')
+  // Bottom-right corner (x=W-10, y=H-4) remains near-white when placed on bottom-left.
+  const brClearIdx = ((leftInfo.height - 4) * leftInfo.width + (leftInfo.width - 10)) * 3
+  assert.ok(leftPixels[brClearIdx] >= 250 && leftPixels[brClearIdx + 1] >= 250 && leftPixels[brClearIdx + 2] >= 250)
+  // Upper-left of overlay bounding box (x=4, top-of-cutout area) stays white due to transparent cutout.
+  const topLeftBoxIdx = ((leftInfo.height - 380) * leftInfo.width + 4) * 3
+  assert.ok(leftPixels[topLeftBoxIdx] >= 250 && leftPixels[topLeftBoxIdx + 1] >= 250 && leftPixels[topLeftBoxIdx + 2] >= 250)
+
+  const rightOut = await collageServer.composeReactionCollageBuffer(whiteCanvas, baseSettings, false, {
+    corner: 'bottom-right',
+    scalePercent: 38,
+  })
+  const { data: rightPixels, info: rightInfo } = await sharp(rightOut.buffer).raw().toBuffer({ resolveWithObject: true })
+  const brIdx = ((rightInfo.height - 4) * rightInfo.width + (rightInfo.width - 150)) * 3
+  assert.ok(rightPixels[brIdx] < 240 || rightPixels[brIdx + 1] < 240, 'bottom-right cutout touches bottom-right corner')
+})
+
+scenario('FB optimization stays 100% silent in user JSON APIs while Admin toggle activates ~2048px, stripped EXIF, distinct hashes, and IMG_ filenames', async () => {
   activeActor = { id: 'user-standard', email: 'member@fixture.example', isAdmin: false }
   usersMap.set('user-standard', {
     id: 'user-standard',
@@ -231,88 +286,70 @@ scenario('standard user without Admin FB viral permission gets standard <=1280px
     sessionsRevokedAt: null,
   })
 
-  const settingsRes = await collageSettingsApi.GET()
-  assert.equal(settingsRes.status, 200)
-  const settingsData = await settingsRes.json()
-  assert.equal(settingsData.canUseFbViral, false)
-  assert.equal(settingsData.settings.enabled, true)
-  assert.equal(settingsData.settings.templateImageUrl, '/defaults/reaction-default.jpg')
+  // Confirm user GET settings/collage responses do NOT leak FB permission flags.
+  const settingsData = await (await collageSettingsApi.GET()).json()
+  assert.equal('canUseFbViral' in settingsData, false)
+  assert.equal('fbViralEnabled' in settingsData.settings, false)
+  assert.equal(settingsData.settings.templateImageUrl, '/defaults/reaction-default.png')
 
-  const srcBytes = await makeSampleSourceImage({ width: 1440, height: 2560 })
-  const file = new File([srcBytes], 'screenshot.jpg', { type: 'image/jpeg' })
-  const postRes = await collageApi.POST(
+  const srcBytes = await makeSampleSourceImage({ width: 1440, height: 2560, withExif: true })
+  const stdRes = await collageApi.POST(
     makeMultipartRequest('https://fixture.example/api/collage', {
-      file,
-      corner: 'bottom-right',
-      aspectPreset: 'fb-4x5',
-      fbViralEnabled: 'true',
+      file: new File([srcBytes], 'screenshot.jpg', { type: 'image/jpeg' }),
+      corner: 'bottom-left',
     }),
   )
-  assert.equal(postRes.status, 201)
-  const postData = await postRes.json()
-  assert.equal(postData.canUseFbViral, false)
-  assert.equal(postData.item.fbOptimized, false)
-  assert.match(postData.item.downloadName, /^ghep-anh-\d{8}_\d{6}\.jpg$/)
-  assert.ok(Math.max(postData.item.width, postData.item.height) <= 1280)
-})
+  assert.equal(stdRes.status, 201)
+  const stdData = await stdRes.json()
+  assert.equal('canUseFbViral' in stdData, false)
+  assert.equal('fbOptimized' in stdData.item, false)
+  assert.match(stdData.item.downloadName, /^ghep-anh-\d{8}_\d{6}\.jpg$/)
+  assert.ok(Math.max(stdData.item.width, stdData.item.height) <= 1280)
 
-scenario('Admin grants FB viral permission -> user receives 4:5 HD (~2048px), stripped EXIF, unique hashes, and IMG_ filename; revoking removes access immediately', async () => {
+  // Admin grants FB optimization in backend.
   const patchGrant = await adminUserDetailApi.PATCH(
     makeJsonRequest('https://fixture.example/api/admin/users/user-standard', {
       action: 'set-fb-viral-collage',
       fbViralCollageEnabled: true,
-      reason: 'Cấp quyền tối ưu ảnh đề xuất FB',
+      reason: 'Bật tối ưu ảnh đề xuất FB ở backend',
     }),
     { params: Promise.resolve({ id: 'user-standard' }) },
   )
   assert.equal(patchGrant.status, 200)
   assert.equal(auditLogs.at(-1)?.action, 'user.set-fb-viral-collage')
 
-  activeActor = { id: 'user-standard', email: 'member@fixture.example', isAdmin: false }
-  const srcBytes = await makeSampleSourceImage({ width: 1080, height: 1920, withExif: true })
-  const srcExifMeta = await sharp(srcBytes).metadata()
-  assert.ok(srcExifMeta.exif, 'fixture source image starts with EXIF screenshot metadata')
-
-  const file1 = new File([srcBytes], 'paste-1.jpg', { type: 'image/jpeg' })
+  // User posts two identical screenshots -> backend silently outputs ~2048px HD preserving 9:16 ratio, stripped EXIF, IMG_ filename, and unique hashes.
   const res1 = await collageApi.POST(
     makeMultipartRequest('https://fixture.example/api/collage', {
-      file: file1,
+      file: new File([srcBytes], 'paste-1.jpg', { type: 'image/jpeg' }),
       corner: 'bottom-right',
-      aspectPreset: 'fb-4x5',
-      fbViralEnabled: 'true',
     }),
   )
   const data1 = await res1.json()
-  assert.equal(data1.canUseFbViral, true)
-  assert.equal(data1.item.fbOptimized, true)
-  assert.equal(data1.item.aspectPreset, 'fb-4x5')
+  assert.equal('canUseFbViral' in data1, false)
+  assert.equal('fbOptimized' in data1.item, false)
   assert.match(data1.item.downloadName, /^IMG_\d{8}_\d{6}_\d{3}\.jpg$/)
   assert.ok(data1.item.height >= 2042 && data1.item.height <= 2048)
-  assert.equal(data1.item.width, Math.round((data1.item.height * 4) / 5))
+  assert.equal(data1.item.width, Math.round((1440 * data1.item.height) / 2560))
 
-  const outPath1 = path.join(tempUploadDir, data1.item.filename)
-  const outBuf1 = fs.readFileSync(outPath1)
+  const outBuf1 = fs.readFileSync(path.join(tempUploadDir, data1.item.filename))
   const outMeta1 = await sharp(outBuf1).metadata()
-  assert.equal(outMeta1.exif, undefined, 'old screenshot EXIF metadata must be stripped')
+  assert.equal(outMeta1.exif, undefined, 'EXIF metadata must be stripped')
 
-  // Compose the exact same input image again and verify fresh cryptographic hash.
-  const file2 = new File([srcBytes], 'paste-2.jpg', { type: 'image/jpeg' })
   const res2 = await collageApi.POST(
     makeMultipartRequest('https://fixture.example/api/collage', {
-      file: file2,
+      file: new File([srcBytes], 'paste-2.jpg', { type: 'image/jpeg' }),
       corner: 'bottom-right',
-      aspectPreset: 'fb-4x5',
-      fbViralEnabled: 'true',
     }),
   )
   const data2 = await res2.json()
   const outBuf2 = fs.readFileSync(path.join(tempUploadDir, data2.item.filename))
   const sha1 = crypto.createHash('sha256').update(outBuf1).digest('hex')
   const sha2 = crypto.createHash('sha256').update(outBuf2).digest('hex')
-  assert.notEqual(sha1, sha2, 'two FB viral exports of the same source image must have distinct hashes')
+  assert.notEqual(sha1, sha2, 'two FB-optimized exports must have distinct cryptographic hashes')
 
-  // Revoke permission via Admin API and confirm immediate enforcement.
-  const patchRevoke = await adminUserDetailApi.PATCH(
+  // Admin revokes -> immediately drops back to <=1280px standard output.
+  await adminUserDetailApi.PATCH(
     makeJsonRequest('https://fixture.example/api/admin/users/user-standard', {
       action: 'set-fb-viral-collage',
       fbViralCollageEnabled: false,
@@ -320,10 +357,15 @@ scenario('Admin grants FB viral permission -> user receives 4:5 HD (~2048px), st
     }),
     { params: Promise.resolve({ id: 'user-standard' }) },
   )
-  assert.equal(patchRevoke.status, 200)
-
-  const checkAfterRevoke = await (await collageSettingsApi.GET()).json()
-  assert.equal(checkAfterRevoke.canUseFbViral, false)
+  const resAfterRevoke = await collageApi.POST(
+    makeMultipartRequest('https://fixture.example/api/collage', {
+      file: new File([srcBytes], 'paste-3.jpg', { type: 'image/jpeg' }),
+      corner: 'bottom-left',
+    }),
+  )
+  const dataAfterRevoke = await resAfterRevoke.json()
+  assert.ok(Math.max(dataAfterRevoke.item.width, dataAfterRevoke.item.height) <= 1280)
+  assert.match(dataAfterRevoke.item.downloadName, /^ghep-anh-\d{8}_\d{6}\.jpg$/)
 })
 
 scenario('history strictly keeps 10 most recent images per user and unlinks evicted files on disk', async () => {
@@ -332,12 +374,10 @@ scenario('history strictly keeps 10 most recent images per user and unlinks evic
   const createdFilenames = []
 
   for (let i = 0; i < 12; i++) {
-    const file = new File([srcBytes], `batch-${i}.jpg`, { type: 'image/jpeg' })
     const res = await collageApi.POST(
       makeMultipartRequest('https://fixture.example/api/collage', {
-        file,
-        corner: 'top-left',
-        aspectPreset: 'auto-hd',
+        file: new File([srcBytes], `batch-${i}.jpg`, { type: 'image/jpeg' }),
+        corner: 'bottom-left',
       }),
     )
     assert.equal(res.status, 201)
@@ -348,71 +388,80 @@ scenario('history strictly keeps 10 most recent images per user and unlinks evic
 
   const historyData = await (await collageApi.GET()).json()
   assert.equal(historyData.items.length, 10)
-
-  // First 2 oldest files must be physically deleted from disk; newest 10 must remain.
-  assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[0])), false, '1st oldest image unlinked')
-  assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[1])), false, '2nd oldest image unlinked')
+  assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[0])), false, '1st oldest unlinked')
+  assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[1])), false, '2nd oldest unlinked')
   for (let i = 2; i < 12; i++) {
-    assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[i])), true, `recent image ${i} retained`)
+    assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[i])), true, `recent ${i} retained`)
   }
 
-  // Delete single item and verify disk file removal.
   const targetToDelete = historyData.items[0]
   const delSingleRes = await collageApi.DELETE({
     nextUrl: new URL(`https://fixture.example/api/collage?id=${encodeURIComponent(targetToDelete.id)}`),
   })
-  const delSingleData = await delSingleRes.json()
-  assert.equal(delSingleData.items.length, 9)
+  assert.equal((await delSingleRes.json()).items.length, 9)
   assert.equal(fs.existsSync(path.join(tempUploadDir, targetToDelete.filename)), false)
 
-  // Clear all remaining items and verify all remaining files are removed from disk.
   const clearAllRes = await collageApi.DELETE({
     nextUrl: new URL('https://fixture.example/api/collage?all=1'),
   })
-  const clearAllData = await clearAllRes.json()
-  assert.equal(clearAllData.items.length, 0)
+  assert.equal((await clearAllRes.json()).items.length, 0)
   for (let i = 2; i < 12; i++) {
     assert.equal(fs.existsSync(path.join(tempUploadDir, createdFilenames[i])), false)
   }
 })
 
-scenario('uploading custom reaction template replaces & deletes previous custom template file on disk, and reset cleans up too', async () => {
+scenario('custom transparent cutout template saves trimmed RGBA PNG, deletes replaced/reset files, and auto-migrates legacy settings', async () => {
+  // Legacy settings row from before cutout migration should upgrade automatically.
+  appSettingsMap.set(
+    collageServer.userCollageSettingsKey('user-tpl'),
+    JSON.stringify({
+      enabled: true,
+      templateImageUrl: '/defaults/reaction-default.jpg',
+      corner: 'top-right',
+      scalePercent: 28,
+    }),
+  )
   activeActor = { id: 'user-tpl', email: 'tpl@fixture.example', isAdmin: false }
-  const portraitBytes = await makeSampleSourceImage({ width: 720, height: 960, withExif: false })
+  const migratedGet = await (await collageSettingsApi.GET()).json()
+  assert.equal(migratedGet.settings.templateImageUrl, '/defaults/reaction-default.png')
+  assert.equal(migratedGet.settings.corner, 'bottom-right')
+  assert.equal(migratedGet.settings.scalePercent, 38)
 
+  const cutoutBytes = await makeTransparentCutoutPng(320, 360)
   const tpl1Res = await collageSettingsApi.POST(
     makeMultipartRequest('https://fixture.example/api/settings/collage', {
-      file: new File([portraitBytes], 'tpl1.jpg', { type: 'image/jpeg' }),
+      file: new File([cutoutBytes], 'tpl1.png', { type: 'image/png' }),
     }),
   )
   assert.equal(tpl1Res.status, 201)
   const tpl1Data = await tpl1Res.json()
   const tpl1Filename = tpl1Data.settings.templateImageUrl.split('/').pop()
-  assert.match(tpl1Filename, /^collage-tpl-.*\.jpg$/)
-  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl1Filename)), true)
+  assert.match(tpl1Filename, /^collage-tpl-.*\.png$/)
+  const tpl1Path = path.join(tempUploadDir, tpl1Filename)
+  assert.equal(fs.existsSync(tpl1Path), true)
+  const tpl1Meta = await sharp(tpl1Path).metadata()
+  assert.equal(tpl1Meta.hasAlpha, true)
 
-  // Upload second custom template -> first custom template file must be deleted.
+  // Replace with 2nd cutout -> 1st custom template deleted from disk.
   const tpl2Res = await collageSettingsApi.POST(
     makeMultipartRequest('https://fixture.example/api/settings/collage', {
-      file: new File([portraitBytes], 'tpl2.jpg', { type: 'image/jpeg' }),
+      file: new File([cutoutBytes], 'tpl2.png', { type: 'image/png' }),
     }),
   )
-  const tpl2Data = await tpl2Res.json()
-  const tpl2Filename = tpl2Data.settings.templateImageUrl.split('/').pop()
-  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl1Filename)), false, 'old custom template deleted on replace')
-  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl2Filename)), true, 'new custom template saved')
+  const tpl2Filename = (await tpl2Res.json()).settings.templateImageUrl.split('/').pop()
+  assert.equal(fs.existsSync(tpl1Path), false, 'old custom template deleted on replace')
+  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl2Filename)), true)
 
-  // Reset back to default -> second custom template file must also be deleted.
-  const resetRes = await collageSettingsApi.PUT(
+  // Reset to default -> 2nd custom template deleted from disk.
+  await collageSettingsApi.PUT(
     makeJsonRequest('https://fixture.example/api/settings/collage', {
       templateImageUrl: collageConfig.DEFAULT_REACTION_TEMPLATE_URL,
     }),
   )
-  assert.equal(resetRes.status, 200)
-  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl2Filename)), false, 'custom template deleted on reset to default')
+  assert.equal(fs.existsSync(path.join(tempUploadDir, tpl2Filename)), false, 'custom template deleted on reset')
 })
 
-scenario('ReactionCollageStudio UI: clickable "Dán ảnh" button pastes from clipboard, hides FB controls when unauthorized, and copies PNG to clipboard', async () => {
+scenario('ReactionCollageStudio UI: compact active preview, zero FB optimization UI, clickable Dán ảnh & Copy ảnh', async () => {
   const reactRoot = createRoot(document.querySelector('#root'))
   const baseSettings = collageConfig.defaultUserCollageSettings()
   const fakePngBytes = await sharp({
@@ -425,16 +474,10 @@ scenario('ReactionCollageStudio UI: clickable "Dán ảnh" button pastes from cl
     configurable: true,
     value: {
       read: async () => [
-        {
-          types: ['image/png'],
-          getType: async () => fakeClipboardBlob,
-        },
+        { types: ['image/png'], getType: async () => fakeClipboardBlob },
       ],
       write: async (items) => {
-        // Resolve the ClipboardItem promise payload to verify PNG blob generation.
-        for (const clip of items) {
-          await clip.data['image/png']
-        }
+        for (const clip of items) await clip.data['image/png']
         clipboardWritten++
       },
     },
@@ -450,13 +493,11 @@ scenario('ReactionCollageStudio UI: clickable "Dán ảnh" button pastes from cl
     id: 'item-ui-1',
     filename: 'collage-ui-1.jpg',
     url: '/uploads/content/collage-ui-1.jpg',
-    downloadName: 'IMG_20261119_010000_123.jpg',
-    width: 1638,
+    downloadName: 'IMG_20261119_090000_123.jpg',
+    width: 1152,
     height: 2048,
     sizeBytes: 184320,
-    corner: 'bottom-right',
-    aspectPreset: 'fb-4x5',
-    fbOptimized: true,
+    corner: 'bottom-left',
     createdAt: new Date().toISOString(),
   }
 
@@ -465,61 +506,46 @@ scenario('ReactionCollageStudio UI: clickable "Dán ảnh" button pastes from cl
       postedFormFiles++
       return {
         ok: true,
-        json: async () => ({ item: composedItem, items: [composedItem], canUseFbViral: false }),
+        json: async () => ({ item: composedItem, items: [composedItem] }),
       }
     }
     if (String(url).startsWith('/uploads/content/')) {
-      return {
-        ok: true,
-        blob: async () => new Blob([fakePngBytes], { type: 'image/png' }),
-      }
+      return { ok: true, blob: async () => new Blob([fakePngBytes], { type: 'image/png' }) }
     }
     return { ok: true, json: async () => ({ ok: true, settings: baseSettings }) }
   }
 
-  // 1. Mount as non-authorized user -> FB viral controls must NOT render.
   await React.act(async () => {
     reactRoot.render(
       React.createElement(ReactionCollageStudio, {
         initialSettings: baseSettings,
-        initialCanUseFbViral: false,
         initialItems: [],
       }),
     )
   })
-  assert.equal(document.querySelector('[data-fb-viral-controls]'), null, 'FB viral controls hidden for unauthorized user')
-  assert.ok(document.querySelector('[data-collage-paste-btn]'), 'Clickable Dán ảnh button rendered')
-  assert.ok(document.querySelector('[data-collage-upload-btn]'), 'Clickable Upload ảnh button rendered')
+  assert.ok(document.querySelector('[data-collage-paste-btn]'))
+  assert.ok(document.querySelector('[data-collage-upload-btn]'))
 
-  // Click "Dán ảnh" directly (no Ctrl+V) -> reads clipboard and posts to /api/collage.
   await React.act(async () => {
     document.querySelector('[data-collage-paste-btn]').click()
   })
   assert.equal(postedFormFiles, 1)
-  assert.ok(document.querySelector('[data-collage-copy-btn]'), 'Copy ảnh button appears after collage completes')
-  assert.equal(
-    document.querySelector('[data-collage-download-btn]').getAttribute('download'),
-    'IMG_20261119_010000_123.jpg',
-  )
 
-  // Click "Copy ảnh" -> writes PNG ClipboardItem.
+  const activeCard = document.querySelector('[data-collage-active-card]')
+  assert.ok(activeCard, 'Compact active card renders after compose')
+  assert.ok(activeCard.className.includes('max-w-lg'), 'Active card uses compact width')
+  const previewWrap = document.querySelector('[data-collage-active-preview]').parentElement
+  assert.ok(previewWrap.className.includes('h-36') && previewWrap.className.includes('w-36'), 'Preview thumbnail uses compact h-36 w-36 container')
+  assert.equal(document.body.innerHTML.includes('max-h-[620px]'), false, 'Giant 620px preview removed')
+  assert.equal(document.querySelector('[data-fb-viral-controls]'), null, 'No FB viral controls in user UI')
+  assert.equal(document.body.textContent.includes('Chuẩn đề xuất'), false, 'Zero FB viral wording in user UI')
+  assert.equal(document.body.textContent.includes('FB HD'), false, 'Zero FB HD badge in user UI')
+
   await React.act(async () => {
     document.querySelector('[data-collage-copy-btn]').click()
   })
   assert.equal(clipboardWritten, 1)
 
-  // 2. Mount as authorized user -> FB viral controls MUST render.
-  await React.act(async () => {
-    reactRoot.render(
-      React.createElement(ReactionCollageStudio, {
-        key: 'authorized-instance',
-        initialSettings: baseSettings,
-        initialCanUseFbViral: true,
-        initialItems: [composedItem],
-      }),
-    )
-  })
-  assert.ok(document.querySelector('[data-fb-viral-controls]'), 'FB viral controls visible for authorized user')
   await React.act(async () => {
     reactRoot.unmount()
   })

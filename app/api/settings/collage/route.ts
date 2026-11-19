@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getManagedContentActor } from '@/lib/content-management'
 import {
-  COLLAGE_ASPECT_PRESETS,
   isAllowedTemplateImageUrl,
   MAX_COLLAGE_INPUT_BYTES,
   REACTION_CORNERS,
 } from '@/lib/reaction-collage-config'
 import {
-  canActorUseFbViralCollage,
   getUserCollageSettings,
   saveUserCollageSettings,
   saveUserReactionTemplateUpload,
@@ -29,22 +27,16 @@ const updateSchema = z.object({
   enabled: z.boolean().optional(),
   templateImageUrl: z.string().trim().max(500).refine(isAllowedTemplateImageUrl, 'URL ảnh mẫu không hợp lệ').optional(),
   corner: z.enum(REACTION_CORNERS).optional(),
-  scalePercent: z.number().min(18).max(42).optional(),
-  aspectPreset: z.enum(COLLAGE_ASPECT_PRESETS).optional(),
-  fbViralEnabled: z.boolean().optional(),
+  scalePercent: z.number().min(20).max(58).optional(),
 }).strict()
 
 export async function GET() {
   const actor = await getManagedContentActor()
   if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [settings, canUseFbViral] = await Promise.all([
-    getUserCollageSettings(actor.id),
-    canActorUseFbViralCollage(actor),
-  ])
-
+  const settings = await getUserCollageSettings(actor.id)
   return NextResponse.json(
-    { settings, canUseFbViral },
+    { settings },
     { headers: { 'Cache-Control': 'private, no-store' } },
   )
 }
@@ -61,13 +53,9 @@ export async function PUT(req: NextRequest) {
     )
   }
 
-  const [settings, canUseFbViral] = await Promise.all([
-    saveUserCollageSettings(actor.id, parsed.data),
-    canActorUseFbViralCollage(actor),
-  ])
-
+  const settings = await saveUserCollageSettings(actor.id, parsed.data)
   return NextResponse.json(
-    { ok: true, settings, canUseFbViral },
+    { ok: true, settings },
     { headers: { 'Cache-Control': 'private, no-store' } },
   )
 }
@@ -90,13 +78,9 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = Buffer.from(await file.arrayBuffer())
-    const [settings, canUseFbViral] = await Promise.all([
-      saveUserReactionTemplateUpload(actor.id, bytes),
-      canActorUseFbViralCollage(actor),
-    ])
-
+    const settings = await saveUserReactionTemplateUpload(actor.id, bytes)
     return NextResponse.json(
-      { ok: true, settings, canUseFbViral },
+      { ok: true, settings },
       { status: 201, headers: { 'Cache-Control': 'private, no-store' } },
     )
   } catch (error) {

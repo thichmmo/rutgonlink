@@ -192,7 +192,7 @@ expect_origin_http 401 https://rutgonlink.site/api/settings/telegram
 expect_origin_http 401 https://rutgonlink.site/api/settings/navigation
 expect_origin_http 401 https://rutgonlink.site/api/settings/collage
 expect_origin_http 401 https://rutgonlink.site/api/collage
-expect_origin_http 200 https://rutgonlink.site/defaults/reaction-default.jpg
+expect_origin_http 200 https://rutgonlink.site/defaults/reaction-default.png
 expect_origin_http 403 https://rutgonlink.site/api/admin/post-fallback
 expect_origin_http 403 https://rutgonlink.site/api/admin/tranco
 expect_origin_http 403 https://rutgonlink.site/api/admin/domains/default-post-domain

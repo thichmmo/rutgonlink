@@ -6,15 +6,14 @@ import sharp from 'sharp'
 import { prisma } from '@/lib/prisma'
 import { CONTENT_UPLOAD_ROUTE, getContentUploadDirectory, resolveContentUploadPath } from '@/lib/content-upload'
 import {
-  COLLAGE_ASPECT_PRESETS,
   defaultUserCollageSettings,
   isAllowedTemplateImageUrl,
+  LEGACY_DEFAULT_REACTION_TEMPLATE_URL,
   MAX_COLLAGE_HISTORY,
   MAX_COLLAGE_INPUT_BYTES,
   normalizeCollageHistory,
   normalizeUserCollageSettings,
   REACTION_CORNERS,
-  type CollageAspectPreset,
   type CollageHistoryItem,
   type ReactionCorner,
   type UserCollageSettings,
@@ -115,22 +114,69 @@ export async function saveUserCollageSettings(
   return merged
 }
 
+export async function normalizeCutoutTemplatePng(inputBytes: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(inputBytes)
+    .rotate()
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+
+  const width = info.width
+  const height = info.height
+  if (width < 16 || height < 16) {
+    throw new Error('Ảnh mẫu quá nhỏ hoặc định dạng không hỗ trợ')
+  }
+
+  // Trim outer transparent margins so the segmented subject aligns flush against bottom corners.
+  let minAlpha = 255
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3]
+      if (alpha < minAlpha) minAlpha = alpha
+      if (alpha > 12) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+
+  let pipeline = sharp(inputBytes).rotate().ensureAlpha()
+  if (minAlpha < 220 && maxX >= minX && maxY >= minY) {
+    pipeline = pipeline.extract({
+      left: minX,
+      top: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    })
+  }
+
+  return pipeline
+    .resize(720, 720, {
+      fit: 'inside',
+      withoutEnlargement: true,
+      kernel: sharp.kernel.lanczos3,
+    })
+    .toColorspace('srgb')
+    .png({ compressionLevel: 9 })
+    .toBuffer()
+}
+
 export async function saveUserReactionTemplateUpload(userId: string, inputBytes: Buffer): Promise<UserCollageSettings> {
   if (!inputBytes.byteLength || inputBytes.byteLength > MAX_COLLAGE_INPUT_BYTES) {
     throw new Error('Ảnh mẫu không hợp lệ hoặc vượt quá 12MB')
   }
-  // Normalize the fixed template once to a crisp 600x800 (3:4 FaceTime portrait) JPEG.
-  const normalizedBuffer = await sharp(inputBytes)
-    .rotate()
-    .resize(600, 800, { fit: 'cover', position: 'north', kernel: sharp.kernel.lanczos3 })
-    .sharpen({ sigma: 0.6 })
-    .toColorspace('srgb')
-    .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
-    .toBuffer()
+  const normalizedBuffer = await normalizeCutoutTemplatePng(inputBytes)
 
   const directory = getContentUploadDirectory()
   await mkdir(directory, { recursive: true })
-  const filename = `collage-tpl-${randomUUID()}.jpg`
+  const filename = `collage-tpl-${randomUUID()}.png`
   await writeFile(join(directory, filename), normalizedBuffer)
   return saveUserCollageSettings(userId, {
     templateImageUrl: `${CONTENT_UPLOAD_ROUTE}/${filename}`,
@@ -150,13 +196,14 @@ export async function getUserCollageHistory(userId: string): Promise<CollageHist
 
 function resolveDefaultTemplateFilePath(): string {
   const cwd = /*turbopackIgnore: true*/ process.cwd()
-  const direct = resolve(cwd, 'public', 'defaults', 'reaction-default.jpg')
+  const direct = resolve(cwd, 'public', 'defaults', 'reaction-default.png')
   if (existsSync(direct)) return direct
-  return resolve(cwd, '..', '..', 'public', 'defaults', 'reaction-default.jpg')
+  return resolve(cwd, '..', '..', 'public', 'defaults', 'reaction-default.png')
 }
 
 async function loadTemplateImageBuffer(templateImageUrl: string): Promise<Buffer> {
   if (
+    templateImageUrl !== LEGACY_DEFAULT_REACTION_TEMPLATE_URL &&
     isAllowedTemplateImageUrl(templateImageUrl) &&
     templateImageUrl.startsWith(`${CONTENT_UPLOAD_ROUTE}/`)
   ) {
@@ -166,7 +213,7 @@ async function loadTemplateImageBuffer(templateImageUrl: string): Promise<Buffer
       try {
         return await readFile(customPath)
       } catch {
-        // Fall through to default template if custom file was manually removed.
+        // Fall through to default cutout template if custom file was manually removed.
       }
     }
   }
@@ -187,8 +234,6 @@ function buildDownloadName(fbOptimized: boolean, now = new Date()): string {
 export type ComposeCollageOptions = {
   corner?: ReactionCorner
   scalePercent?: number
-  aspectPreset?: CollageAspectPreset
-  fbViralEnabled?: boolean
   includeOverlay?: boolean
 }
 
@@ -202,26 +247,22 @@ export async function composeReactionCollageBuffer(
   width: number
   height: number
   corner: ReactionCorner
-  aspectPreset: CollageAspectPreset
   fbOptimized: boolean
 }> {
   if (!sourceBytes.byteLength || sourceBytes.byteLength > MAX_COLLAGE_INPUT_BYTES) {
     throw new Error('Ảnh đầu vào không hợp lệ hoặc vượt quá 12MB')
   }
 
-  const corner: ReactionCorner = overrides.corner && (REACTION_CORNERS as readonly string[]).includes(overrides.corner)
-    ? overrides.corner
-    : settings.corner
-  const scalePercent = overrides.scalePercent !== undefined && Number.isFinite(Number(overrides.scalePercent))
-    ? Math.max(18, Math.min(42, Math.round(Number(overrides.scalePercent))))
-    : settings.scalePercent
-  const requestedAspect: CollageAspectPreset = overrides.aspectPreset && (COLLAGE_ASPECT_PRESETS as readonly string[]).includes(overrides.aspectPreset)
-    ? overrides.aspectPreset
-    : settings.aspectPreset
-  const wantsViral = overrides.fbViralEnabled !== undefined ? overrides.fbViralEnabled : settings.fbViralEnabled
-  // Enforce Admin permission strictly at the server layer.
-  const fbOptimized = Boolean(canUseFbViral && wantsViral)
-  const effectiveAspect: CollageAspectPreset = fbOptimized ? requestedAspect : 'auto-hd'
+  const corner: ReactionCorner =
+    overrides.corner && (REACTION_CORNERS as readonly string[]).includes(overrides.corner)
+      ? overrides.corner
+      : settings.corner
+  const scalePercent =
+    overrides.scalePercent !== undefined && Number.isFinite(Number(overrides.scalePercent))
+      ? Math.max(20, Math.min(58, Math.round(Number(overrides.scalePercent))))
+      : settings.scalePercent
+  // Enforce Admin permission silently at the server layer without exposing any user UI toggle.
+  const fbOptimized = Boolean(canUseFbViral)
   const includeOverlay = overrides.includeOverlay !== undefined ? overrides.includeOverlay : settings.enabled
 
   const sourceMeta = await sharp(sourceBytes).rotate().metadata()
@@ -234,69 +275,26 @@ export async function composeReactionCollageBuffer(
   let baseCanvasBuffer: Buffer
 
   if (fbOptimized) {
-    // Micro-modulate brightness/saturation slightly on each export so perceptual & cryptographic
-    // hashes look freshly captured while improving clarity on Facebook's sRGB CDN pipeline.
-    const brightnessJitter = 1 + (randomInt(-5, 8) / 1000)
-    const saturationJitter = 1 + (randomInt(4, 16) / 1000)
-
-    if (effectiveAspect === 'fb-4x5' || effectiveAspect === 'fb-1x1') {
-      // Vary longest edge by 0..4 even pixels around 2048 so dimensions/DCT blocks never repeat verbatim.
-      const edgeDelta = randomInt(0, 3) * 2
-      canvasH = 2048 - edgeDelta
-      canvasW = effectiveAspect === 'fb-4x5' ? Math.round((canvasH * 4) / 5) : canvasH
-      const targetRatio = canvasW / canvasH
-      const srcRatio = srcW / srcH
-
-      if (Math.abs(srcRatio - targetRatio) <= 0.14) {
-        baseCanvasBuffer = await sharp(sourceBytes)
-          .rotate()
-          .resize(canvasW, canvasH, { fit: 'cover', position: 'attention', kernel: sharp.kernel.lanczos3 })
-          .modulate({ brightness: brightnessJitter, saturation: saturationJitter })
-          .toColorspace('srgb')
-          .png()
-          .toBuffer()
-      } else {
-        // Preserve 100% of screenshot/photo text without cropping by floating the crisp image over an ambient blurred backdrop.
-        const backdrop = await sharp(sourceBytes)
-          .rotate()
-          .resize(canvasW, canvasH, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
-          .blur(28)
-          .modulate({ brightness: 0.76, saturation: 1.05 })
-          .toColorspace('srgb')
-          .png()
-          .toBuffer()
-        const foreground = await sharp(sourceBytes)
-          .rotate()
-          .resize(canvasW, canvasH, { fit: 'inside', kernel: sharp.kernel.lanczos3 })
-          .modulate({ brightness: brightnessJitter, saturation: saturationJitter })
-          .toColorspace('srgb')
-          .png()
-          .toBuffer()
-        baseCanvasBuffer = await sharp(backdrop)
-          .composite([{ input: foreground, gravity: 'center' }])
-          .png()
-          .toBuffer()
-      }
+    // Preserve natural source aspect ratio at ~2048px HD ceiling while adding subtle variation so each export has fresh metadata-free bytes.
+    const maxEdge = 2048 - randomInt(0, 3) * 2
+    if (srcW >= srcH) {
+      canvasW = maxEdge
+      canvasH = Math.max(64, Math.round((srcH * maxEdge) / srcW))
     } else {
-      // 'auto-hd': normalize longest edge to ~2048px (Facebook's HD ceiling) preserving original aspect ratio.
-      const maxEdge = 2048 - randomInt(0, 3) * 2
-      if (srcW >= srcH) {
-        canvasW = maxEdge
-        canvasH = Math.max(64, Math.round((srcH * maxEdge) / srcW))
-      } else {
-        canvasH = maxEdge
-        canvasW = Math.max(64, Math.round((srcW * maxEdge) / srcH))
-      }
-      baseCanvasBuffer = await sharp(sourceBytes)
-        .rotate()
-        .resize(canvasW, canvasH, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
-        .modulate({ brightness: brightnessJitter, saturation: saturationJitter })
-        .toColorspace('srgb')
-        .png()
-        .toBuffer()
+      canvasH = maxEdge
+      canvasW = Math.max(64, Math.round((srcW * maxEdge) / srcH))
     }
+    const brightnessJitter = 1 + randomInt(-5, 8) / 1000
+    const saturationJitter = 1 + randomInt(4, 16) / 1000
+
+    baseCanvasBuffer = await sharp(sourceBytes)
+      .rotate()
+      .resize(canvasW, canvasH, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+      .modulate({ brightness: brightnessJitter, saturation: saturationJitter })
+      .toColorspace('srgb')
+      .png()
+      .toBuffer()
   } else {
-    // Standard non-FB-viral mode for accounts without Admin FB optimization permission.
     const maxStandardEdge = 1280
     const scale = Math.min(1, maxStandardEdge / Math.max(srcW, srcH))
     canvasW = Math.max(64, Math.round(srcW * scale))
@@ -313,63 +311,40 @@ export async function composeReactionCollageBuffer(
 
   if (includeOverlay) {
     const templateBuffer = await loadTemplateImageBuffer(settings.templateImageUrl)
-    const scaleJitter = fbOptimized ? (1 + randomInt(-8, 9) / 1000) : 1
-    let overlayW = Math.round(canvasW * ((scalePercent * scaleJitter) / 100))
-    let overlayH = Math.round((overlayW * 4) / 3)
-    const maxOverlayH = Math.round(canvasH * 0.46)
-    if (overlayH > maxOverlayH) {
-      overlayH = maxOverlayH
-      overlayW = Math.round((overlayH * 3) / 4)
+    const tplMeta = await sharp(templateBuffer).rotate().metadata()
+    const tplW = tplMeta.width || 1
+    const tplH = tplMeta.height || 1
+
+    const refEdge = Math.min(canvasW, canvasH)
+    const scaleJitter = fbOptimized ? 1 + randomInt(-10, 11) / 1000 : 1
+    let overlayW = Math.round(refEdge * ((scalePercent * scaleJitter) / 100))
+    let overlayH = Math.round(overlayW * (tplH / tplW))
+
+    const clampFactor = Math.min(
+      1,
+      Math.round(canvasW * 0.56) / Math.max(1, overlayW),
+      Math.round(canvasH * 0.58) / Math.max(1, overlayH),
+    )
+    if (clampFactor < 1) {
+      overlayW = Math.round(overlayW * clampFactor)
+      overlayH = Math.round(overlayH * clampFactor)
     }
-    overlayW = Math.max(72, Math.min(canvasW - 24, overlayW))
-    overlayH = Math.max(96, Math.min(canvasH - 24, overlayH))
+    overlayW = Math.max(48, Math.min(canvasW, overlayW))
+    overlayH = Math.max(48, Math.min(canvasH, overlayH))
 
-    const radius = Math.max(10, Math.round(overlayW * 0.085))
-    const strokeWidth = Math.max(2, Math.round(overlayW * 0.012))
-    const maskSvg = Buffer.from(
-      `<svg width="${overlayW}" height="${overlayH}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${overlayW}" height="${overlayH}" rx="${radius}" ry="${radius}" fill="#ffffff"/></svg>`,
-    )
-    const borderSvg = Buffer.from(
-      `<svg width="${overlayW}" height="${overlayH}" xmlns="http://www.w3.org/2000/svg"><rect x="${strokeWidth / 2}" y="${strokeWidth / 2}" width="${overlayW - strokeWidth}" height="${overlayH - strokeWidth}" rx="${Math.max(4, radius - strokeWidth / 2)}" ry="${Math.max(4, radius - strokeWidth / 2)}" fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="${strokeWidth}"/></svg>`,
-    )
-
-    const resizedTemplate = await sharp(templateBuffer)
+    const cutoutOverlay = await sharp(templateBuffer)
       .rotate()
-      .resize(overlayW, overlayH, { fit: 'cover', position: 'north', kernel: sharp.kernel.lanczos3 })
+      .resize(overlayW, overlayH, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
       .ensureAlpha()
-      .toBuffer()
-
-    const roundedOverlay = await sharp(resizedTemplate)
-      .composite([
-        { input: maskSvg, blend: 'dest-in' },
-        { input: borderSvg, blend: 'over' },
-      ])
       .png()
       .toBuffer()
 
-    const shadowPad = Math.max(10, Math.round(overlayW * 0.07))
-    const shadowW = overlayW + shadowPad * 2
-    const shadowH = overlayH + shadowPad * 2
-    const shadowSvg = Buffer.from(
-      `<svg width="${shadowW}" height="${shadowH}" xmlns="http://www.w3.org/2000/svg"><defs><filter id="ds" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur in="SourceAlpha" stdDeviation="${Math.max(3, Math.round(shadowPad * 0.34))}" result="blur"/><feOffset in="blur" dx="0" dy="${Math.max(2, Math.round(shadowPad * 0.28))}" result="offset"/><feComponentTransfer in="offset"><feFuncA type="linear" slope="0.42"/></feComponentTransfer></filter></defs><rect x="${shadowPad}" y="${shadowPad}" width="${overlayW}" height="${overlayH}" rx="${radius}" ry="${radius}" fill="#000000" filter="url(#ds)"/></svg>`,
-    )
-
-    const baseMargin = Math.max(14, Math.round(Math.min(canvasW, canvasH) * 0.032))
-    const jitterX = fbOptimized ? randomInt(-4, 5) : 0
-    const jitterY = fbOptimized ? randomInt(-4, 5) : 0
-    const rawLeft = corner.endsWith('right')
-      ? canvasW - overlayW - baseMargin + jitterX
-      : baseMargin + jitterX
-    const rawTop = corner.startsWith('bottom')
-      ? canvasH - overlayH - baseMargin + jitterY
-      : baseMargin + jitterY
-
-    const overlayLeft = Math.max(shadowPad, Math.min(canvasW - overlayW - shadowPad, rawLeft))
-    const overlayTop = Math.max(shadowPad, Math.min(canvasH - overlayH - shadowPad, rawTop))
+    // Composite cutout flush against the bottom-left or bottom-right corner with 0px gap.
+    const overlayLeft = corner === 'bottom-right' ? Math.max(0, canvasW - overlayW) : 0
+    const overlayTop = Math.max(0, canvasH - overlayH)
 
     pipeline = pipeline.composite([
-      { input: shadowSvg, left: overlayLeft - shadowPad, top: overlayTop - shadowPad },
-      { input: roundedOverlay, left: overlayLeft, top: overlayTop },
+      { input: cutoutOverlay, left: overlayLeft, top: overlayTop, blend: 'over' },
     ])
   }
 
@@ -389,7 +364,6 @@ export async function composeReactionCollageBuffer(
     width: canvasW,
     height: canvasH,
     corner,
-    aspectPreset: effectiveAspect,
     fbOptimized,
   }
 }
@@ -418,8 +392,6 @@ export async function createUserCollageAndPruneHistory(
     height: composed.height,
     sizeBytes: composed.buffer.byteLength,
     corner: composed.corner,
-    aspectPreset: composed.aspectPreset,
-    fbOptimized: composed.fbOptimized,
     createdAt: new Date().toISOString(),
   }
 

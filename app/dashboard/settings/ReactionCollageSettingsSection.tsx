@@ -4,30 +4,145 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { ImagePlus, RotateCcw, Sparkles, Upload } from 'lucide-react'
+import { ImagePlus, RotateCcw, Upload } from 'lucide-react'
 import {
-  COLLAGE_ASPECT_LABELS,
-  COLLAGE_ASPECT_PRESETS,
   DEFAULT_REACTION_TEMPLATE_URL,
   REACTION_CORNER_LABELS,
   REACTION_CORNERS,
-  type CollageAspectPreset,
   type ReactionCorner,
   type UserCollageSettings,
 } from '@/lib/reaction-collage-config'
 
 const SCALE_PRESETS = [
-  { value: 22, label: 'Nhỏ (22%)' },
-  { value: 28, label: 'Vừa (28%)' },
-  { value: 34, label: 'Lớn (34%)' },
+  { value: 30, label: 'Nhỏ (30%)' },
+  { value: 38, label: 'Vừa (38%)' },
+  { value: 46, label: 'Lớn (46%)' },
 ]
+
+const MEDIAPIPE_VISION_ESM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm'
+const MEDIAPIPE_VISION_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+const SELFIE_SEGMENTER_MODEL =
+  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite'
+
+type VisionModule = {
+  FilesetResolver: {
+    forVisionTasks: (wasmPath: string) => Promise<unknown>
+  }
+  ImageSegmenter: {
+    createFromOptions: (
+      fileset: unknown,
+      options: {
+        baseOptions: { modelAssetPath: string }
+        runningMode: 'IMAGE'
+        outputConfidenceMasks: boolean
+        outputCategoryMask: boolean
+      },
+    ) => Promise<{
+      segment: (
+        image: HTMLCanvasElement,
+        callback: (result: {
+          confidenceMasks?: Array<{ getAsFloat32Array: () => Float32Array }>
+          close?: () => void
+        }) => void,
+      ) => void
+      close: () => void
+    }>
+  }
+}
+
+async function autoCutoutPortraitFile(file: File): Promise<File> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return file
+
+  const bitmapUrl = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new window.Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('Không đọc được ảnh tải lên'))
+      el.src = bitmapUrl
+    })
+
+    const w = img.naturalWidth || img.width
+    const h = img.naturalHeight || img.height
+    if (!w || !h) return file
+
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(img, 0, 0, w, h)
+
+    // Preserve already-transparent PNG/WebP cutouts untouched without re-segmenting.
+    const imageData = ctx.getImageData(0, 0, w, h)
+    const pixels = imageData.data
+    let hasTransparency = false
+    for (let i = 3; i < pixels.length; i += 16) {
+      if (pixels[i] < 245) {
+        hasTransparency = true
+        break
+      }
+    }
+    if (hasTransparency) return file
+
+    // Dynamic remote import keeps Next.js/Turbopack bundle free of WASM/TFLite assets.
+    const dynamicImport = new Function('u', 'return import(u)') as (u: string) => Promise<VisionModule>
+    const vision = await dynamicImport(MEDIAPIPE_VISION_ESM)
+    const fileset = await vision.FilesetResolver.forVisionTasks(MEDIAPIPE_VISION_WASM)
+    const segmenter = await vision.ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: SELFIE_SEGMENTER_MODEL },
+      runningMode: 'IMAGE',
+      outputConfidenceMasks: true,
+      outputCategoryMask: false,
+    })
+
+    try {
+      let personMask: Float32Array | null = null
+      segmenter.segment(canvas, (result) => {
+        const masks = result.confidenceMasks
+        const target = masks && masks.length > 1 ? masks[1] : masks?.[0]
+        if (target) personMask = new Float32Array(target.getAsFloat32Array())
+        result.close?.()
+      })
+      if (!personMask) return file
+
+      const maskArray: Float32Array = personMask
+      if (maskArray.length !== w * h) return file
+
+      // Require enough foreground area so scenic non-portrait uploads do not get wiped out.
+      let foregroundCount = 0
+      for (let i = 0; i < maskArray.length; i++) {
+        if (maskArray[i] > 0.45) foregroundCount++
+      }
+      if (foregroundCount < w * h * 0.05) return file
+
+      for (let i = 0; i < maskArray.length; i++) {
+        const soft = Math.max(0, Math.min(1, (maskArray[i] - 0.35) / 0.35))
+        pixels[i * 4 + 3] = Math.round(soft * 255)
+      }
+      ctx.putImageData(imageData, 0, 0)
+
+      const cutoutBlob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((blob) => resolve(blob), 'image/png'),
+      )
+      if (!cutoutBlob) return file
+
+      const stem = file.name.replace(/\.[^.]+$/, '') || 'reaction-template'
+      return new File([cutoutBlob], `${stem}.png`, { type: 'image/png' })
+    } finally {
+      segmenter.close()
+    }
+  } catch {
+    return file
+  } finally {
+    URL.revokeObjectURL(bitmapUrl)
+  }
+}
 
 export default function ReactionCollageSettingsSection({
   initialSettings,
-  canUseFbViral,
 }: {
   initialSettings: UserCollageSettings
-  canUseFbViral: boolean
 }) {
   const [settings, setSettings] = useState<UserCollageSettings>(initialSettings)
   const [saving, setSaving] = useState(false)
@@ -73,8 +188,9 @@ export default function ReactionCollageSettingsSection({
     setUploading(true)
     setMessage(null)
     try {
+      const preparedFile = await autoCutoutPortraitFile(file)
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', preparedFile)
       const res = await fetch('/api/settings/collage', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) {
@@ -82,7 +198,7 @@ export default function ReactionCollageSettingsSection({
         return
       }
       setSettings(data.settings)
-      setMessage({ text: 'Đã cập nhật ảnh mẫu Reaction cố định.', type: 'success' })
+      setMessage({ text: 'Đã cập nhật ảnh mẫu tách nền cố định.', type: 'success' })
     } catch {
       setMessage({ text: 'Không thể tải ảnh mẫu lên máy chủ', type: 'error' })
     } finally {
@@ -101,11 +217,11 @@ export default function ReactionCollageSettingsSection({
             Mẫu ghép ảnh Reaction cố định
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Cài 1 ảnh cố định duy nhất — khi bật, mọi ảnh dán hoặc upload ở mục{' '}
+            Cài 1 ảnh người tách nền cố định — khi bật, mọi ảnh dán hoặc upload ở mục{' '}
             <Link href="/dashboard/collage" className="text-sky-600 font-medium hover:underline">
               Ghép ảnh
             </Link>{' '}
-            sẽ tự động đè khung cam FaceTime/TikTok Reaction vào góc.
+            sẽ tự động ghép sát vào góc dưới ảnh.
           </p>
         </div>
         <button
@@ -132,13 +248,13 @@ export default function ReactionCollageSettingsSection({
         </button>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-[150px_minmax(0,1fr)] items-start">
+      <div className="grid gap-5 sm:grid-cols-[132px_minmax(0,1fr)] items-start">
         <div className="space-y-2">
-          <div className="relative mx-auto w-[132px] aspect-[3/4] overflow-hidden rounded-2xl border-2 border-white shadow-md ring-1 ring-gray-200 bg-gray-100">
+          <div className="relative mx-auto h-[116px] w-[104px] overflow-hidden rounded-2xl border border-gray-200 bg-[linear-gradient(45deg,#f3f4f6_25%,transparent_25%),linear-gradient(-45deg,#f3f4f6_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f3f4f6_75%),linear-gradient(-45deg,transparent_75%,#f3f4f6_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0]">
             <img
               src={settings.templateImageUrl}
               alt="Ảnh mẫu Reaction cố định"
-              className="h-full w-full object-cover object-top"
+              className="h-full w-full object-contain object-bottom"
             />
           </div>
           <input
@@ -159,7 +275,7 @@ export default function ReactionCollageSettingsSection({
             className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            {uploading ? 'Đang tải...' : 'Đổi ảnh mẫu'}
+            {uploading ? 'Đang tách nền...' : 'Đổi ảnh mẫu'}
           </button>
           {!isDefaultTemplate && (
             <button
@@ -168,7 +284,7 @@ export default function ReactionCollageSettingsSection({
               onClick={() =>
                 void savePatch(
                   { templateImageUrl: DEFAULT_REACTION_TEMPLATE_URL },
-                  'Đã khôi phục ảnh mẫu mặc định.',
+                  'Đã khôi phục ảnh mẫu tách nền mặc định.',
                 )
               }
               className="w-full inline-flex items-center justify-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-medium text-sky-600 hover:bg-sky-50 cursor-pointer"
@@ -210,7 +326,7 @@ export default function ReactionCollageSettingsSection({
 
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-              Kích thước khung Reaction
+              Kích thước người ghép
             </label>
             <div className="flex flex-wrap gap-2">
               {SCALE_PRESETS.map((preset) => (
@@ -221,7 +337,7 @@ export default function ReactionCollageSettingsSection({
                   onClick={() =>
                     void savePatch(
                       { scalePercent: preset.value },
-                      `Đã đặt kích thước khung: ${preset.label}.`,
+                      `Đã đặt kích thước người ghép: ${preset.label}.`,
                     )
                   }
                   className={`rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
@@ -235,64 +351,6 @@ export default function ReactionCollageSettingsSection({
               ))}
             </div>
           </div>
-
-          {canUseFbViral && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900">
-                  <Sparkles className="w-4 h-4 text-amber-600" />
-                  Tối ưu thông số chuẩn đề xuất Facebook
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={settings.fbViralEnabled}
-                  disabled={saving}
-                  onClick={() =>
-                    void savePatch(
-                      { fbViralEnabled: !settings.fbViralEnabled },
-                      !settings.fbViralEnabled
-                        ? 'Đã bật chế độ tối ưu chuẩn đề xuất Facebook.'
-                        : 'Đã tắt chế độ tối ưu chuẩn đề xuất Facebook.',
-                    )
-                  }
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
-                    settings.fbViralEnabled ? 'bg-amber-600' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                      settings.fbViralEnabled ? 'translate-x-4' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-              {settings.fbViralEnabled && (
-                <div className="flex flex-wrap gap-1.5">
-                  {COLLAGE_ASPECT_PRESETS.map((preset: CollageAspectPreset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      disabled={saving}
-                      onClick={() =>
-                        void savePatch(
-                          { aspectPreset: preset },
-                          `Đã chọn khung xuất: ${COLLAGE_ASPECT_LABELS[preset]}.`,
-                        )
-                      }
-                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
-                        settings.aspectPreset === preset
-                          ? 'border-amber-600 bg-white text-amber-900 shadow-xs'
-                          : 'border-amber-200/80 bg-transparent text-amber-800/80 hover:bg-white/60'
-                      }`}
-                    >
-                      {COLLAGE_ASPECT_LABELS[preset]}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

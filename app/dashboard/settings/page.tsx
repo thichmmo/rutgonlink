@@ -13,7 +13,7 @@ import ReactionCollageSettingsSection from './ReactionCollageSettingsSection';
 import {defaultDashboardNavVisibility} from '@/lib/dashboard-nav-visibility';
 import {getUserDashboardNavVisibility} from '@/lib/dashboard-nav-visibility-server';
 import {defaultUserCollageSettings} from '@/lib/reaction-collage-config';
-import {canActorUseFbViralCollage, getUserCollageSettings, isImplicitFbViralAdminUser} from '@/lib/reaction-collage-server';
+import {getUserCollageSettings} from '@/lib/reaction-collage-server';
 
 export default async function SettingsPage() {
     const session = await getServerSession(authOptions);
@@ -21,21 +21,17 @@ export default async function SettingsPage() {
 
     const user = await prisma.user.findUnique({
         where: {email: session.user.email},
-        select: {id: true, email: true, adminRole: true, apiKey: true, password: true},
+        select: {id: true, apiKey: true, password: true},
     });
 
     const apiKey: string | null = user?.apiKey ?? null;
     const hasPassword = !!user?.password;
-    const [navVisibility, collageSettings, canUseFbViral] = user
+    const [navVisibility, collageSettings] = user
         ? await Promise.all([
               getUserDashboardNavVisibility(user.id),
               getUserCollageSettings(user.id),
-              canActorUseFbViralCollage({
-                  id: user.id,
-                  isAdmin: isImplicitFbViralAdminUser(user),
-              }),
           ])
-        : [defaultDashboardNavVisibility(), defaultUserCollageSettings(), false];
+        : [defaultDashboardNavVisibility(), defaultUserCollageSettings()];
 
     return (
         <div className="space-y-6 min-w-0">
@@ -68,7 +64,6 @@ export default async function SettingsPage() {
 
             <ReactionCollageSettingsSection
                 initialSettings={collageSettings}
-                canUseFbViral={canUseFbViral}
             />
 
             <ApiKeySection initialApiKey={apiKey} />

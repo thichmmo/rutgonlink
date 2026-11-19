@@ -1,31 +1,20 @@
-export const DEFAULT_REACTION_TEMPLATE_URL = '/defaults/reaction-default.jpg'
+export const DEFAULT_REACTION_TEMPLATE_URL = '/defaults/reaction-default.png'
+export const LEGACY_DEFAULT_REACTION_TEMPLATE_URL = '/defaults/reaction-default.jpg'
 export const MAX_COLLAGE_HISTORY = 10
 export const MAX_COLLAGE_INPUT_BYTES = 12 * 1024 * 1024
 
 export const REACTION_CORNERS = [
-  'bottom-right',
   'bottom-left',
-  'top-right',
-  'top-left',
+  'bottom-right',
 ] as const
 
 export type ReactionCorner = (typeof REACTION_CORNERS)[number]
-
-export const COLLAGE_ASPECT_PRESETS = [
-  'fb-4x5',
-  'auto-hd',
-  'fb-1x1',
-] as const
-
-export type CollageAspectPreset = (typeof COLLAGE_ASPECT_PRESETS)[number]
 
 export type UserCollageSettings = {
   enabled: boolean
   templateImageUrl: string
   corner: ReactionCorner
   scalePercent: number
-  aspectPreset: CollageAspectPreset
-  fbViralEnabled: boolean
 }
 
 export type CollageHistoryItem = {
@@ -37,37 +26,27 @@ export type CollageHistoryItem = {
   height: number
   sizeBytes: number
   corner: ReactionCorner
-  aspectPreset: CollageAspectPreset
-  fbOptimized: boolean
   createdAt: string
 }
 
 export const REACTION_CORNER_LABELS: Record<ReactionCorner, string> = {
-  'bottom-right': 'Dưới phải',
   'bottom-left': 'Dưới trái',
-  'top-right': 'Trên phải',
-  'top-left': 'Trên trái',
-}
-
-export const COLLAGE_ASPECT_LABELS: Record<CollageAspectPreset, string> = {
-  'fb-4x5': 'Dọc 4:5 (Chuẩn Feed FB)',
-  'auto-hd': 'Tỷ lệ gốc (Nét HD 2048px)',
-  'fb-1x1': 'Vuông 1:1 (2048×2048)',
+  'bottom-right': 'Dưới phải',
 }
 
 export function defaultUserCollageSettings(): UserCollageSettings {
   return {
     enabled: true,
     templateImageUrl: DEFAULT_REACTION_TEMPLATE_URL,
-    corner: 'bottom-right',
-    scalePercent: 28,
-    aspectPreset: 'fb-4x5',
-    fbViralEnabled: true,
+    corner: 'bottom-left',
+    scalePercent: 38,
   }
 }
 
 export function isAllowedTemplateImageUrl(value: string): boolean {
-  if (value === DEFAULT_REACTION_TEMPLATE_URL) return true
+  if (value === DEFAULT_REACTION_TEMPLATE_URL || value === LEGACY_DEFAULT_REACTION_TEMPLATE_URL) {
+    return true
+  }
   return /^\/uploads\/content\/[A-Za-z0-9_-]+\.(?:jpe?g|png|webp)$/i.test(value)
 }
 
@@ -77,20 +56,32 @@ export function normalizeUserCollageSettings(input: unknown): UserCollageSetting
   const raw = input as Record<string, unknown>
 
   if (typeof raw.enabled === 'boolean') base.enabled = raw.enabled
-  if (typeof raw.templateImageUrl === 'string' && isAllowedTemplateImageUrl(raw.templateImageUrl.trim())) {
-    base.templateImageUrl = raw.templateImageUrl.trim()
+
+  let migratedFromLegacyDefault = false
+  if (typeof raw.templateImageUrl === 'string') {
+    const trimmed = raw.templateImageUrl.trim()
+    if (trimmed === LEGACY_DEFAULT_REACTION_TEMPLATE_URL) {
+      base.templateImageUrl = DEFAULT_REACTION_TEMPLATE_URL
+      migratedFromLegacyDefault = true
+    } else if (isAllowedTemplateImageUrl(trimmed)) {
+      base.templateImageUrl = trimmed
+    }
   }
-  if (typeof raw.corner === 'string' && (REACTION_CORNERS as readonly string[]).includes(raw.corner)) {
-    base.corner = raw.corner as ReactionCorner
+
+  // Upgrade legacy top corners to bottom flush corners.
+  if (raw.corner === 'top-left' || raw.corner === 'bottom-left') {
+    base.corner = 'bottom-left'
+  } else if (raw.corner === 'top-right' || raw.corner === 'bottom-right') {
+    base.corner = 'bottom-right'
   }
+
   const parsedScale = Number(raw.scalePercent)
   if (Number.isFinite(parsedScale)) {
-    base.scalePercent = Math.max(18, Math.min(42, Math.round(parsedScale)))
+    // Bump old 28% rectangular preset to natural 38% cutout scale upon default migration.
+    const nextScale = migratedFromLegacyDefault && Math.round(parsedScale) === 28 ? 38 : parsedScale
+    base.scalePercent = Math.max(20, Math.min(58, Math.round(nextScale)))
   }
-  if (typeof raw.aspectPreset === 'string' && (COLLAGE_ASPECT_PRESETS as readonly string[]).includes(raw.aspectPreset)) {
-    base.aspectPreset = raw.aspectPreset as CollageAspectPreset
-  }
-  if (typeof raw.fbViralEnabled === 'boolean') base.fbViralEnabled = raw.fbViralEnabled
+
   return base
 }
 
@@ -109,12 +100,8 @@ export function normalizeCollageHistory(input: unknown): CollageHistoryItem[] {
     ) {
       continue
     }
-    const corner = typeof raw.corner === 'string' && (REACTION_CORNERS as readonly string[]).includes(raw.corner)
-      ? (raw.corner as ReactionCorner)
-      : 'bottom-right'
-    const aspectPreset = typeof raw.aspectPreset === 'string' && (COLLAGE_ASPECT_PRESETS as readonly string[]).includes(raw.aspectPreset)
-      ? (raw.aspectPreset as CollageAspectPreset)
-      : 'auto-hd'
+    const corner: ReactionCorner =
+      raw.corner === 'bottom-right' || raw.corner === 'top-right' ? 'bottom-right' : 'bottom-left'
     items.push({
       id: raw.id,
       filename: raw.filename,
@@ -124,8 +111,6 @@ export function normalizeCollageHistory(input: unknown): CollageHistoryItem[] {
       height: Math.max(1, Number(raw.height) || 1),
       sizeBytes: Math.max(0, Number(raw.sizeBytes) || 0),
       corner,
-      aspectPreset,
-      fbOptimized: raw.fbOptimized === true,
       createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date(0).toISOString(),
     })
   }

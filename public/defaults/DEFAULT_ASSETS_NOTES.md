@@ -1,10 +1,10 @@
 # Default Public Assets (`public/defaults/`)
 
 ## Purpose
-Contains static default media bundled into standalone releases (`public/defaults/reaction-default.jpg`).
+Contains static default media bundled into standalone releases (`public/defaults/reaction-default.png`).
 
 ## Behavior
-- `reaction-default.jpg` (`600×800`, `3:4` `sRGB` JPEG) is pre-cropped from the top TikTok caption area so all accounts get a clean FaceTime/TikTok Reaction portrait out of the box without duplicating the file per user on disk.
+- `reaction-default.png` is an RGBA transparent person cutout (`623×698`) segmented cleanly from the user-provided portrait (with top TikTok caption and bottom blanket cropped out so the figure sits flush against `bottom-left` or `bottom-right` image corners).
 
 ## Verification
 - `node scripts/test-reaction-collage.cjs`
