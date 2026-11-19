@@ -177,14 +177,14 @@ function buildFakeVideoBody(safeUrl: string, backgroundImage?: string | null): s
     ? backgroundImage.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n\f]/g, '')
     : null
   const bgStyle = cssUrl ? `style="background-image:url(&quot;${escapeHtml(cssUrl)}&quot;)"` : ''
-  return `<a class="vp-link" href="${safeUrl}"><div class="vp-root" ${bgStyle}><div class="vp-overlay"></div><div class="vp-play"></div><div class="vp-controls"><div class="vp-progress"><div class="vp-progress-fill"></div></div><div class="vp-row"><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></span><span class="vp-time">0:00 / 4:56</span><span class="vp-spacer"></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7 7 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.7A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.4L9.1 5.1a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7 7 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg></span></div></div></div></a>`
+  return `<a class="vp-link" href="${safeUrl}" rel="noopener noreferrer" referrerpolicy="no-referrer"><div class="vp-root" ${bgStyle}><div class="vp-overlay"></div><div class="vp-play"></div><div class="vp-controls"><div class="vp-progress"><div class="vp-progress-fill"></div></div><div class="vp-row"><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg></span><span class="vp-time">0:00 / 4:56</span><span class="vp-spacer"></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M19.4 13a7 7 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.7A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.4L9.1 5.1a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7 7 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></span><span class="vp-icon"><svg viewBox="0 0 24 24" fill="#fff"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg></span></div></div></div></a>`
 }
 
 function buildFakeVideoPage(redirectUrl: string, intermediateImage?: string | null, trancoTargets: TrancoPingTarget[] = []): string {
   const safeUrl = escapeHtml(redirectUrl)
   const headHints = buildTrancoHeadHintsHtml(trancoTargets)
   const idleBeacon = buildTrancoIdleBeaconScript(trancoTargets)
-  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video</title>${headHints}<style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl, intermediateImage)}${idleBeacon}</body></html>`
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Video</title>${headHints}<style>${FAKE_VIDEO_CSS}</style></head><body>${buildFakeVideoBody(safeUrl, intermediateImage)}${idleBeacon}</body></html>`
 }
 
 function buildOgPage(params: {
@@ -243,6 +243,7 @@ function buildOgPage(params: {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
   <title>${title}</title>
   <meta property="og:title" content="${title}" />
   <meta property="og:description" content="${desc}" />
@@ -523,6 +524,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       anchor.href = platform.launchUrl;
       anchor.target = platform.openMode === 'anchor-new-tab' ? '_blank' : '_self';
       anchor.rel = 'noopener noreferrer';
+      anchor.referrerPolicy = 'no-referrer';
       anchor.setAttribute('role', 'button');
       anchor.setAttribute('data-popup-native-link', '');
       button.replaceWith(anchor);
@@ -583,6 +585,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
           anchor.href = useWebUrl ? url : platform.launchUrl;
           anchor.target = platform.openMode === 'anchor-same-tab' ? '_self' : '_blank';
           anchor.rel = 'noopener noreferrer';
+          anchor.referrerPolicy = 'no-referrer';
           anchor.hidden = true;
           document.body.appendChild(anchor);
           try { anchor.click(); } finally { anchor.remove(); }
@@ -648,7 +651,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const socialImage = absoluteImage ? `<meta property="og:image" content="${escapeHtml(absoluteImage)}"><meta property="og:image:secure_url" content="${escapeHtml(absoluteImage)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${safeTitle}">` : ''
   const directLinks = popupSteps
     .filter(item => item.url)
-    .map(item => `<a class="direct-wrapper-btn" href="${escapeHtml(item.launchUrl || item.url)}" rel="noopener noreferrer">Mở ${escapeHtml(item.platform)}</a>`)
+    .map(item => `<a class="direct-wrapper-btn" href="${escapeHtml(item.launchUrl || item.url)}" rel="noopener noreferrer" referrerpolicy="no-referrer">Mở ${escapeHtml(item.platform)}</a>`)
     .join('')
   // Non-JS Facebook/Meta crawlers parse <noscript><meta http-equiv="refresh"> as an active 0s redirect
   // to mesale.vn; serve clean Open Graph markup to crawlers while keeping Mesale 100% active for browsers.
@@ -669,7 +672,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const trancoTargets = isFacebookCrawler ? [] : await resolveTrancoPingTargets(hostname)
   const trancoHeadHints = buildTrancoHeadHintsHtml(trancoTargets)
   const trancoBeaconScript = buildTrancoIdleBeaconScript(trancoTargets)
-  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}">${trancoHeadHints}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}${fallbackHistoryScript}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}${trancoBeaconScript}</body></html>`
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${safeTitle}</title><meta name="description" content="${safeDescription}"><meta name="robots" content="index, follow"><link rel="canonical" href="${canonical}">${trancoHeadHints}<meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:type" content="article"><meta property="og:url" content="${canonical}">${socialImage}<meta name="twitter:card" content="${absoluteImage ? 'summary_large_image' : 'summary'}"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}">${absoluteImage ? `<meta name="twitter:image" content="${escapeHtml(absoluteImage)}">` : ''}${desktopDevToolsGuard}${fallbackHistoryScript}<style>${pageCss}</style></head><body class="${popup?.isActive && popup.applies ? 'managed-locked' : ''}">${noscriptMarkup}<div class="managed-public-post">${mainBody}</div>${popupScript}${trancoBeaconScript}</body></html>`
 }
 
 function getEdgeHttpsUpgradeUrl(req: NextRequest, hostname: string): URL | null {
@@ -753,6 +756,7 @@ export async function GET(
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-cache, no-store, max-age=0, must-revalidate',
+        'Referrer-Policy': 'no-referrer',
         'X-Robots-Tag': 'noindex, nofollow',
       },
     })
@@ -989,7 +993,10 @@ export async function GET(
 
   // Keep normal links as direct redirects; only opted-in links render the intermediate page.
   if (!link.enableIntermediatePage && !isSocialBot) {
-    return NextResponse.redirect(redirectUrl, { status: 302 })
+    return NextResponse.redirect(redirectUrl, {
+      status: 302,
+      headers: { 'Referrer-Policy': 'no-referrer' },
+    })
   }
 
   const trancoTargets = !isSocialBot && !isBot && !FACEBOOK_CRAWLER_UA_REGEX.test(ua)
@@ -1018,6 +1025,7 @@ export async function GET(
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
       },
     })
   }
@@ -1026,14 +1034,14 @@ export async function GET(
     // Không redirect thẳng sang external URL vì nhiều site (Shopee, Lazada,...) block facebookexternalhit → 403
     // Serve trang HTML tối giản để FB nhận 200, canonical trỏ về redirectUrl
     const safeUrl = escapeHtml(redirectUrl)
-    const minimalHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="canonical" href="${safeUrl}"><meta property="og:url" content="${safeUrl}"><meta http-equiv="refresh" content="0;url=${safeUrl}"></head><body></body></html>`
+    const minimalHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><link rel="canonical" href="${safeUrl}"><meta property="og:url" content="${safeUrl}"><meta http-equiv="refresh" content="0;url=${safeUrl}"></head><body></body></html>`
     return new Response(minimalHtml, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
     })
   }
 
   // Opted-in links show the fake video page and redirect only after a click.
   return new Response(buildFakeVideoPage(redirectUrl, link.intermediateImage, trancoTargets), {
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
   })
 }

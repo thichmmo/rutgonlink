@@ -280,6 +280,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
         anchor.href = useWebUrl ? current.url : current.launchUrl
         anchor.target = current.openMode === 'anchor-same-tab' ? '_self' : '_blank'
         anchor.rel = 'noopener noreferrer'
+        anchor.referrerPolicy = 'no-referrer'
         anchor.hidden = true
         document.body.appendChild(anchor)
         try { anchor.click() } finally { anchor.remove() }
@@ -348,7 +349,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
         <div className="h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label={`Bộ đếm ${current.platform}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(timerPercent)} aria-valuetext={displayRemaining > 0 ? `Còn ${displayRemaining} giây` : 'Sẵn sàng'}><div className="h-full rounded-full bg-[#d61f51] transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${timerPercent}%` }} /></div>
       </div>
       {isMobile && (current.openMode === 'anchor-new-tab' || current.openMode === 'anchor-same-tab')
-        ? <a data-popup-native-link="" role="button" href={current.launchUrl} target={current.openMode === 'anchor-new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" aria-disabled={displayRemaining > 0 || opening} tabIndex={displayRemaining > 0 || opening ? -1 : 0} onClick={event => advance(false, event)} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); event.currentTarget.click() } }} className={`mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white no-underline transition hover:bg-black sm:h-[72px] sm:text-2xl ${displayRemaining > 0 || opening ? 'cursor-wait opacity-60' : ''}`}>{buttonLabel}</a>
+        ? <a data-popup-native-link="" role="button" href={current.launchUrl} target={current.openMode === 'anchor-new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" referrerPolicy="no-referrer" aria-disabled={displayRemaining > 0 || opening} tabIndex={displayRemaining > 0 || opening ? -1 : 0} onClick={event => advance(false, event)} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); event.currentTarget.click() } }} className={`mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white no-underline transition hover:bg-black sm:h-[72px] sm:text-2xl ${displayRemaining > 0 || opening ? 'cursor-wait opacity-60' : ''}`}>{buttonLabel}</a>
         : <button type="button" onClick={() => advance()} disabled={displayRemaining > 0 || opening} className="mt-5 flex h-16 w-full items-center justify-center rounded-full bg-[#19181d] text-xl font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60 sm:h-[72px] sm:text-2xl">{buttonLabel}</button>}
       <p className="mt-4 text-center text-base font-medium text-[#9ba3b3] sm:text-lg">{progress}</p>
       {forceMessage && <p className="mt-2 text-center text-xs text-amber-600">{forceMessage}</p>}

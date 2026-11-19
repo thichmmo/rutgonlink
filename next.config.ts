@@ -7,7 +7,8 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const globalSecurityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-XSS-Protection', value: '1; mode=block' },
-  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  // Strip outbound Referer across all public post, popup, and short-link navigations so destination apps never see wrapper domains.
+  { key: 'Referrer-Policy', value: 'no-referrer' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
 ]
 

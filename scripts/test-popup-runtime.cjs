@@ -1895,6 +1895,25 @@ async function main() {
     await using('react', { ...state, cooldownMinutes: 5, session: false, local: false, now: state.now + 300_000 }, async h => assert.equal(h.state(), 'Shopee'))
     await using('react', { ...state, cooldownMinutes: 0, session: false, local: false }, async h => assert.equal(h.state(), 'Shopee'))
   })
+  await scenario('outbound affiliate popup links and public post documents enforce no-referrer', async () => {
+    const html = await buildPage({
+      id: 'post-noref', slug: 'post-noref', title: 'Fixture', content: 'Article', contentFormat: 'plain',
+      user: { managedContentBlocks: [] }, popup: null,
+    }, 'ca33newss.xyz', facebookIos, false, { isFacebookSource: true })
+    assert.match(html, /<meta name="referrer" content="no-referrer">/)
+
+    for (const kind of ['route', 'react']) {
+      await using(kind, { ua: facebookIos }, async h => {
+        const anchor = h.doc.querySelector('[data-popup-native-link]')
+        assert.ok(anchor)
+        assert.equal(anchor.getAttribute('rel'), 'noopener noreferrer')
+        assert.equal((anchor.getAttribute('referrerpolicy') || anchor.referrerPolicy || '').toLowerCase(), 'no-referrer')
+      })
+    }
+
+    const nextConfigSrc = fs.readFileSync(path.resolve(__dirname, '..', 'next.config.ts'), 'utf8')
+    assert.match(nextConfigSrc, /key:\s*'Referrer-Policy',\s*value:\s*'no-referrer'/)
+  })
   console.log('RESULT=PASS scenarios=' + passed)
 }
 
