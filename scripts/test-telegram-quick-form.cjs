@@ -115,7 +115,7 @@ async function run() {
     check(() => assert.doesNotMatch(row.textContent, /p7-90195/, 'Internal stored slug is not the displayed public path'))
     check(() => assert.equal(row.querySelector('a[title="Mở bài"]').href, numeric.publicUrl))
     await click(row.querySelector('button[title="Sao chép link"]'))
-    check(() => assert.equal(copiedLinks.at(-1), numeric.publicUrl))
+    check(() => assert.equal(copiedLinks.at(-1), numeric.publicUrl.replace(/^https?:\/\//, '')))
     await click(editPost(numeric.title))
     check(() => assert.equal(field('Slug').value, numeric.slug, 'An existing numeric post keeps its stored edit identity'))
     check(() => assert.match(composer().querySelector('[aria-label="Khung dán ảnh preview Facebook"]').textContent, /\/p7\/90195/, 'The edit preview uses the public numeric path'))

@@ -32,3 +32,5 @@ The workflow does not read or commit `host.txt`, `.env`, or any production secre
 - Archive downloads run inside a 4-attempt bash `if curl --http1.1 --limit-rate 15M ...` loop so a transient CloudLinux LVE SIGKILL (`137`) or reset retries cleanly instead of triggering `FAILED_PRE_SWAP` on the first burst, and post-swap Passenger restart checks warm `restart.txt`, guard `BASH_SUBSHELL` inside `rollback_on_error`, and retry cold-boot timeouts via `expect_origin_http`. Verify with `bash -n scripts/cpanel-release.sh`.
 - Origin smoke checks also verify `/api/collage` (`401`), `/api/settings/collage` (`401`), and `/defaults/reaction-default.png` (`200`), while CI runs `node scripts/test-reaction-collage.cjs`.
 
+
+- Updated (2026-11-21): `scripts/cpanel-release.sh` verifies `/api/settings/quick-mode` (`401`) during origin smoke checks, and `.github/workflows/cpanel-deploy.yml` runs `node scripts/test-quick-telegram-and-post-ui.cjs`.

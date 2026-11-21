@@ -13,6 +13,7 @@ const updateNavSchema = z
     analytics: z.boolean().optional(),
     notes: z.boolean().optional(),
     fbDebug: z.boolean().optional(),
+    tiktokAff: z.boolean().optional(),
   })
   .strict()
 

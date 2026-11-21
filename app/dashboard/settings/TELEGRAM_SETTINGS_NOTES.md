@@ -27,3 +27,9 @@ existing posts and already-open drafts unchanged.
 
 Verify with `node scripts/test-telegram-dashboard.cjs`,
 `node scripts/test-post-types-dashboard.cjs`, and scoped ESLint.
+
+
+## Multi-Link Extra CTA Buttons & Mê Sale Preset (2026-11-21)
+
+- `TelegramSettingsFields.tsx` supports adding up to 6 optional extra CTA buttons (`extraButtons`) with custom button text, color theme (`telegram`, `orange`, `emerald`, `dark`), and HTTPS destination URL (supporting additional `https://t.me/...` channels/groups as well as external app links such as `https://mesale.vn`), including a one-click `+ Nút tải App Mê Sale` preset (`📲 TẢI APP MÊ SALE NGAY`, orange highlight).
+- Verify: `node scripts/test-quick-telegram-and-post-ui.cjs` and `node scripts/test-telegram-dashboard.cjs`.

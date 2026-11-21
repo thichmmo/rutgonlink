@@ -68,14 +68,14 @@ export default function MenuVisibilitySection({
 
   const hideAllOptional = () => {
     void applyPatch(
-      { links: false, folders: false, analytics: false, notes: false, fbDebug: false },
-      'Đã bật chế độ gọn (ẩn Links, Folders, Thống kê, Ghi chú, FB Debug).',
+      { links: false, folders: false, analytics: false, notes: false, fbDebug: false, tiktokAff: false },
+      'Đã bật chế độ gọn (ẩn Links, Folders, Thống kê, Ghi chú, FB Debug, TikTok AFF).',
     )
   }
 
   const showAllOptional = () => {
     void applyPatch(
-      { links: true, folders: true, analytics: true, notes: true, fbDebug: true },
+      { links: true, folders: true, analytics: true, notes: true, fbDebug: true, tiktokAff: true },
       'Đã hiển thị lại đầy đủ các mục trên thanh menu.',
     )
   }
@@ -92,7 +92,7 @@ export default function MenuVisibilitySection({
             Hiển thị thanh Menu
           </h2>
           <p className="text-xs text-gray-500 mt-1">
-            Tắt bớt các tính năng bạn không dùng để thanh menu gọn gàng hơn. Các mục chính (Tổng quan, TikTok AFF, Popups, Bài viết, Ghép ảnh, Cài đặt) luôn được giữ lại.
+            Tắt bớt các tính năng bạn không dùng để thanh menu gọn gàng hơn. Các mục chính (Tổng quan, Popups, Bài viết, Ghép ảnh, Cài đặt) luôn được giữ lại.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -102,7 +102,7 @@ export default function MenuVisibilitySection({
             onClick={hideAllOptional}
             className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-45 cursor-pointer"
           >
-            Ẩn gọn cả 5 mục
+            Ẩn gọn cả 6 mục
           </button>
           <button
             type="button"

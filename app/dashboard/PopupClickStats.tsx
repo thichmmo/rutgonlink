@@ -28,8 +28,16 @@ export function useLivePopupStats<T>(url: string) {
     const first = window.setTimeout(load, 150)
     const timer = window.setInterval(load, 5000)
     document.addEventListener('visibilitychange', load)
-    return () => { alive = false; controller.abort(); window.clearTimeout(first); window.clearInterval(timer); document.removeEventListener('visibilitychange', load) }
-  }, [url, revision])
+    window.addEventListener('popup-stats-refresh', refresh)
+    return () => {
+      alive = false
+      controller.abort()
+      window.clearTimeout(first)
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', load)
+      window.removeEventListener('popup-stats-refresh', refresh)
+    }
+  }, [url, revision, refresh])
   return { data: result?.url === url ? result.data : undefined, error, refresh }
 }
 

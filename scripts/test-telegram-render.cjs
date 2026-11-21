@@ -305,6 +305,27 @@ async function main() {
       }
     })
   }
+  for (const kind of ['route', 'react']) {
+    await check(`${kind}: extraButtons render additional Telegram & Mê Sale CTA links with escaped text and color modifier`, async () => {
+      const multiSettings = {
+        ...savedSettings,
+        extraButtons: [
+          { url: 'https://t.me/backup_group_2', buttonText: '🔥 NHÓM DỰ PHÒNG <2>' },
+          { url: 'https://mesale.vn/tai-app', buttonText: '📲 TẢI APP MÊ SALE NGAY', color: 'orange' },
+        ],
+      }
+      const html = await render(kind, fixture(multiSettings))
+      const doc = documentFor(html)
+      const ctas = Array.from(doc.querySelectorAll('.telegram-cta'))
+      assert.equal(ctas.length, 3)
+      assert.equal(ctas[0].href, savedSettings.url)
+      assert.equal(ctas[1].href, 'https://t.me/backup_group_2')
+      assert.equal(ctas[1].textContent, '🔥 NHÓM DỰ PHÒNG <2>')
+      assert.equal(ctas[2].href, 'https://mesale.vn/tai-app')
+      assert.equal(ctas[2].textContent, '📲 TẢI APP MÊ SALE NGAY')
+      assert.ok(ctas[2].classList.contains('telegram-cta--orange'))
+    })
+  }
   const exportIndex = process.argv.indexOf('--export-fixture')
   if (exportIndex >= 0) {
     const destination = process.argv[exportIndex + 1]

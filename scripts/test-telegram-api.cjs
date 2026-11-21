@@ -261,6 +261,38 @@ scenario('duplicate legacy null remains null and disabled despite enabled defaul
   assert.equal(calls('user.findUnique').length, 0)
 })
 
+scenario('multi-link extraButtons accept additional Telegram & Mê Sale HTTPS links and reject unsafe URLs', async () => {
+  const withExtras = {
+    ...enabled,
+    extraButtons: [
+      { url: 'https://t.me/backup_channel_2', buttonText: '🔥 NHÓM TELEGRAM DỰ PHÒNG', color: 'telegram' },
+      { url: 'https://mesale.vn', buttonText: '📲 TẢI APP MÊ SALE NGAY', color: 'orange' },
+    ],
+  }
+  const saved = await getBody(await settings.PUT(req(withExtras)))
+  assert.equal(saved.status, 200)
+  assert.deepEqual(saved.body.extraButtons, [
+    { url: 'https://t.me/backup_channel_2', buttonText: '🔥 NHÓM TELEGRAM DỰ PHÒNG' },
+    { url: 'https://mesale.vn', buttonText: '📲 TẢI APP MÊ SALE NGAY', color: 'orange' },
+  ])
+
+  const created = (await getBody(await posts.POST(req(payload)))).body.items[0]
+  assert.deepEqual(created.telegramSettings.extraButtons, saved.body.extraButtons)
+
+  // Reject unsafe protocols, credentials, localhost, empty labels, and >6 extra buttons.
+  const badExtras = [
+    [{ url: 'http://mesale.vn', buttonText: 'Insecure HTTP' }],
+    [{ url: 'javascript:alert(1)', buttonText: 'XSS' }],
+    [{ url: 'https://user:pass@mesale.vn', buttonText: 'Creds' }],
+    [{ url: 'https://app.localhost/install', buttonText: 'Localhost' }],
+    [{ url: 'https://mesale.vn', buttonText: '   ' }],
+    Array.from({ length: 7 }, (_, i) => ({ url: `https://t.me/group_${i}`, buttonText: `Nút ${i}` })),
+  ]
+  for (const extraButtons of badExtras) {
+    assert.equal((await settings.PUT(req({ ...enabled, extraButtons }))).status, 400)
+  }
+})
+
 ;(async () => {
   for (const { name, run } of tasks) {
     reset()

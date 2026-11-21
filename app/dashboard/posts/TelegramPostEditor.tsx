@@ -205,7 +205,16 @@ export default function TelegramPostEditor({ value, onChange, content, onInsert,
       <details className="rounded-xl border border-gray-200 bg-white p-3">
         <summary className="cursor-pointer text-sm font-semibold text-gray-700">Xem trước bố cục Telegram</summary>
         <div className="mx-auto mt-4 max-w-2xl space-y-5 py-2">
-          <div className="text-center"><span className="inline-block max-w-full break-words rounded-full bg-[#229ED9] px-7 py-3 text-base font-bold text-white shadow-lg">{value.buttonText || '✈️ VÀO NHÓM TELEGRAM NGAY'}</span></div>
+          <div className="space-y-3 text-center">
+            <div><span className="inline-block max-w-full break-words rounded-full bg-[#229ED9] px-7 py-3 text-base font-bold text-white shadow-lg">{value.buttonText || '✈️ VÀO NHÓM TELEGRAM NGAY'}</span></div>
+            {(value.extraButtons || []).map((btn, idx) => (
+              <div key={idx}>
+                <span className={`inline-block max-w-full break-words rounded-full px-7 py-3 text-base font-bold text-white shadow-lg ${btn.color === 'orange' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : btn.color === 'emerald' ? 'bg-emerald-500' : btn.color === 'dark' ? 'bg-[#19181d]' : 'bg-[#229ED9]'}`}>
+                  {btn.buttonText || 'Nút bấm phụ'}
+                </span>
+              </div>
+            ))}
+          </div>
           {value.disclaimer && <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{value.disclaimer}</p>}
           {previews.length ? previews.map((preview, index) => preview.kind === 'image' ? <Image key={index} src={preview.url} alt={preview.title} unoptimized width={960} height={540} className="h-auto w-full rounded-xl" />
             : preview.kind === 'video' ? <video key={index + ':' + preview.url} src={preview.url} controls preload="metadata" playsInline className="w-full rounded-xl bg-black" />

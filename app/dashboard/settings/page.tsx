@@ -9,9 +9,12 @@ import ApiKeySection from './ApiKeySection';
 import FolderRotationSection from './FolderRotationSection';
 import TelegramSettingsSection from './TelegramSettingsSection';
 import MenuVisibilitySection from './MenuVisibilitySection';
+import QuickCreateModeSection from './QuickCreateModeSection';
 import ReactionCollageSettingsSection from './ReactionCollageSettingsSection';
 import {defaultDashboardNavVisibility} from '@/lib/dashboard-nav-visibility';
 import {getUserDashboardNavVisibility} from '@/lib/dashboard-nav-visibility-server';
+import {defaultDashboardQuickMode} from '@/lib/dashboard-quick-mode';
+import {getUserDashboardQuickMode} from '@/lib/dashboard-quick-mode-server';
 import {defaultUserCollageSettings} from '@/lib/reaction-collage-config';
 import {getUserCollageSettings} from '@/lib/reaction-collage-server';
 
@@ -26,12 +29,17 @@ export default async function SettingsPage() {
 
     const apiKey: string | null = user?.apiKey ?? null;
     const hasPassword = !!user?.password;
-    const [navVisibility, collageSettings] = user
+    const [navVisibility, quickMode, collageSettings] = user
         ? await Promise.all([
               getUserDashboardNavVisibility(user.id),
+              getUserDashboardQuickMode(user.id),
               getUserCollageSettings(user.id),
           ])
-        : [defaultDashboardNavVisibility(), defaultUserCollageSettings()];
+        : [
+              defaultDashboardNavVisibility(),
+              defaultDashboardQuickMode(),
+              defaultUserCollageSettings(),
+          ];
 
     return (
         <div className="space-y-6 min-w-0">
@@ -59,6 +67,8 @@ export default async function SettingsPage() {
                     </div>
                 </div>
             </div>
+
+            <QuickCreateModeSection initialMode={quickMode} />
 
             <MenuVisibilitySection initialVisibility={navVisibility} />
 

@@ -12,7 +12,7 @@ import {
 import { prisma } from '@/lib/prisma'
 import { getSiteHostname } from '@/lib/site-config'
 import { normalizeTelegramSettings } from '@/lib/telegram-settings'
-import { getPublicPostPath } from '@/lib/public-post-link'
+import { getPublicPostPath, resolveNumericPostTitle } from '@/lib/public-post-link'
 import { allocateNumericPostSlug, NumericPostLinkExhaustedError, retryNumericPostCreation } from '@/lib/numeric-post-link-server'
 
 const PAGE_SIZES = [6, 10, 20, 25] as const
@@ -121,13 +121,15 @@ export async function POST(req: NextRequest) {
           slug = `${candidate}-${suffix}`
           suffix += 1
         }
+        // Auto-generated placeholders ("Video Telegram", "Ưu đãi hôm nay") take the 5-digit code as title.
+        const effectiveTitle = numericLink ? resolveNumericPostTitle(data.title, slug) : data.title
         result.push(await tx.managedPost.create({
           data: {
             userId: actor.id,
             popupId,
             domainId: target.domainId,
             sharedDomain: target.sharedDomain,
-            title: data.title,
+            title: effectiveTitle,
             slug,
             excerpt: data.excerpt || null,
             content,

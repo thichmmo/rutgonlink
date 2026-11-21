@@ -9,3 +9,5 @@ Authenticated user endpoint (`GET` / `PUT`) for reading and updating per-account
 
 ## Verification
 - `node scripts/test-dashboard-nav-visibility.cjs`
+
+- Includes `tiktokAff` (`/dashboard/tiktok-link`) as the 6th optional toggleable menu item alongside `links`, `folders`, `analytics`, `notes`, and `fbDebug`.

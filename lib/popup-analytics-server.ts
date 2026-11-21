@@ -40,7 +40,13 @@ export async function getPopupClickList(userId: string, group: ClickGroup, query
   const table = isPost ? Prisma.sql`ManagedPost` : Prisma.sql`PopupTemplate`
   const key = isPost ? Prisma.sql`postId` : Prisma.sql`popupId`
   const title = isPost ? Prisma.sql`m.title` : Prisma.sql`m.name`
-  const filter = Prisma.sql`m.userId = ${userId} ${query ? Prisma.sql`AND ${title} LIKE ${`%${query.replace(/[\\%_]/g, '\\$&')}%`}` : Prisma.empty}`
+  const likePattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`
+  const searchClause = query
+    ? isPost
+      ? Prisma.sql`AND (m.title LIKE ${likePattern} OR m.slug LIKE ${likePattern})`
+      : Prisma.sql`AND ${title} LIKE ${likePattern}`
+    : Prisma.empty
+  const filter = Prisma.sql`m.userId = ${userId} ${searchClause}`
   const [{ count }] = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`SELECT COUNT(*) AS count FROM ${table} m WHERE ${filter}`)
   const total = Number(count)
   page = Math.min(page, Math.max(1, Math.ceil(total / pageSize)))

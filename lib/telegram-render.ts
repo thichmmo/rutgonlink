@@ -5,12 +5,25 @@ function escape(value: string) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
 }
 
+const COLOR_CLASS: Record<string, string> = {
+  orange: ' telegram-cta--orange',
+  emerald: ' telegram-cta--emerald',
+  dark: ' telegram-cta--dark',
+}
+
 // Shared HTML keeps React aliases and standalone share domains visually identical.
 // Settings are plain text, never author-supplied HTML or scripts.
 export function renderTelegramHeader(value: unknown): string {
   const settings = normalizeTelegramSettings(value)
   if (!settings.enabled) return ''
-  return `<section class="telegram-intro"><div class="telegram-cta-wrap"><a class="telegram-cta" href="${escape(settings.url)}" target="_blank" rel="noopener noreferrer">${escape(settings.buttonText)}</a></div>${settings.disclaimer ? `<p class="telegram-disclaimer">${escape(settings.disclaimer)}</p>` : ''}</section>`
+  const primary = `<a class="telegram-cta" href="${escape(settings.url)}" target="_blank" rel="noopener noreferrer">${escape(settings.buttonText)}</a>`
+  const extras = (settings.extraButtons || [])
+    .map((btn) => {
+      const modifier = btn.color ? COLOR_CLASS[btn.color] || '' : ''
+      return `<div class="telegram-cta-extra"><a class="telegram-cta${modifier}" href="${escape(btn.url)}" target="_blank" rel="noopener noreferrer">${escape(btn.buttonText)}</a></div>`
+    })
+    .join('')
+  return `<section class="telegram-intro"><div class="telegram-cta-wrap">${primary}${extras}</div>${settings.disclaimer ? `<p class="telegram-disclaimer">${escape(settings.disclaimer)}</p>` : ''}</section>`
 }
 
 export function renderTelegramFooter(): string {
@@ -22,7 +35,11 @@ export const TELEGRAM_POST_CSS = `
 .telegram-post-page{min-height:100vh;background:#fff;color:#111827;font:16px/1.7 Arial,system-ui,sans-serif}
 .telegram-post{max-width:800px;margin:0 auto;padding:1px 12px 40px;overflow-wrap:anywhere}
 .telegram-cta-wrap{text-align:center;margin:25px 0}
+.telegram-cta-extra{margin-top:12px}
 .telegram-post .telegram-cta{display:inline-block;max-width:100%;background:#229ED9;color:#fff;padding:14px 32px;border-radius:50px;text-decoration:none;font-size:18px;font-weight:700;line-height:1.5;box-shadow:0 3px 10px rgba(0,0,0,.2)}
+.telegram-post .telegram-cta--orange{background:linear-gradient(135deg,#f97316,#ea580c)}
+.telegram-post .telegram-cta--emerald{background:#10b981}
+.telegram-post .telegram-cta--dark{background:#19181d}
 .telegram-cta:focus-visible{outline:3px solid #075985;outline-offset:4px}
 .telegram-disclaimer{margin:0 0 20px;white-space:pre-wrap;line-height:1.6}
 .telegram-post .managed-rich-content{font-size:16px;line-height:1.7}

@@ -11,3 +11,10 @@ with disabled defaults and fails closed for invalid records. The normalizer neve
 looks up account defaults: public posts use their own saved snapshot only.
 
 Verify: `node scripts/test-telegram-api.cjs` (18 scenarios), scoped ESLint and TypeScript.
+
+
+## Multi-Link Extra CTA Buttons (`extraButtons`, 2026-11-21)
+
+- `TelegramSettings` supports up to 6 optional `extraButtons` (`{ url, buttonText, color? }`), validated via `isSafeHttpsActionUrl` (HTTPS only, public dotted hostname, no credentials/ports/whitespace/localhost).
+- When `extraButtons` is empty or omitted, `telegramSettingsSchema` and `normalizeTelegramSettings` omit the key so single-button snapshots remain byte-identical.
+- Verify: `node scripts/test-telegram-api.cjs` (19 scenarios).

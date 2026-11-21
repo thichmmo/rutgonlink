@@ -444,6 +444,28 @@ scenario('Admin default post domain setting defaults to ca33newss.xyz and propag
   assert.equal(state.audits.length, 1)
 })
 
+scenario('numeric Telegram and Direct posts replace auto-placeholder title with the 5-digit code while preserving custom titles', async () => {
+  // Auto-placeholder "Video Telegram" becomes exact allocated 5-digit code "50000"
+  const autoTg = (await create({ title: 'Video Telegram', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })).data.items[0]
+  assert.equal(autoTg.slug, 'p7-50000')
+  assert.equal(autoTg.title, '50000')
+  assert.equal(autoTg.publicUrl, 'https://ca33newss.xyz/p7/50000')
+
+  // Duplicating a code-titled numeric post names the copy after its newly allocated 5-digit code "50001"
+  const autoCopy = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: autoTg.id }) }))
+  assert.equal(autoCopy.status, 201)
+  assert.equal(autoCopy.data.slug, 'p7-50001')
+  assert.equal(autoCopy.data.title, '50001')
+
+  // Custom user-entered title is preserved on create and gets "- bản sao" on duplicate
+  const customTg = (await create({ title: 'cân nhắc khi xem', publicLinkMode: 'numeric', sharedDomain: 'ca33newss.xyz' })).data.items[0]
+  assert.equal(customTg.slug, 'p7-50002')
+  assert.equal(customTg.title, 'cân nhắc khi xem')
+  const customCopy = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: customTg.id }) }))
+  assert.equal(customCopy.data.slug, 'p7-50003')
+  assert.equal(customCopy.data.title, 'cân nhắc khi xem - bản sao')
+})
+
 ;(async () => {
   for (const { name, run } of tasks) { reset(); await run(); console.log(`PASS ${name}`) }
   console.log(`RESULT=PASS numeric-post-links=${tasks.length}`)

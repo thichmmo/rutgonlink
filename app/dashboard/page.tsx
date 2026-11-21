@@ -7,6 +7,10 @@ import Link from 'next/link';
 import {Link2, MousePointer, Globe, TrendingUp} from 'lucide-react';
 import {formatNumber, formatDateTimeVN} from '@/lib/utils';
 import {getSiteUrl} from '@/lib/site-config';
+import {
+    getQuickTelegramDashboardConfig,
+    getUserDashboardQuickMode,
+} from '@/lib/dashboard-quick-mode-server';
 import DashboardQuickShorten from './DashboardQuickShorten';
 import PopupAnalytics from './PopupAnalytics';
 
@@ -24,11 +28,17 @@ export default async function DashboardPage() {
     const user = await prisma.user.findUnique({where: {email: session.user.email}});
     if (!user) redirect('/login');
 
-    const [totalLinks, activeLinks, totalDomains] = await Promise.all([
+    const [totalLinks, activeLinks, totalDomains, quickMode] = await Promise.all([
         prisma.link.count({where: {userId: user.id}}),
         prisma.link.count({where: {userId: user.id, isActive: true}}),
         prisma.domain.count({where: {userId: user.id}}),
+        getUserDashboardQuickMode(user.id),
     ]);
+
+    const telegramConfig =
+        quickMode === 'telegram-post'
+            ? await getQuickTelegramDashboardConfig(user.id)
+            : undefined;
 
     const recentLinks: RecentLink[] = await prisma.link.findMany({
         where: {userId: user.id},
@@ -85,8 +95,8 @@ export default async function DashboardPage() {
                 <p className="text-gray-600 mt-1">Đây là tổng quan tài khoản của bạn.</p>
             </div>
 
-            {/* Quick Shorten */}
-            <DashboardQuickShorten />
+            {/* Quick Shorten / Quick Telegram Post */}
+            <DashboardQuickShorten mode={quickMode} telegramConfig={telegramConfig} />
             <PopupAnalytics />
 
             {/* Stats */}

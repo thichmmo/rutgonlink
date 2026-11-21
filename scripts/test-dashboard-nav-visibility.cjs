@@ -76,16 +76,16 @@ async function run() {
 
   state.actor = { id: 'user-a', email: 'a@example.test', isAdmin: false }
   const initialA = await (await navApi.GET()).json()
-  assert.deepEqual(initialA.visibility, { links: true, folders: true, analytics: true, notes: true, fbDebug: true })
+  assert.deepEqual(initialA.visibility, { links: true, folders: true, analytics: true, notes: true, fbDebug: true, tiktokAff: true })
 
   assert.equal((await navApi.PUT({ json: async () => ({ unknownKey: false }) })).status, 400)
 
-  const updatedA = await (await navApi.PUT({ json: async () => ({ notes: false, fbDebug: false }) })).json()
-  assert.deepEqual(updatedA.visibility, { links: true, folders: true, analytics: true, notes: false, fbDebug: false })
+  const updatedA = await (await navApi.PUT({ json: async () => ({ notes: false, fbDebug: false, tiktokAff: false }) })).json()
+  assert.deepEqual(updatedA.visibility, { links: true, folders: true, analytics: true, notes: false, fbDebug: false, tiktokAff: false })
 
   state.actor = { id: 'user-b', email: 'b@example.test', isAdmin: false }
   const initialB = await (await navApi.GET()).json()
-  assert.deepEqual(initialB.visibility, { links: true, folders: true, analytics: true, notes: true, fbDebug: true }, 'Other users keep independent menu settings')
+  assert.deepEqual(initialB.visibility, { links: true, folders: true, analytics: true, notes: true, fbDebug: true, tiktokAff: true }, 'Other users keep independent menu settings')
   scenarios += 1
 
   // 2. Live synchronization across Desktop sidebar, Mobile drawer/bottom bar, CreateLinkButton, and Settings UI
@@ -133,10 +133,15 @@ async function run() {
   assert.equal(headerHasCreateLink(), false)
   scenarios += 1
 
-  // Click "Ẩn gọn cả 5 mục" -> hides all 5 optional modules while keeping core items
-  const hideAllBtn = [...document.querySelectorAll('#settings-card button')].find(b => b.textContent.trim() === 'Ẩn gọn cả 5 mục')
+  // Toggle TikTok AFF OFF -> hides TikTok AFF immediately
+  await clickButton(document.querySelector('button[aria-label="Hiển thị TikTok AFF"]'))
+  assert.equal(desktopLabels().includes('TikTok AFF'), false)
+  scenarios += 1
+
+  // Click "Ẩn gọn cả 6 mục" -> hides all 6 optional modules while keeping core items
+  const hideAllBtn = [...document.querySelectorAll('#settings-card button')].find(b => b.textContent.trim() === 'Ẩn gọn cả 6 mục')
   await clickButton(hideAllBtn)
-  assert.deepEqual(desktopLabels(), ['Tổng quan', 'TikTok AFF', 'Popups', 'Bài viết', 'Ghép ảnh', 'Cài đặt', 'Admin'])
+  assert.deepEqual(desktopLabels(), ['Tổng quan', 'Popups', 'Bài viết', 'Ghép ảnh', 'Cài đặt', 'Admin'])
   const mobileBottomLabels = [...document.querySelectorAll('#mobile-nav nav')][1].querySelectorAll('a')
   assert.deepEqual([...mobileBottomLabels].map(a => a.textContent.trim()), ['Tổng quan', 'Bài viết', 'Popups', 'Ghép ảnh', 'Cài đặt', 'Admin'])
   scenarios += 1

@@ -11,3 +11,5 @@ Card inside `/dashboard/settings` allowing users to individually toggle (`Links`
 ## Verification
 - `node scripts/test-dashboard-nav-visibility.cjs`
 - `npx eslint app/dashboard/settings/MenuVisibilitySection.tsx app/dashboard/settings/page.tsx`
+
+- Updated (2026-11-21): `TikTok AFF` (`tiktokAff`) is now included in the optional toggle list (`Ẩn gọn cả 6 mục` / `Hiện tất cả`), leaving `Tổng quan`, `Popups`, `Bài viết`, `Ghép ảnh`, and `Cài đặt` as always-pinned core items.

@@ -148,3 +148,10 @@ with local API fixtures; backend allocation/routing has separate coverage.
 - `Tạo Bọc thẳng` (`type=direct`) opens a compact composer with the default domain, newest active popup, and `Xuất bản ngay` selected by default, allocating a `/p7/<code>` numeric path without mounting `RichEditor` or `TelegramPostEditor`. Filter bar and list cards include `Bọc thẳng`.
 - Post fallback for deleted/missing `/p7/<code>` and `/posts/<slug>` links is an Admin-only backend setting (`/admin/post-fallback`), intentionally hidden from `/dashboard/posts`.
 - Verify: `node scripts/test-telegram-quick-form.cjs`, `node scripts/test-post-types-dashboard.cjs`, and `node scripts/test-fixed-content-composer.cjs`.
+
+
+## Post Creation Time, 5-Digit Code Title, Protocol-Free Copy & Multi-Button Preview (2026-11-21)
+
+- `PostManager.tsx` resolves auto-generated numeric post titles (`Video Telegram`, `Video Telegram - bản sao`, `Ưu đãi hôm nay`) to their 5-digit code (`37325`), renders `Tạo lúc: HH:mm dd/MM/yyyy` (Vietnam timezone) on each post card, and strips `https://` when copying a post link (`ca33newss.xyz/p7/37325`).
+- `TelegramPostEditor.tsx` previews all configured `extraButtons` (including orange Mê Sale / emerald / dark button themes) below the primary Telegram CTA.
+- Verify: `node scripts/test-telegram-quick-form.cjs` and `node scripts/test-quick-telegram-and-post-ui.cjs`.

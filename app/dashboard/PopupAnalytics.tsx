@@ -1,11 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { ExternalLink, RefreshCw, MousePointerClick } from 'lucide-react'
+import { Check, Copy, ExternalLink, RefreshCw, MousePointerClick } from 'lucide-react'
 import { CLICK_WINDOWS, type ClickStatsList, type PlatformClicks, type PopupAnalyticsResponse } from '@/lib/popup-analytics'
 import { useLivePopupStats } from './PopupClickStats'
-import { getPublicPostPath } from '@/lib/public-post-link'
+import {
+  formatPostCreatedAt,
+  getPublicPostPath,
+  resolveNumericPostTitle,
+  stripUrlProtocol,
+} from '@/lib/public-post-link'
 
 function Breakdown({ counts }: { counts?: PlatformClicks }) {
   return <div className="whitespace-nowrap text-xs leading-5"><div className="text-orange-600">Shopee: <strong>{counts?.shopee ?? '...'}</strong></div><div className="text-gray-600">TikTok: <strong>{counts?.tiktok ?? '...'}</strong></div></div>
@@ -15,6 +20,24 @@ function StatsTable({ kind, list, query, sort, onQuery, onSort, onPage }: {
   kind: 'post' | 'popup'; list?: ClickStatsList; query: string; sort: string;
   onQuery: (value: string) => void; onSort: (value: string) => void; onPage: (value: number) => void;
 }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  const handleCopyPostLink = async (id: string, publicUrl?: string) => {
+    const cleanUrl = stripUrlProtocol(publicUrl)
+    if (!cleanUrl) return
+    await navigator.clipboard.writeText(cleanUrl)
+    setCopiedId(id)
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = window.setTimeout(() => setCopiedId(null), 2000)
+  }
+
   const label = kind === 'post' ? 'bài viết' : 'popup'
   return <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white">
     <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 p-4">
@@ -24,14 +47,35 @@ function StatsTable({ kind, list, query, sort, onQuery, onSort, onPage }: {
     </div>
     <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
       <thead className="border-b border-gray-100 bg-slate-50 text-xs text-gray-600"><tr><th className="p-4">{kind === 'post' ? 'Bài viết' : 'Popup'}</th>{CLICK_WINDOWS.map(w => <th key={w.key} className="whitespace-nowrap p-4">{w.label}</th>)}</tr></thead>
-      <tbody className="divide-y divide-gray-100">{list?.items.map(item => <tr key={item.id} data-testid={`stats-${kind}-${item.id}`}>
-        <td className="max-w-sm p-4"><div className="flex items-center gap-3">
-          {item.image ? <Image src={item.image} alt="" width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg object-cover" /> : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><MousePointerClick className="h-5 w-5" /></span>}
-          <div className="min-w-0"><p className="truncate font-semibold text-gray-900">{item.title}</p>
-            {kind === 'post' ? <><p className="truncate text-xs text-gray-500">{getPublicPostPath(item.slug || '')}</p><p className="text-xs text-gray-500">Popup: {item.popupName || 'Không có'}</p><a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-sky-700"><ExternalLink className="h-3 w-3" /> Mở bài viết</a></> : <p className="text-xs text-gray-500">Bài viết liên kết: {item.postCount}</p>}
-          </div></div></td>
-        {CLICK_WINDOWS.map(w => <td key={w.key} className="p-4"><Breakdown counts={item.stats[w.key]} /></td>)}
-      </tr>)}</tbody>
+      <tbody className="divide-y divide-gray-100">{list?.items.map(item => {
+        const displayTitle = kind === 'post' ? resolveNumericPostTitle(item.title, item.slug) : item.title
+        const createdText = kind === 'post' ? formatPostCreatedAt(item.createdAt) : ''
+        return <tr key={item.id} data-testid={`stats-${kind}-${item.id}`}>
+          <td className="max-w-sm p-4"><div className="flex items-center gap-3">
+            {item.image ? <Image src={item.image} alt="" width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg object-cover" /> : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><MousePointerClick className="h-5 w-5" /></span>}
+            <div className="min-w-0"><p className="truncate font-semibold text-gray-900">{displayTitle}</p>
+              {kind === 'post' ? <>
+                <p className="truncate text-xs text-gray-500">{stripUrlProtocol(item.publicUrl) || getPublicPostPath(item.slug || '')}</p>
+                <p className="text-xs text-gray-500">Popup: {item.popupName || 'Không có'}{createdText ? ` · Tạo lúc: ${createdText}` : ''}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-sky-700 hover:underline"><ExternalLink className="h-3 w-3" /> Mở bài viết</a>
+                  {item.publicUrl && (
+                    <button
+                      type="button"
+                      data-copy-post-link={item.id}
+                      onClick={() => void handleCopyPostLink(item.id, item.publicUrl)}
+                      className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 hover:bg-sky-100 cursor-pointer"
+                    >
+                      {copiedId === item.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {copiedId === item.id ? 'Đã copy' : 'Copy link'}
+                    </button>
+                  )}
+                </div>
+              </> : <p className="text-xs text-gray-500">Bài viết liên kết: {item.postCount}</p>}
+            </div></div></td>
+          {CLICK_WINDOWS.map(w => <td key={w.key} className="p-4"><Breakdown counts={item.stats[w.key]} /></td>)}
+        </tr>
+      })}</tbody>
     </table></div>
     {!list && <p role="status" className="p-5 text-sm text-gray-500">Đang tải số click...</p>}
     {list && !list.items.length && <p className="p-5 text-sm text-gray-500">Chưa có {label} phù hợp.</p>}

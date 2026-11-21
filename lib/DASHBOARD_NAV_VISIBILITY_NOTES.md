@@ -11,3 +11,5 @@ Allows each user to show or hide optional sidebar/navigation modules (`Links`, `
 ## Verification
 - `node scripts/test-dashboard-nav-visibility.cjs`
 - `npx tsc --noEmit --pretty false`
+
+- Updated (2026-11-21): Added `tiktokAff` (`/dashboard/tiktok-link`, `TikTok AFF`) as the 6th optional toggleable item (`OPTIONAL_DASHBOARD_NAV_KEYS`). Core always-visible items are `Tổng quan`, `Popups`, `Bài viết`, `Ghép ảnh`, `Cài đặt`, and `Admin`.

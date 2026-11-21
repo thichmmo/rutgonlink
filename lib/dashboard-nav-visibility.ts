@@ -4,6 +4,7 @@ export const OPTIONAL_DASHBOARD_NAV_KEYS = [
   'analytics',
   'notes',
   'fbDebug',
+  'tiktokAff',
 ] as const
 
 export type OptionalDashboardNavKey = (typeof OPTIONAL_DASHBOARD_NAV_KEYS)[number]
@@ -48,6 +49,12 @@ export const OPTIONAL_DASHBOARD_NAV_META: Array<{
     label: 'FB Debug',
     description: 'Công cụ quét lại Open Graph Facebook bằng dàn token.',
   },
+  {
+    key: 'tiktokAff',
+    href: '/dashboard/tiktok-link',
+    label: 'TikTok AFF',
+    description: 'Công cụ chuyển đổi và xử lý link TikTok Affiliate.',
+  },
 ]
 
 const HREF_TO_KEY: Record<string, OptionalDashboardNavKey> = {
@@ -56,6 +63,7 @@ const HREF_TO_KEY: Record<string, OptionalDashboardNavKey> = {
   '/dashboard/analytics': 'analytics',
   '/dashboard/notes': 'notes',
   '/dashboard/fb-debug': 'fbDebug',
+  '/dashboard/tiktok-link': 'tiktokAff',
 }
 
 export function defaultDashboardNavVisibility(): DashboardNavVisibility {
@@ -65,6 +73,7 @@ export function defaultDashboardNavVisibility(): DashboardNavVisibility {
     analytics: true,
     notes: true,
     fbDebug: true,
+    tiktokAff: true,
   }
 }
 

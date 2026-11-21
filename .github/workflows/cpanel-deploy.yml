@@ -106,6 +106,9 @@ jobs:
       - name: Reaction collage regressions
         run: node scripts/test-reaction-collage.cjs
 
+      - name: Quick Telegram mode and post UI regressions
+        run: node scripts/test-quick-telegram-and-post-ui.cjs
+
       - name: Lint
         run: >-
           pnpm exec eslint
@@ -148,6 +151,10 @@ jobs:
           app/api/collage app/api/settings/collage
           app/dashboard/collage app/dashboard/settings/ReactionCollageSettingsSection.tsx
           scripts/test-reaction-collage.cjs
+          lib/dashboard-quick-mode.ts lib/dashboard-quick-mode-server.ts
+          app/api/settings/quick-mode app/dashboard/settings/QuickCreateModeSection.tsx
+          app/dashboard/DashboardQuickShorten.tsx app/dashboard/page.tsx
+          scripts/test-quick-telegram-and-post-ui.cjs
 
       - name: Validate deployment scripts
         run: |

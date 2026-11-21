@@ -38,3 +38,9 @@ No schema/migration or stored settings changes are required. Verify with
 - `GET /api/posts?type=direct` filters `isDirectWrapper: true`, while `telegram` and `standard` filter `isDirectWrapper: false` so the three types are mutually exclusive.
 - `POST /api/posts` allows `isDirectWrapper: true` with empty `content` (`""`) and `publicLinkMode: 'numeric'`, forces `telegramSettings.enabled: false`, and requires at least one active owned popup (`popupIds.length > 0`).
 - Verify: `node scripts/test-post-types-api.cjs` and `node scripts/test-numeric-post-links.cjs`.
+
+
+## 5-Digit Code Auto-Title for Numeric Posts (2026-11-21)
+
+- When `publicLinkMode: 'numeric'` allocates `p7-<code>` (e.g. `p7-37325`) and the submitted `title` is an auto-generated placeholder (`Video Telegram`, `Ưu đãi hôm nay`, or blank), `POST /api/posts` saves `title` as the exact 5-digit code (`37325`) via `resolveNumericPostTitle`, while preserving custom user-specified titles.
+- Verify: `node scripts/test-numeric-post-links.cjs`.
