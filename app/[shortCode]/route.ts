@@ -394,7 +394,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     gate.setAttribute('role', 'dialog');
     gate.setAttribute('aria-modal', 'true');
     gate.setAttribute('aria-label', 'Mở bài viết bằng Chrome');
-    gate.innerHTML = '<div class="managed-browser-gate-card"><h2>Mở bài viết bằng Chrome</h2><p>Nhấn nút bên dưới để tiếp tục xem bài viết.</p><a data-popup-chrome-link target="_self" rel="noopener noreferrer">Mở Chrome</a><small>Nếu ứng dụng hỏi mở trình duyệt ngoài, chọn Tiếp tục.</small><a data-popup-system-browser-link target="_self" rel="noopener noreferrer">Máy không có Chrome? Mở trình duyệt mặc định</a></div>';
+    gate.innerHTML = '<div class="managed-browser-gate-card"><h2>Mở bài viết bằng Chrome</h2><p>Nhấn nút bên dưới để tiếp tục xem bài viết.</p><a data-popup-chrome-link target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer">Mở Chrome</a><small>Nếu ứng dụng hỏi mở trình duyệt ngoài, chọn Tiếp tục.</small><a data-popup-system-browser-link target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer">Máy không có Chrome? Mở trình duyệt mặc định</a></div>';
     const anchor = gate.querySelector('[data-popup-chrome-link]');
     if (launchUrl) anchor.href = launchUrl;
     else { anchor.setAttribute('aria-disabled', 'true'); anchor.tabIndex = -1; }
@@ -590,7 +590,8 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
           document.body.appendChild(anchor);
           try { anchor.click(); } finally { anchor.remove(); }
         } else {
-          tab = window.open(url, '_blank');
+          // Pass noopener,noreferrer so legacy webviews that ignore Referrer-Policy headers still strip Referer.
+          tab = window.open(url, '_blank', 'noopener,noreferrer');
         }
       } catch (_) {
         pendingOpen = null;

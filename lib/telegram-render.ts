@@ -16,11 +16,11 @@ const COLOR_CLASS: Record<string, string> = {
 export function renderTelegramHeader(value: unknown): string {
   const settings = normalizeTelegramSettings(value)
   if (!settings.enabled) return ''
-  const primary = `<a class="telegram-cta" href="${escape(settings.url)}" target="_blank" rel="noopener noreferrer">${escape(settings.buttonText)}</a>`
+  const primary = `<a class="telegram-cta" href="${escape(settings.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escape(settings.buttonText)}</a>`
   const extras = (settings.extraButtons || [])
     .map((btn) => {
       const modifier = btn.color ? COLOR_CLASS[btn.color] || '' : ''
-      return `<div class="telegram-cta-extra"><a class="telegram-cta${modifier}" href="${escape(btn.url)}" target="_blank" rel="noopener noreferrer">${escape(btn.buttonText)}</a></div>`
+      return `<div class="telegram-cta-extra"><a class="telegram-cta${modifier}" href="${escape(btn.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escape(btn.buttonText)}</a></div>`
     })
     .join('')
   return `<section class="telegram-intro"><div class="telegram-cta-wrap">${primary}${extras}</div>${settings.disclaimer ? `<p class="telegram-disclaimer">${escape(settings.disclaimer)}</p>` : ''}</section>`

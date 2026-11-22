@@ -90,14 +90,15 @@ export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: str
 }
 
 export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform, userAgent = '') {
+  // Keep Shopee on raw HTTPS (opened in _blank with noopener/noreferrer/no-referrer, matching Boclink)
+  // so Android/OEM browsers never pass intent EXTRA_REFERRER / browser package as "Website" to Shopee Affiliate.
+  if (platform === 'SHOPEE') return value
   // Omit userAgent only in legacy compatibility callers; active Android requests pass userAgent.
-  if (!userAgent) return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
-  // Standard Chrome and all standalone/OEM Android browsers invoke PackageManager directly via scheme=https
-  // intent:// so Shopee & TikTok jump natively on one tap without stopping on web cards or unverified App Links.
+  if (!userAgent) return getTikTokAndroidLaunchUrl(value)
+  // Standalone/OEM Android browsers invoke PackageManager directly via scheme=https intent:// for TikTok
+  // so TikTok Shop jumps natively on one tap without stopping on web shared cards.
   if (!isAndroidIntentBrowserUserAgent(userAgent)) return value
-  return platform === 'SHOPEE'
-    ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
-    : buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
+  return buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
 }
 
 export function isTikTokOneLinkUrl(value: string) {
@@ -224,8 +225,9 @@ export function getPopupLinkOpenMode(
   options: { userAgent: string },
 ): PopupLinkOpenMode {
   if (isAndroidDeviceUserAgent(options.userAgent)) {
-    // Standalone Android browsers and explicit intent:// URIs must navigate in _self to avoid blank orphan tabs and popup blockers.
-    if (isAndroidIntentBrowserUserAgent(options.userAgent) || value.startsWith('intent://')) return 'anchor-same-tab'
+    // Explicit intent:// URIs (TikTok on standalone Android browsers) must navigate in _self to avoid blank orphan tabs,
+    // whereas Shopee opens raw HTTPS in a referrerless _blank browsing context so Shopee Affiliate records "Others".
+    if (value.startsWith('intent://')) return 'anchor-same-tab'
     return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
   // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context

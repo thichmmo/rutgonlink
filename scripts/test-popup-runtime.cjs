@@ -158,8 +158,8 @@ async function mount(kind, options = {}) {
       calls.push({ mode: url === 'https://mesale.vn' ? 'devtools-redirect' : 'same-tab', url, state: state(), session: [...storage.session] })
       if (options.replaceThrows) throw new Error('Navigation failed')
     } },
-    open(url, target) {
-      calls.push({ mode: 'new-tab', url, target, state: state(), session: [...storage.session] })
+    open(url, target, features) {
+      calls.push({ mode: 'new-tab', url, target, features, state: state(), session: [...storage.session] })
       if (options.handle === 'throw') throw new Error('Navigation failed')
       return options.handle === 'null' ? null : { opener: null }
     },
@@ -381,8 +381,8 @@ async function androidScenarios() {
       assert.equal(step.url, shortTikTok)
       assert.equal(step.launchUrl, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', ua))
       assert.equal(step.openMode, 'anchor-same-tab')
-      assert.equal(getPopupStep(settings, 0, ua).launchUrl, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
-      assert.equal(getPopupStep(settings, 0, ua).openMode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
+      assert.equal(getPopupStep(settings, 0, ua).launchUrl, shopee)
+      assert.equal(getPopupStep(settings, 0, ua).openMode, 'anchor-new-tab')
     }
     for (const iosUa of [facebookIos, safariIos]) {
       const iosStep = getPopupStep(settings, 1, iosUa)
@@ -540,8 +540,8 @@ async function androidScenarios() {
         assert.equal(h.calls.length, 0)
         assert.equal(h.clickEvents.length, 0)
         await h.click()
-        assert.equal(h.calls[0].url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', androidChrome))
-        assert.equal(h.calls[0].mode, 'anchor-same-tab')
+        assert.equal(h.calls[0].url, shopee)
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
         await h.away(3500); await h.back()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.calls.length, 1)
@@ -611,13 +611,13 @@ async function androidScenarios() {
         await h.click(); await h.click()
         assert.equal(h.calls.length, 1, 'Pending launch blocks an immediate second tap')
         const first = h.calls[0]
-        assert.equal(first.mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
-        assert.equal(first.target, ua === android ? '_blank' : '_self')
+        assert.equal(first.mode, 'anchor-new-tab')
+        assert.equal(first.target, '_blank')
         assert.equal(first.attached, true)
         assert.equal(first.hidden, false)
         assert.equal(first.nativeAction, true)
         assert.equal(h.button(), originalAnchor, 'Do not detach the tapped link before its default action')
-        assert.equal(first.url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
+        assert.equal(first.url, shopee)
         assert.equal(first.state, 'Shopee', 'Pending app handoff keeps the clicked popup visible')
         assert.match(first.session[0][1], /^1\|/)
         assert.equal(h.doc.querySelector('a[hidden]'), null)
@@ -686,8 +686,9 @@ async function androidScenarios() {
         const fallback = h.doc.querySelector('[data-popup-web-fallback]')
         assert.ok(fallback, 'The user can explicitly open the unchanged web link')
         await h.click(fallback)
+        assert.equal(h.calls[1].length, undefined)
         assert.equal(h.calls.length, 2)
-        assert.equal(h.calls[1].mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
+        assert.equal(h.calls[1].mode, 'anchor-new-tab')
         assert.equal(h.calls[1].url, shopee)
         await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
@@ -873,18 +874,20 @@ async function androidScenarios() {
           assert.equal(h.state(), 'Shopee')
           assert.equal(await h.mouse('contextmenu'), false, 'Long-press on physical Android/OpenHarmony must not redirect to mesale')
           const firstBtn = h.button()
-          assert.equal(firstBtn.target, '_self', 'OEM intent:// must use _self to avoid blank orphan tabs and popup blockers')
-          assert.match(firstBtn.href, /^intent:\/\/shopee\.vn\/.*#Intent;scheme=https;action=android\.intent\.action\.VIEW;category=android\.intent\.category\.BROWSABLE;package=com\.shopee\.vn;S\.browser_fallback_url=/)
-          assert.ok(firstBtn.href.includes('S.browser_fallback_url=' + encodeURIComponent(shopee)))
+          assert.equal(firstBtn.target, '_blank', 'Android Shopee uses referrerless _blank HTTPS anchor so Shopee Affiliate records Others')
+          assert.equal(firstBtn.href, shopee)
+          assert.doesNotMatch(firstBtn.href, /^intent:\/\//)
+          assert.equal(firstBtn.getAttribute('rel'), 'noopener noreferrer')
+          assert.equal((firstBtn.getAttribute('referrerpolicy') || firstBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
           await h.click()
-          assert.equal(h.calls[0].mode, 'anchor-same-tab')
-          // Verify timeout web fallback opens raw HTTPS in _self without popup-blocker _blank failure
+          assert.equal(h.calls[0].mode, 'anchor-new-tab')
+          // Verify timeout web fallback opens raw HTTPS in referrerless _blank
           await h.tick(2600)
           const webFallback = h.doc.querySelector('[data-popup-web-fallback]')
           assert.ok(webFallback)
           await h.click(webFallback)
           assert.equal(h.calls[1].url, shopee)
-          assert.equal(h.calls[1].mode, 'anchor-same-tab')
+          assert.equal(h.calls[1].mode, 'anchor-new-tab')
           await h.away(); await h.back()
           assert.equal(h.state(), 'TikTok')
           const secondBtn = h.button()
@@ -973,8 +976,9 @@ async function androidScenarios() {
       }, async h => {
         assert.equal(h.state(), 'Shopee', 'Signed _fbh handoff unlocks popup inside Android Chrome')
         const shopeeBtn = h.button()
-        assert.equal(shopeeBtn.target, '_self')
-        assert.match(shopeeBtn.href, /^intent:\/\/shopee\.vn\/.*package=com\.shopee\.vn;S\.browser_fallback_url=/)
+        assert.equal(shopeeBtn.target, '_blank')
+        assert.equal(shopeeBtn.href, shopee)
+        assert.doesNotMatch(shopeeBtn.href, /^intent:\/\//)
         await h.click(); await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
         const tiktokBtn = h.button()
@@ -1903,14 +1907,22 @@ async function main() {
     assert.match(html, /<meta name="referrer" content="no-referrer">/)
 
     for (const kind of ['route', 'react']) {
-      await using(kind, { ua: facebookIos }, async h => {
-        const anchor = h.doc.querySelector('[data-popup-native-link]')
-        assert.ok(anchor)
-        assert.equal(anchor.getAttribute('rel'), 'noopener noreferrer')
-        assert.equal((anchor.getAttribute('referrerpolicy') || anchor.referrerPolicy || '').toLowerCase(), 'no-referrer')
-      })
+      for (const testUa of [facebookIos, safariIos, android, androidChrome]) {
+        await using(kind, { ua: testUa }, async h => {
+          const anchor = h.doc.querySelector('[data-popup-native-link]')
+          assert.ok(anchor)
+          assert.equal(anchor.href, shopee)
+          assert.doesNotMatch(anchor.href, /^intent:\/\//)
+          assert.equal(anchor.getAttribute('rel'), 'noopener noreferrer')
+          assert.equal((anchor.getAttribute('referrerpolicy') || anchor.referrerPolicy || '').toLowerCase(), 'no-referrer')
+        })
+      }
     }
 
+    const routeSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/[shortCode]/route.ts'), 'utf8')
+    const postPopupSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/posts/[slug]/PostPopup.tsx'), 'utf8')
+    assert.match(routeSrc, /window\.open\(url,\s*'_blank',\s*'noopener,noreferrer'\)/)
+    assert.match(postPopupSrc, /window\.open\(current\.url,\s*'_blank',\s*'noopener,noreferrer'\)/)
     const nextConfigSrc = fs.readFileSync(path.resolve(__dirname, '..', 'next.config.ts'), 'utf8')
     assert.match(nextConfigSrc, /key:\s*'Referrer-Policy',\s*value:\s*'no-referrer'/)
   })

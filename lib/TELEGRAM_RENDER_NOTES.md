@@ -11,5 +11,5 @@ and `node scripts/test-popup-runtime.cjs` for layout and existing popup behavior
 
 ## Extra CTA Button Rendering (2026-11-21)
 
-- `renderTelegramHeader` renders each item in `settings.extraButtons` inside `<div class="telegram-cta-extra">` with `.telegram-cta` and optional `.telegram-cta--{orange,emerald,dark}` modifier classes, escaping both `href` and label text. Single-button markup remains unchanged when `extraButtons` is absent.
+- `renderTelegramHeader` renders both the primary `.telegram-cta` and each item in `settings.extraButtons` inside `<div class="telegram-cta-extra">` with `.telegram-cta`, optional `.telegram-cta--{orange,emerald,dark}` modifier classes, `rel="noopener noreferrer"`, and `referrerpolicy="no-referrer"`, escaping both `href` and label text. Single-button markup remains unchanged when `extraButtons` is absent.
 - Verify: `node scripts/test-telegram-render.cjs` (51 scenarios).
