@@ -219,6 +219,22 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
   }, [applies, commitStep, isAndroid, readStoredStep, ready])
 
   useEffect(() => {
+    if (!applies || !tracking || document.documentElement.hasAttribute('data-post-guard-blocked')) return
+    const handleDirectClick = (event: Event) => {
+      const target = (event.target as Element | null)?.closest?.('[data-direct-popup-platform]')
+      if (!target) return
+      if (document.documentElement.hasAttribute('data-post-guard-blocked')) {
+        event.preventDefault()
+        return
+      }
+      const platform = target.getAttribute('data-direct-popup-platform')
+      if (platform) sendPopupClick(tracking, platform)
+    }
+    document.addEventListener('click', handleDirectClick)
+    return () => document.removeEventListener('click', handleDirectClick)
+  }, [applies, tracking])
+
+  useEffect(() => {
     if (!applies || !ready || step >= steps.length) return
     // Timers pause in backgrounded iOS webviews; derive the countdown from its deadline.
     const update = () => setRemaining(Math.max(0, Math.ceil((readyAtRef.current - Date.now()) / 1000)))

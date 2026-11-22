@@ -215,7 +215,7 @@ async function mount(kind, options = {}) {
   if (options.tiktokEnabled !== undefined) settings.tiktok.enabled = options.tiktokEnabled
   if (options.androidEnabled !== undefined) settings.tiktok.androidEnabled = options.androidEnabled
   if (options.androidLaunchUrl !== undefined) settings.tiktok.androidLaunchUrl = options.androidLaunchUrl
-  const popup = { id: 'popup1', isActive: options.active !== false, updatedAt: '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: shopee, secondUrl: options.tiktokUrl ?? product, settings }
+  const popup = { id: options.popupId || 'popup1', isActive: options.active !== false, updatedAt: options.updatedAt || '2026-09-27T00:00:00.000Z', imageUrl: null, firstUrl: options.shopeeUrl || shopee, secondUrl: options.tiktokUrl ?? product, settings }
   const preparationRequests = []
   // Spy on Android preparation: it must preserve the source without fetching a live affiliate URL.
   const prepareMount = async fn => {
@@ -271,7 +271,7 @@ async function mount(kind, options = {}) {
       React.createElement(DesktopDevToolsGuard, { userAgent: ua }),
       options.noPopup ? null : React.createElement(PostPopup, { postId: 'post1', popup, userAgent: ua,
         isFacebookSource, fbHandoffToken,
-        tracking: { postId: 'post1', popupId: 'popup1', token: 'fixture-popup-click-token' } }),
+        tracking: { postId: 'post1', popupId: popup.id, token: 'fixture-popup-click-token' } }),
     )))
     await tick()
   }
@@ -1925,6 +1925,103 @@ async function main() {
     assert.match(postPopupSrc, /window\.open\(current\.url,\s*'_blank',\s*'noopener,noreferrer'\)/)
     const nextConfigSrc = fs.readFileSync(path.resolve(__dirname, '..', 'next.config.ts'), 'utf8')
     assert.match(nextConfigSrc, /key:\s*'Referrer-Policy',\s*value:\s*'no-referrer'/)
+  })
+  await scenario('full 12-device matrix and live popup edit/swap preserve every Shopee and TikTok click with Others attribution', async () => {
+    const newShopee = 'https://shopee.vn/opaanlp/987654321/123456789?__mobile__=1&gads_t_sig=VTJGc2RHVmtYMTlxTFVSVVRrdENkWVp3RFo3Mkw5czd4Z0hzdEF1WVFib2xET2c'
+    const newTikTok = 'https://www.tiktok.com/view/product/1730999888777666555?checksum=new%2Fsig&trackParams=%7B%22affiliate%22%3A%22swapped%22%7D'
+    const deviceMatrix = [
+      { label: 'iPhone 16 Pro Safari', ua: safariIos, os: 'ios' },
+      { label: 'iPhone 15 Facebook IAB', ua: facebookIos, os: 'ios' },
+      { label: 'iPhone Messenger IAB', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22D63 [FBAN/FBIOS;FBAV/495.0.0.41.109;FBBV/694821;MessengerForiOS]', os: 'ios' },
+      { label: 'iPadOS 18 Safari', ua: 'Mozilla/5.0 (iPad; CPU OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1', os: 'ios' },
+      { label: 'Android 15 Pixel 9 Chrome', ua: androidChrome, os: 'android' },
+      { label: 'Samsung S24 SamsungBrowser', ua: 'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36', os: 'android' },
+      { label: 'Xiaomi Redmi MiuiBrowser', ua: 'Mozilla/5.0 (Linux; U; Android 14; vi-vn; 23127PN0CG) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/123.0.6312.80 Mobile Safari/537.36 XiaoMi/MiuiBrowser/18.5.210416', os: 'android' },
+      { label: 'OPPO Reno HeyTapBrowser', ua: 'Mozilla/5.0 (Linux; U; Android 14; CPH2607) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36 HeyTapBrowser/40.9.3.1', os: 'android' },
+      { label: 'Vivo V30 VivoBrowser', ua: 'Mozilla/5.0 (Linux; Android 14; V2318) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 VivoBrowser/22.6.0.0', os: 'android' },
+      { label: 'Huawei Mate 60 HarmonyOS ArkWeb', ua: 'Mozilla/5.0 (Phone; OpenHarmony 5.0; HarmonyOS) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile', os: 'android' },
+      { label: 'Firefox Mobile Android', ua: 'Mozilla/5.0 (Android 14; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0', os: 'android' },
+      { label: 'Facebook Android IAB direct popup', ua: android, os: 'android', inAppWebview: true },
+    ]
+
+    for (const kind of ['route', 'react']) {
+      for (const device of deviceMatrix) {
+        // Phase 1: Complete Popup 1 with 60m cooldown, verifying Shopee -> TikTok -> ARTICLE and click beacons
+        const afterPopup1 = await using(kind, {
+          ua: device.ua,
+          popupId: 'popup-old',
+          updatedAt: '2026-11-22T01:00:00.000Z',
+          cooldownMinutes: 60,
+          firstDelay: 1,
+          secondDelay: 2,
+          onlyFromFacebook: true,
+          referrer: 'https://lm.facebook.com/',
+        }, async h => {
+          assert.equal(h.state(), 'Shopee', `${kind} ${device.label} starts on Shopee`)
+          await h.tick(1000)
+          const shopeeBtn = h.button()
+          assert.equal(shopeeBtn.disabled, false)
+          assert.equal(shopeeBtn.getAttribute('rel'), 'noopener noreferrer')
+          assert.equal((shopeeBtn.getAttribute('referrerpolicy') || shopeeBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
+          if (device.os === 'android') {
+            assert.equal(shopeeBtn.target, '_blank', `${kind} ${device.label} opens Shopee in _blank`)
+            assert.equal(shopeeBtn.href, shopee, `${kind} ${device.label} keeps raw HTTPS Shopee URL`)
+          } else {
+            assert.equal(shopeeBtn.target, '_self', `${kind} ${device.label} opens Shopee Universal Link in _self`)
+          }
+          await h.click()
+          await h.away(500); await h.back()
+          assert.equal(h.state(), 'TikTok', `${kind} ${device.label} advances cleanly to TikTok`)
+          await h.tick(2000)
+          const tiktokBtn = h.button()
+          assert.equal(tiktokBtn.disabled, false, `${kind} ${device.label} TikTok button enabled after 2s`)
+          assert.equal((tiktokBtn.getAttribute('referrerpolicy') || tiktokBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
+          if (device.inAppWebview) {
+            assert.equal(tiktokBtn.target, '_self')
+            assert.equal(tiktokBtn.href, product)
+          } else if (device.os === 'android') {
+            assert.equal(tiktokBtn.target, '_self')
+            assert.match(tiktokBtn.href, /^intent:\/\/www\.tiktok\.com\/view\/product\/1729605979383696179\?.*#Intent;scheme=https;action=android\.intent\.action\.VIEW;category=android\.intent\.category\.BROWSABLE;package=com\.ss\.android\.ugc\.trill;S\.browser_fallback_url=/)
+          } else {
+            assert.equal(tiktokBtn.target, '_self')
+            assert.equal(new URL(tiktokBtn.href).hostname, 'www.tiktokv.com')
+          }
+          await h.click()
+          await h.away(500); await h.back()
+          assert.equal(h.state(), 'ARTICLE', `${kind} ${device.label} unlocks article after TikTok`)
+          assert.deepEqual(h.clickEvents.map(e => [e.popupId, e.platform]), [['popup-old', 'SHOPEE'], ['popup-old', 'TIKTOK']])
+          return h.snapshot()
+        })
+
+        // Phase 2: Owner swaps post to Popup 2 (new Shopee + TikTok URLs) while visitor still has Popup 1's 60m cooldown stored.
+        // Next visit on the exact same device must immediately run Popup 2 without losing either click!
+        await using(kind, {
+          ...afterPopup1,
+          ua: device.ua,
+          popupId: 'popup-new',
+          updatedAt: '2026-11-22T01:05:00.000Z',
+          shopeeUrl: newShopee,
+          tiktokUrl: newTikTok,
+          androidUrl: newTikTok,
+          iosUrl: newTikTok,
+          cooldownMinutes: 60,
+          firstDelay: 0,
+          secondDelay: 0,
+          onlyFromFacebook: true,
+          referrer: 'https://lm.facebook.com/',
+        }, async h => {
+          assert.equal(h.state(), 'Shopee', `${kind} ${device.label} shows new Popup 2 immediately despite Popup 1 cooldown`)
+          assert.equal(h.button().href, newShopee)
+          await h.click()
+          await h.away(200); await h.back()
+          assert.equal(h.state(), 'TikTok')
+          await h.click()
+          await h.away(200); await h.back()
+          assert.equal(h.state(), 'ARTICLE')
+          assert.deepEqual(h.clickEvents.map(e => [e.popupId, e.platform]), [['popup-new', 'SHOPEE'], ['popup-new', 'TIKTOK']])
+        })
+      }
+    }
   })
   console.log('RESULT=PASS scenarios=' + passed)
 }

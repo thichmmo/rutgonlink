@@ -62,7 +62,7 @@ export async function getPopupClickList(userId: string, group: ClickGroup, query
   const rows = await prisma.$queryRaw<Row[]>(Prisma.sql`
     SELECT m.id, ${title} AS title, m.createdAt, ${metadata}, c.* FROM ${table} m
     LEFT JOIN (SELECT ${key} AS entityId, ${aggregates(now)} FROM PopupClick
-      WHERE userId = ${userId} AND createdAt >= ${w.dayBefore} AND createdAt <= ${now} GROUP BY ${key}) c ON c.entityId = m.id
+      WHERE userId = ${userId} AND ${key} IS NOT NULL AND createdAt >= ${w.dayBefore} AND createdAt <= ${now} GROUP BY ${key}) c ON c.entityId = m.id
     ${joins} WHERE ${filter} ORDER BY ${order} m.createdAt DESC, m.id ASC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`)
   return { total, page, pageSize, items: rows.map(row => ({
     id: row.id, title: row.title, image: row.image, createdAt: row.createdAt.toISOString(), stats: popupClickStats(row),

@@ -163,7 +163,7 @@ export default async function ManagedPostPage({ params, searchParams }: Context)
         <h1 className="text-xl font-bold leading-snug text-gray-950">{post.title}</h1>
         <p className="mt-2.5 text-sm text-gray-500">Chọn liên kết bên dưới nếu ứng dụng chưa tự mở.</p>
         {directSteps.length > 0 && <div className="mt-5 grid gap-3">
-          {directSteps.map(item => <a key={item.platform} href={item.launchUrl || item.url} rel="noopener noreferrer" referrerPolicy="no-referrer" className="block rounded-full bg-[#19181d] px-5 py-3.5 text-base font-bold text-white no-underline hover:bg-black">Mở {item.platform}</a>)}
+          {directSteps.map(item => <a key={item.platform} data-direct-popup-platform={item.platform} href={item.launchUrl || item.url} target={item.openMode === 'anchor-new-tab' || item.openMode === 'new-tab' ? '_blank' : '_self'} rel="noopener noreferrer" referrerPolicy="no-referrer" className="block rounded-full bg-[#19181d] px-5 py-3.5 text-base font-bold text-white no-underline hover:bg-black">Mở {item.platform}</a>)}
         </div>}
       </div>
     </main> : telegram.enabled ? <main className="telegram-post-page">

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { isBot } from '@/lib/bot-detect'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit'
 import { verifyPopupClickToken } from '@/lib/popup-click-token'
-import { normalizePopupSettings, popupAppliesToDevice } from '@/lib/popup-settings'
+import { defaultPopupSettings, normalizePopupSettings, popupAppliesToDevice } from '@/lib/popup-settings'
 
 const clickSchema = z.object({
   postId: z.string().min(1).max(191), popupId: z.string().min(1).max(191),
@@ -31,18 +31,50 @@ export async function POST(req: NextRequest) {
   if (!verifyPopupClickToken(token, postId, popupId, host)) return new NextResponse(null, { status: 403 })
   if (!checkRateLimit(`popup-click:${getClientIp(req)}:${postId}`, 120, 60000)) return new NextResponse(null, { status: 429 })
   const post = await prisma.managedPost.findFirst({
-    where: { id: postId, popupId, isPublished: true, user: { status: 'active', deletedAt: null }, popup: { isActive: true } },
-    select: { userId: true, popup: { select: { userId: true, settings: true, firstUrl: true, secondUrl: true } } },
+    where: { id: postId, isPublished: true, user: { status: 'active', deletedAt: null } },
+    select: {
+      userId: true,
+      popupId: true,
+      popup: { select: { id: true, userId: true, settings: true, firstUrl: true, secondUrl: true } },
+    },
   })
-  if (!post?.popup || post.popup.userId !== post.userId) return new NextResponse(null, { status: 404 })
-  const settings = normalizePopupSettings(post.popup.settings, post.popup.firstUrl, post.popup.secondUrl)
+  if (!post) return new NextResponse(null, { status: 404 })
+  // Retain in-flight clicks signed before the owner swapped popups, paused the old popup, or deleted it.
+  const currentPopup = post.popup?.userId === post.userId ? post.popup : null
+  const matchesCurrent = Boolean(
+    currentPopup && (post.popupId === popupId || currentPopup.id === popupId || (post.popupId === undefined && currentPopup.id === undefined)),
+  )
+  const clickedPopup = matchesCurrent
+    ? currentPopup
+    : (await prisma.popupTemplate?.findFirst({
+      where: { id: popupId, userId: post.userId },
+      select: { id: true, userId: true, settings: true, firstUrl: true, secondUrl: true },
+    })) ?? null
+  const sourcePopup = clickedPopup ?? currentPopup
+  const settings = sourcePopup
+    ? normalizePopupSettings(sourcePopup.settings, sourcePopup.firstUrl, sourcePopup.secondUrl)
+    : defaultPopupSettings()
   // verifyPopupClickToken already proved the server rendered an eligible popup (including Chrome handoff).
   if (!popupAppliesToDevice(settings, ua, { isFacebookSource: true })) return new NextResponse(null, { status: 204 })
+  const createdAt = new Date()
+  const resolvedPopupId = clickedPopup ? popupId : null
   try {
     // The unique event ID makes browser retransmissions idempotent across server processes.
-    await prisma.popupClick.create({ data: { userId: post.userId, postId, popupId, platform, eventId, createdAt: new Date() } })
+    await prisma.popupClick.create({ data: { userId: post.userId, postId, popupId: resolvedPopupId, platform, eventId, createdAt } })
   } catch (error) {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return new NextResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
+    }
+    // If a concurrent popup delete raced between lookup and insert, still retain the post/user click.
+    if (resolvedPopupId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      try {
+        await prisma.popupClick.create({ data: { userId: post.userId, postId, popupId: null, platform, eventId, createdAt } })
+      } catch (retryError) {
+        if (!(retryError instanceof Prisma.PrismaClientKnownRequestError && retryError.code === 'P2002')) throw retryError
+      }
+      return new NextResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
+    }
+    throw error
   }
   return new NextResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
 }

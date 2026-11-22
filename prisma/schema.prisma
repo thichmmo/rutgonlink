@@ -256,16 +256,16 @@ model ManagedPost {
 }
 
 model PopupClick {
-  id        String        @id @default(cuid())
-  eventId   String        @unique @db.VarChar(100)
+  id        String         @id @default(cuid())
+  eventId   String         @unique @db.VarChar(100)
   userId    String
-  postId    String
-  popupId   String
-  platform  String        @db.VarChar(10)
-  createdAt DateTime      @default(now())
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      ManagedPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
-  popup     PopupTemplate @relation(fields: [popupId], references: [id], onDelete: Cascade)
+  postId    String?
+  popupId   String?
+  platform  String         @db.VarChar(10)
+  createdAt DateTime       @default(now())
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      ManagedPost?   @relation(fields: [postId], references: [id], onDelete: SetNull)
+  popup     PopupTemplate? @relation(fields: [popupId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([postId, createdAt])

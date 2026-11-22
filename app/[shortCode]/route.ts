@@ -645,6 +645,13 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     }
     timer = window.setInterval(update, 250); update();
   };
+  document.querySelectorAll('[data-direct-popup-platform]').forEach(el => {
+    el.addEventListener('click', event => {
+      if (document.documentElement.hasAttribute('data-post-guard-blocked')) { event.preventDefault(); return; }
+      const platform = el.getAttribute('data-direct-popup-platform');
+      if (platform) recordPopupClick(tracking, platform);
+    });
+  });
   if (step >= 2) { document.body.classList.remove('managed-locked'); overlay.remove(); return; }
   render();
 })();
@@ -652,7 +659,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const socialImage = absoluteImage ? `<meta property="og:image" content="${escapeHtml(absoluteImage)}"><meta property="og:image:secure_url" content="${escapeHtml(absoluteImage)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${safeTitle}">` : ''
   const directLinks = popupSteps
     .filter(item => item.url)
-    .map(item => `<a class="direct-wrapper-btn" href="${escapeHtml(item.launchUrl || item.url)}" rel="noopener noreferrer" referrerpolicy="no-referrer">Mở ${escapeHtml(item.platform)}</a>`)
+    .map(item => `<a class="direct-wrapper-btn" data-direct-popup-platform="${escapeHtml(item.platform)}" href="${escapeHtml(item.launchUrl || item.url)}" target="${item.openMode === 'anchor-new-tab' || item.openMode === 'new-tab' ? '_blank' : '_self'}" rel="noopener noreferrer" referrerpolicy="no-referrer">Mở ${escapeHtml(item.platform)}</a>`)
     .join('')
   // Non-JS Facebook/Meta crawlers parse <noscript><meta http-equiv="refresh"> as an active 0s redirect
   // to mesale.vn; serve clean Open Graph markup to crawlers while keeping Mesale 100% active for browsers.

@@ -72,12 +72,20 @@ scenario('public routes embed tracking payload', async () => {
 
 const created = []
 const eventIds = new Set()
+let mockPost = () => ({ userId: 'user-1', popupId: 'popup-1', popup: { id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn', secondUrl: 'https://tiktok.com' } })
+let mockClickedPopup = () => null
+let failForeignKeyOnce = false
 const { Prisma } = require('@prisma/client')
 const route = load('app/api/popup-clicks/route.ts', {
   '@/lib/prisma': { prisma: {
-    managedPost: { findFirst: async () => ({ userId: 'user-1', popup: { userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn', secondUrl: 'https://tiktok.com' } }) },
+    managedPost: { findFirst: async () => mockPost() },
+    popupTemplate: { findFirst: async args => mockClickedPopup(args) },
     popupClick: { create: async args => {
       if (eventIds.has(args.data.eventId)) throw new Prisma.PrismaClientKnownRequestError('Duplicate', { code: 'P2002', clientVersion: 'test' })
+      if (failForeignKeyOnce && args.data.popupId) {
+        failForeignKeyOnce = false
+        throw new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', { code: 'P2003', clientVersion: 'test' })
+      }
       eventIds.add(args.data.eventId)
       created.push(args)
       return args.data
@@ -86,7 +94,7 @@ const route = load('app/api/popup-clicks/route.ts', {
   '@/lib/bot-detect': { isBot: ua => /bot/i.test(ua) },
   '@/lib/rate-limit': { checkRateLimit: () => true, getClientIp: () => '127.0.0.1' },
   '@/lib/popup-click-token': tokens,
-  '@/lib/popup-settings': { normalizePopupSettings: () => ({}), popupAppliesToDevice: (_settings, ua) => /iphone|android/i.test(ua) },
+  '@/lib/popup-settings': { defaultPopupSettings: () => ({}), normalizePopupSettings: () => ({}), popupAppliesToDevice: (_settings, ua) => /iphone|android/i.test(ua) },
   'next/server': { NextResponse: class { constructor(_body, init = {}) { this.status = init.status || 200; this.headers = init.headers || {}; } static json(body, init = {}) { const response = new this(JSON.stringify(body), init); response.json = async () => body; return response } } },
 })
 
@@ -142,6 +150,52 @@ scenario('API rejects malformed platform and oversized events', async () => {
   assert.equal((await route.POST(request({ ...click(), platform: 'UNKNOWN' }))).status, 400)
   assert.equal((await route.POST(request(click(), { 'content-length': '5000' }))).status, 413)
   assert.equal(created.length, before)
+})
+
+scenario('API retains valid in-flight clicks across popup swap, deactivation, deletion, and concurrent FK delete race', async () => {
+  const defaultPost = mockPost
+  try {
+    // 1. Post swapped from popup-1 -> popup-2 while visitor still holds signed popup-1 token (even if popup-1 is now inactive)
+    mockPost = () => ({ userId: 'user-1', popupId: 'popup-2', popup: { id: 'popup-2', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn/new', secondUrl: 'https://tiktok.com/new' } })
+    mockClickedPopup = ({ where }) => where.id === 'popup-1' && where.userId === 'user-1'
+      ? { id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn/old', secondUrl: 'https://tiktok.com/old' }
+      : null
+    const swappedRes = await route.POST(request({ ...click('event-after-swap-shopee-1'), platform: 'SHOPEE' }))
+    assert.equal(swappedRes.status, 204)
+    assert.equal(created.at(-1).data.postId, 'post-1')
+    assert.equal(created.at(-1).data.popupId, 'popup-1')
+    assert.equal(created.at(-1).data.userId, 'user-1')
+
+    // 2. Old popup-1 deleted right after swapping -> click still recorded with popupId: null so post/user totals lose zero clicks
+    mockClickedPopup = () => null
+    const deletedRes = await route.POST(request({ ...click('event-after-delete-tiktok-1'), platform: 'TIKTOK' }))
+    assert.equal(deletedRes.status, 204)
+    assert.equal(created.at(-1).data.postId, 'post-1')
+    assert.equal(created.at(-1).data.popupId, null)
+    assert.equal(created.at(-1).data.platform, 'TIKTOK')
+
+    // 3. Concurrent delete racing between popupTemplate lookup and popupClick.create (P2003) retries cleanly with popupId: null
+    mockClickedPopup = () => ({ id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn/old', secondUrl: 'https://tiktok.com/old' })
+    failForeignKeyOnce = true
+    const racedRes = await route.POST(request({ ...click('event-concurrent-delete-race-1'), platform: 'TIKTOK' }))
+    assert.equal(racedRes.status, 204)
+    assert.equal(created.at(-1).data.popupId, null)
+  } finally {
+    mockPost = defaultPost
+    mockClickedPopup = () => null
+    failForeignKeyOnce = false
+  }
+})
+
+scenario('schema and migration preserve historical PopupClick rows with ON DELETE SET NULL', async () => {
+  const schema = fs.readFileSync(path.join(root, 'prisma/schema.prisma'), 'utf8')
+  const popupClickModel = schema.slice(schema.indexOf('model PopupClick {'), schema.indexOf('}', schema.indexOf('model PopupClick {')))
+  assert.match(popupClickModel, /postId\s+String\?/)
+  assert.match(popupClickModel, /popupId\s+String\?/)
+  assert.match(popupClickModel, /post\s+ManagedPost\?\s+@relation\(fields: \[postId\], references: \[id\], onDelete: SetNull\)/)
+  assert.match(popupClickModel, /popup\s+PopupTemplate\?\s+@relation\(fields: \[popupId\], references: \[id\], onDelete: SetNull\)/)
+  const migration = fs.readFileSync(path.join(root, 'prisma/migrations/20261122000000_preserve_popup_clicks_on_delete/migration.sql'), 'utf8')
+  assert.match(migration, /ON DELETE SET NULL/)
 })
 
 scenario('client beacon fallback retains one event ID and never blocks navigation', async () => {

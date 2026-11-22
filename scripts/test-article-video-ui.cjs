@@ -314,6 +314,19 @@ async function scenario(name, fn) { await fn(); scenarios++; console.log('PASS '
     assert.equal(payload.contentFormat, 'raw-html'); assert.deepEqual(payload.telegramSettings, post.telegramSettings); assert.equal(payload.domainId, 'custom'); assert.equal(payload.popupId, 'older')
     assert.equal(Object.hasOwn(payload, 'publicLinkMode'), false)
   })
+  await scenario('editing an existing post replaces popup selection on click instead of keeping old popup in popupIds[0]', async () => {
+    await mountManager()
+    await click([...document.querySelectorAll('article')].find(item => item.textContent.includes('Saved title')).querySelector('button[title="Sửa"]'))
+    assert.equal(field('Older popup').checked, true)
+    assert.equal(field('Latest popup').checked, false)
+    // Clicking Latest popup directly while editing must uncheck Older popup and submit popupId='latest'
+    await click(field('Latest popup'))
+    assert.equal(field('Latest popup').checked, true)
+    assert.equal(field('Older popup').checked, false)
+    await click(button('Cập nhật bài', composer()))
+    const payload = JSON.parse(mutationCalls()[0].body)
+    assert.equal(payload.popupId, 'latest')
+  })
   await scenario('closing actual parent composer releases busy and cannot copy late result into fresh Telegram draft', async () => {
     await mountManager(); await click(button('Tạo bài Telegram')); const pending = await start()
     await click(button('Hủy', composer())); assert.equal(pending.init.signal.aborted, true)

@@ -154,4 +154,5 @@ with local API fixtures; backend allocation/routing has separate coverage.
 
 - `PostManager.tsx` resolves auto-generated numeric post titles (`Video Telegram`, `Video Telegram - bản sao`, `Ưu đãi hôm nay`) to their 5-digit code (`37325`), renders `Tạo lúc: HH:mm dd/MM/yyyy` (Vietnam timezone) on each post card, and strips `https://` when copying a post link (`ca33newss.xyz/p7/37325`).
 - `TelegramPostEditor.tsx` previews all configured `extraButtons` (including orange Mê Sale / emerald / dark button themes) below the primary Telegram CTA.
-- Verify: `node scripts/test-telegram-quick-form.cjs` and `node scripts/test-quick-telegram-and-post-ui.cjs`.
+- Editing an existing post (`editingId !== null`) performs single-popup replacement when clicking a popup checkbox (and surfaces an attached inactive popup labeled `(đang tắt)`) so switching popups never leaves the previous popup stuck at `popupIds[0]`; post rows also keep showing `PopupClickBadge` whenever recorded clicks exist even after an old popup is deleted.
+- Verify: `node scripts/test-telegram-quick-form.cjs`, `node scripts/test-article-video-ui.cjs`, and `node scripts/test-quick-telegram-and-post-ui.cjs`.
