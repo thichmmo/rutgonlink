@@ -32,3 +32,9 @@ iOS remained automated-only. Production deployment is verified separately.
 
 - `PopupManager.tsx` exposes the **Chỉ hiện popup từ Facebook** (`onlyFromFacebook`) toggle, enabled (`true`) by default for both newly created and existing saved popups (`settings.onlyFromFacebook !== false`).
 - When enabled, public posts hide popups on non-Facebook visits while preserving Facebook -> Chrome Android handoffs via signed `_fbh` tokens. Verify with `node scripts/test-popup-affiliate.cjs` and `node scripts/test-popup-runtime.cjs`.
+
+## Automatic Shopee & TikTok Product Preview on Paste (2026-11-22)
+
+- Pasting a Shopee or TikTok URL into `PopupManager.tsx` (`handleUrlPaste`) or clicking `Xử lý affiliate` resolves both platforms independently in parallel and renders `ProductPreviewCard` (`[data-product-preview="shopee" | "tiktok"]`) displaying the product thumbnail (`referrerPolicy="no-referrer"`) and product title.
+- Default popup banners (`DEFAULT_SHOPEE_IMAGE_URL`, `DEFAULT_TIKTOK_IMAGE_URL`) remain untouched on paste/resolve unless the user explicitly clicks `Dùng ảnh cho popup` on the preview card. Pasting a new link into `Link TikTok cho Android` also automatically refreshes `Link TikTok cho iOS`, and opening `Sửa` hydrates saved TikTok `og_info` previews synchronously without extra network requests.
+- Verify: `node scripts/test-popup-affiliate.cjs` (34 scenarios).

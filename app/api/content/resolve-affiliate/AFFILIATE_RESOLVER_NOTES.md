@@ -1,9 +1,9 @@
 # Affiliate resolution
 
 The authenticated endpoint accepts credential-free HTTP(S) URLs up to the shared
-8192-character popup limit. It retains the existing Shopee/TikTok fetch allowlist,
-manual redirects and timeouts. TikTok conversion still returns the signed
-`view/product` URL; this endpoint does not alter Android/iOS popup settings.
+8192-character popup limit. It supports Shopee (`shopee.*`, `s.shopee.*`, `shope.ee`, `shp.ee`) and TikTok (`tiktok.com`, `vt.tiktok.com`, `vm.tiktok.com`, `tiktokv.com`, `onelink.me`) links with manual redirects and timeouts.
+- **TikTok**: Returns the signed `view/product` URL alongside both `title` and `image` extracted from `og_info` (including nested OneLink/`tiktokv.com` payloads).
+- **Shopee**: Expands shortener hops (`s.shopee.vn`, `shope.ee`, `shp.ee`) with a mobile browser UA so the exact `opaanlp` affiliate URL & tracking params stay intact, and fetches SSR Open Graph metadata (`og:title` stripped of trailing ` | Shopee...`, plus `og:image`) using `WhatsApp/2.24.12.78 A` (performing a secondary `/product/<shopId>/<itemId>` metadata lookup only when the resolved URL lands on a client-side `/opaanlp/` or `/universal-link/` redirector).
 
 Resolved results and all redirect targets must satisfy the same URL boundary.
 TikTok receives an optional URL budget checked before each upstream fetch; public

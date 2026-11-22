@@ -14,6 +14,7 @@ import {
   type PopupSettings,
 } from '@/lib/popup-settings'
 import { isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { extractTikTokOgInfo } from '@/lib/tiktok-link'
 import { MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_INVALID, POPUP_AFFILIATE_URL_TOO_LONG, isValidPopupAffiliateUrl } from '@/lib/popup-affiliate-url'
 import { popupTiming, popupTimingLabel } from '@/app/dashboard/popup-timing'
 import { PopupTimingPreview } from '@/app/dashboard/PopupTiming'
@@ -31,8 +32,63 @@ type Popup = {
 }
 
 type ImageField = 'shopee' | 'tiktok'
+type ProductPreview = { title: string | null; image: string | null; url: string }
 
 const emptyForm = { name: '', firstUrl: '', secondUrl: '', imageUrl: '', isActive: true }
+const emptyPreviews: Record<ImageField, ProductPreview | null> = { shopee: null, tiktok: null }
+const emptyPending: Record<ImageField, boolean> = { shopee: false, tiktok: false }
+
+function ProductPreviewCard({
+  platform,
+  preview,
+  appliedImageUrl,
+  onUseImage,
+}: {
+  platform: ImageField
+  preview: ProductPreview | null
+  appliedImageUrl: string | null | undefined
+  onUseImage: (imageUrl: string) => void
+}) {
+  if (!preview || (!preview.title && !preview.image)) return null
+  const isShopee = platform === 'shopee'
+  const usingProductImage = Boolean(preview.image && appliedImageUrl === preview.image)
+  return (
+    <div
+      data-product-preview={platform}
+      className="mt-2 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5"
+    >
+      {preview.image && (
+        <img
+          src={preview.image}
+          alt={preview.title || `Ảnh sản phẩm ${isShopee ? 'Shopee' : 'TikTok'}`}
+          referrerPolicy="no-referrer"
+          className="h-12 w-12 shrink-0 rounded-md border border-gray-200 bg-white object-cover"
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+          ✓ Sản phẩm {isShopee ? 'Shopee' : 'TikTok Shop'}
+        </span>
+        <p className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-gray-900">
+          {preview.title || `Đã nhận diện link sản phẩm ${isShopee ? 'Shopee' : 'TikTok Shop'}`}
+        </p>
+      </div>
+      {preview.image && (
+        <button
+          type="button"
+          onClick={() => onUseImage(preview.image!)}
+          className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-semibold ${
+            usingProductImage
+              ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {usingProductImage ? 'Đang dùng ảnh SP' : 'Dùng ảnh cho popup'}
+        </button>
+      )}
+    </div>
+  )
+}
 
 function backgroundImage(url: string | null | undefined) {
   return url ? { backgroundImage: `url("${url.replaceAll('"', '%22')}")` } : undefined
@@ -54,9 +110,11 @@ export default function PopupManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [affiliatePending, setAffiliatePending] = useState<ImageField | null>(null)
-  const affiliateRequest = useRef(0)
-  const affiliateAbort = useRef<AbortController | null>(null)
+  const [affiliatePending, setAffiliatePending] = useState<Record<ImageField, boolean>>(emptyPending)
+  const [previews, setPreviews] = useState<Record<ImageField, ProductPreview | null>>(emptyPreviews)
+  const affiliateRequest = useRef<Record<ImageField, number>>({ shopee: 0, tiktok: 0 })
+  const affiliateAbort = useRef<Record<ImageField, AbortController | null>>({ shopee: null, tiktok: null })
+  const anyAffiliatePending = affiliatePending.shopee || affiliatePending.tiktok
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
@@ -81,16 +139,21 @@ export default function PopupManager() {
   }, [load])
 
   useEffect(() => () => {
-    affiliateRequest.current += 1
-    affiliateAbort.current?.abort()
+    for (const key of ['shopee', 'tiktok'] as ImageField[]) {
+      affiliateRequest.current[key] += 1
+      affiliateAbort.current[key]?.abort()
+    }
   }, [])
 
-  function invalidateAffiliate() {
-    // Edits and a new dialog must never inherit an older network response.
-    affiliateRequest.current += 1
-    affiliateAbort.current?.abort()
-    affiliateAbort.current = null
-    setAffiliatePending(null)
+  function invalidateAffiliate(target?: ImageField) {
+    // Edits invalidate only the edited platform; dialog transitions invalidate both.
+    const keys: ImageField[] = target ? [target] : ['shopee', 'tiktok']
+    for (const key of keys) {
+      affiliateRequest.current[key] += 1
+      affiliateAbort.current[key]?.abort()
+      affiliateAbort.current[key] = null
+    }
+    setAffiliatePending(current => target ? (current[target] ? { ...current, [target]: false } : current) : emptyPending)
   }
 
   function startCreate() {
@@ -98,6 +161,7 @@ export default function PopupManager() {
     setEditingId(null)
     setForm(emptyForm)
     setSettings(defaultPopupSettings())
+    setPreviews(emptyPreviews)
     setShowForm(true)
     setError('')
   }
@@ -105,8 +169,15 @@ export default function PopupManager() {
   function edit(popup: Popup) {
     invalidateAffiliate()
     setEditingId(popup.id)
+    const nextSettings = popup.settings || defaultPopupSettings(popup.firstUrl, popup.secondUrl)
+    const tiktokSource = nextSettings.tiktok.iosUrl || popup.secondUrl
+    const tiktokOg = extractTikTokOgInfo(tiktokSource)
     setForm({ name: popup.name, firstUrl: popup.firstUrl, secondUrl: popup.secondUrl, imageUrl: popup.imageUrl || '', isActive: popup.isActive })
-    setSettings(popup.settings || defaultPopupSettings(popup.firstUrl, popup.secondUrl))
+    setSettings(nextSettings)
+    setPreviews({
+      shopee: null,
+      tiktok: tiktokOg.title || tiktokOg.image ? { title: tiktokOg.title, image: tiktokOg.image, url: tiktokSource } : null,
+    })
     setShowForm(true)
     setError('')
   }
@@ -116,29 +187,64 @@ export default function PopupManager() {
     setEditingId(null)
     setForm(emptyForm)
     setSettings(defaultPopupSettings())
+    setPreviews(emptyPreviews)
     setShowForm(false)
   }
 
   function updateUrl(field: 'firstUrl' | 'secondUrl', value: string) {
-    invalidateAffiliate()
+    const target: ImageField = field === 'firstUrl' ? 'shopee' : 'tiktok'
+    invalidateAffiliate(target)
     setForm(current => ({ ...current, [field]: value }))
-    if (field === 'firstUrl') setSettings(current => ({ ...current, shopee: { ...current.shopee, url: value } }))
-    else setSettings(current => ({ ...current, tiktok: updateTikTokPopupUrl(current.tiktok, value) }))
+    if (field === 'firstUrl') {
+      setSettings(current => ({ ...current, shopee: { ...current.shopee, url: value } }))
+      setPreviews(current => ({ ...current, shopee: null }))
+    } else {
+      setSettings(current => ({ ...current, tiktok: updateTikTokPopupUrl(current.tiktok, value) }))
+      setPreviews(current => ({ ...current, tiktok: null }))
+    }
   }
 
   function updateIosUrl(value: string) {
-    invalidateAffiliate()
+    invalidateAffiliate('tiktok')
+    const og = extractTikTokOgInfo(value)
     setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosUrl: value } }))
+    setPreviews(current => ({
+      ...current,
+      tiktok: og.title || og.image ? { title: og.title, image: og.image, url: value } : null,
+    }))
+  }
+
+  function handleUrlPaste(event: React.ClipboardEvent<HTMLInputElement>, platform: ImageField) {
+    if (busy || affiliatePending[platform]) return
+    const pasted = event.clipboardData?.getData('text')
+    if (!pasted) return
+    const input = event.currentTarget
+    const start = input.selectionStart ?? 0
+    const end = input.selectionEnd ?? input.value.length
+    const merged = (input.value.slice(0, start) + pasted + input.value.slice(end)).trim()
+    if (!isValidPopupAffiliateUrl(merged)) return
+    // Prevent a trailing native input event from calling updateUrl -> invalidateAffiliate() on our paste lookup.
+    event.preventDefault()
+    if (platform === 'shopee') {
+      setForm(current => ({ ...current, firstUrl: merged }))
+      setSettings(current => ({ ...current, shopee: { ...current.shopee, url: merged } }))
+      setPreviews(current => ({ ...current, shopee: null }))
+    } else {
+      setForm(current => ({ ...current, secondUrl: merged }))
+      setSettings(current => ({ ...current, tiktok: updateTikTokPopupUrl(current.tiktok, merged) }))
+      setPreviews(current => ({ ...current, tiktok: null }))
+    }
+    void resolveAffiliate(platform, merged)
   }
 
   function updateIosMode(iosMode: 'desktop' | 'onelink') {
-    invalidateAffiliate()
+    invalidateAffiliate('tiktok')
     setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosMode } }))
   }
 
   async function save(event: React.FormEvent) {
     event.preventDefault()
-    if (busy || affiliatePending) return
+    if (busy || anyAffiliatePending) return
     setBusy(true)
     setError('')
     try {
@@ -214,23 +320,23 @@ export default function PopupManager() {
     setViewing({ ...popup, settings: details.settings, firstUrl: details.firstUrl, secondUrl: details.secondUrl })
   }
 
-  async function resolveAffiliate(platform: ImageField) {
-    if (busy || affiliatePending) return
-    const url = platform === 'shopee' ? form.firstUrl : settings.tiktok.androidUrl || form.secondUrl
+  async function resolveAffiliate(platform: ImageField, explicitUrl?: string) {
+    if (busy || affiliatePending[platform]) return
+    const url = (explicitUrl ?? (platform === 'shopee' ? form.firstUrl : settings.tiktok.androidUrl || form.secondUrl)).trim()
     if (!url) return
     setError('')
     if (!isValidPopupAffiliateUrl(url)) {
       setError(url.length > MAX_POPUP_AFFILIATE_URL_LENGTH ? POPUP_AFFILIATE_URL_TOO_LONG : POPUP_AFFILIATE_URL_INVALID)
       return
     }
-    const request = ++affiliateRequest.current
+    const request = ++affiliateRequest.current[platform]
     const controller = new AbortController()
-    affiliateAbort.current = controller
-    setAffiliatePending(platform)
+    affiliateAbort.current[platform] = controller
+    setAffiliatePending(current => ({ ...current, [platform]: true }))
     try {
       const response = await fetch('/api/content/resolve-affiliate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }), signal: controller.signal })
       const result = await response.json()
-      if (request !== affiliateRequest.current) return
+      if (request !== affiliateRequest.current[platform]) return
       if (!response.ok) throw new Error(result.error || 'Không xử lý được link')
       // A resolver fallback is not a replacement for a working, separately saved iOS link.
       if (result.warning) { setError(result.warning); return }
@@ -238,17 +344,26 @@ export default function PopupManager() {
       if (typeof resolvedUrl !== 'string' || !isValidPopupAffiliateUrl(resolvedUrl)) {
         throw new Error(typeof resolvedUrl === 'string' && resolvedUrl.length > MAX_POPUP_AFFILIATE_URL_LENGTH ? POPUP_AFFILIATE_URL_TOO_LONG : POPUP_AFFILIATE_URL_INVALID)
       }
+      const previewTitle = typeof result.title === 'string' && result.title.trim() ? result.title.trim() : null
+      const previewImage = typeof result.image === 'string' && result.image.trim() ? result.image.trim() : null
+      setPreviews(current => ({
+        ...current,
+        [platform]: previewTitle || previewImage ? { title: previewTitle, image: previewImage, url: resolvedUrl } : null,
+      }))
       if (platform === 'shopee') {
         setForm(current => ({ ...current, firstUrl: resolvedUrl }))
-        setSettings(current => ({ ...current, shopee: { ...current.shopee, url: resolvedUrl, imageUrl: result.image || current.shopee.imageUrl } }))
+        setSettings(current => ({ ...current, shopee: { ...current.shopee, url: resolvedUrl } }))
       } else {
         // Android/general URLs remain the user's source; only iOS receives the conversion.
-        setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosUrl: resolvedUrl, iosMode: isTikTokOneLinkUrl(resolvedUrl) ? 'onelink' : 'desktop', imageUrl: result.image || current.tiktok.imageUrl } }))
+        setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosUrl: resolvedUrl, iosMode: isTikTokOneLinkUrl(resolvedUrl) ? 'onelink' : 'desktop' } }))
       }
     } catch (cause) {
-      if (request === affiliateRequest.current) setError(cause instanceof Error ? cause.message : 'Không xử lý được link')
+      if (request === affiliateRequest.current[platform]) setError(cause instanceof Error ? cause.message : 'Không xử lý được link')
     } finally {
-      if (request === affiliateRequest.current) { setAffiliatePending(null); affiliateAbort.current = null }
+      if (request === affiliateRequest.current[platform]) {
+        setAffiliatePending(current => ({ ...current, [platform]: false }))
+        affiliateAbort.current[platform] = null
+      }
     }
   }
 
@@ -302,14 +417,14 @@ export default function PopupManager() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-7">{error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p>}<div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
         <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium text-gray-700">Tên popup<input required maxLength={120} value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-[#d61f51]" placeholder="Popup Shopee + TikTok" /></label><div className="grid gap-1 text-sm font-medium text-gray-700"><span>Trạng thái popup</span><div className="flex h-[38px] items-center justify-between rounded-lg border border-gray-300 px-3"><span className="text-sm text-gray-700">{form.isActive ? 'Đang bật' : 'Đang tắt'}</span><Toggle checked={form.isActive} onChange={value => setForm(current => ({ ...current, isActive: value }))} /></div></div></div>
           <div><p className="mb-2 text-sm font-semibold text-gray-800">Nền tảng</p><div className="space-y-2">
-            <fieldset className="rounded-xl border border-gray-200 p-3"><div className="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-2"><Toggle checked={settings.shopee.enabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, enabled: value } }))} /><span className="font-semibold text-gray-900">🛍️ Shopee</span><div className="ml-auto flex flex-wrap items-center gap-2"><Toggle label="Android" checked={settings.shopee.androidEnabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, androidEnabled: value } }))} /><Toggle label="iOS" checked={settings.shopee.iosEnabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, iosEnabled: value } }))} /><label className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500">Chờ mở link<input aria-label="Thời gian chờ Shopee (giây)" type="number" required min="0" max="3600" step="1" value={settings.shopee.delaySeconds} onChange={event => setSettings(current => ({ ...current, shopee: { ...current.shopee, delaySeconds: Number(event.target.value) } }))} className="w-10 border-0 p-0 text-center text-xs outline-none" /> giây</label></div></div><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link Shopee Desktop<input required type="url" value={form.firstUrl} onChange={event => updateUrl('firstUrl', event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://shopee.vn/..." /></label><div className="mt-1 flex flex-wrap items-center gap-2"><span className="text-[11px] text-gray-500">Hỗ trợ link ngắn Shopee, hệ thống giữ nguyên URL hợp lệ.</span><button type="button" disabled={busy || Boolean(affiliatePending)} onClick={() => void resolveAffiliate('shopee')} className="ml-auto rounded-md border border-[#f1b4c4] px-2.5 py-1 text-[11px] font-semibold text-[#d61f51]">Xử lý affiliate</button></div></fieldset>
-            <fieldset className="rounded-xl border border-gray-200 p-3"><div className="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-2"><Toggle checked={settings.tiktok.enabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, enabled: value } }))} /><span className="font-semibold text-gray-900">♪ TikTok</span><div className="ml-auto flex flex-wrap items-center gap-2"><Toggle label="Android" checked={settings.tiktok.androidEnabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, androidEnabled: value } }))} /><Toggle label="iOS" checked={settings.tiktok.iosEnabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosEnabled: value } }))} /><label className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500">Chờ mở link<input aria-label="Thời gian chờ TikTok (giây)" type="number" required min="0" max="3600" step="1" value={settings.tiktok.delaySeconds} onChange={event => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, delaySeconds: Number(event.target.value) } }))} className="w-10 border-0 p-0 text-center text-xs outline-none" /> giây</label></div></div><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link TikTok cho Android <span className="text-[#d61f51]">*</span><input required type="url" value={settings.tiktok.androidUrl || form.secondUrl} onChange={event => updateUrl('secondUrl', event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://vt.tiktok.com/..." /></label><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link TikTok cho iOS <span className="text-[#d61f51]">*</span><input required type="url" value={settings.tiktok.iosUrl || form.secondUrl} onChange={event => updateIosUrl(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://snssdk1180.onelink.me/..." /></label><div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] text-gray-500">Xử lý affiliate chỉ cập nhật link iOS, giữ nguyên link Android đã nhập. iPhone trong Facebook vẫn ưu tiên OneLink để gọi app.</span><button type="button" disabled={busy || Boolean(affiliatePending)} onClick={() => void resolveAffiliate('tiktok')} className="ml-auto rounded-md border border-[#f1b4c4] px-2.5 py-1 text-[11px] font-semibold text-[#d61f51]">Xử lý affiliate</button></div><div className="mt-2 flex items-center gap-1 text-xs"><span className="text-gray-500">iOS mode:</span><button type="button" onClick={() => updateIosMode('desktop')} className={`rounded px-2 py-1 ${settings.tiktok.iosMode === 'desktop' ? 'bg-[#d61f51] text-white' : 'border border-gray-200 text-gray-600'}`}>Link desktop</button><button type="button" onClick={() => updateIosMode('onelink')} className={`rounded px-2 py-1 ${settings.tiktok.iosMode === 'onelink' ? 'bg-[#d61f51] text-white' : 'border border-gray-200 text-gray-600'}`}>Nhập OneLink</button></div></fieldset>
+            <fieldset className="rounded-xl border border-gray-200 p-3"><div className="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-2"><Toggle checked={settings.shopee.enabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, enabled: value } }))} /><span className="font-semibold text-gray-900">🛍️ Shopee</span><div className="ml-auto flex flex-wrap items-center gap-2"><Toggle label="Android" checked={settings.shopee.androidEnabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, androidEnabled: value } }))} /><Toggle label="iOS" checked={settings.shopee.iosEnabled} onChange={value => setSettings(current => ({ ...current, shopee: { ...current.shopee, iosEnabled: value } }))} /><label className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500">Chờ mở link<input aria-label="Thời gian chờ Shopee (giây)" type="number" required min="0" max="3600" step="1" value={settings.shopee.delaySeconds} onChange={event => setSettings(current => ({ ...current, shopee: { ...current.shopee, delaySeconds: Number(event.target.value) } }))} className="w-10 border-0 p-0 text-center text-xs outline-none" /> giây</label></div></div><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link Shopee Desktop<input required type="url" value={form.firstUrl} onPaste={event => handleUrlPaste(event, 'shopee')} onChange={event => updateUrl('firstUrl', event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://s.shopee.vn/... hoặc https://shopee.vn/..." /></label><div className="mt-1 flex flex-wrap items-center gap-2"><span className="text-[11px] text-gray-500">Dán link để tự hiện preview sản phẩm & xử lý link ngắn Shopee.</span><button type="button" disabled={busy || affiliatePending.shopee} onClick={() => void resolveAffiliate('shopee')} className="ml-auto rounded-md border border-[#f1b4c4] px-2.5 py-1 text-[11px] font-semibold text-[#d61f51]">{affiliatePending.shopee ? 'Đang lấy SP...' : 'Xử lý affiliate'}</button></div><ProductPreviewCard platform="shopee" preview={previews.shopee} appliedImageUrl={settings.shopee.imageUrl} onUseImage={imageUrl => setSettings(current => ({ ...current, shopee: { ...current.shopee, imageUrl } }))} /></fieldset>
+            <fieldset className="rounded-xl border border-gray-200 p-3"><div className="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-2"><Toggle checked={settings.tiktok.enabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, enabled: value } }))} /><span className="font-semibold text-gray-900">♪ TikTok</span><div className="ml-auto flex flex-wrap items-center gap-2"><Toggle label="Android" checked={settings.tiktok.androidEnabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, androidEnabled: value } }))} /><Toggle label="iOS" checked={settings.tiktok.iosEnabled} onChange={value => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, iosEnabled: value } }))} /><label className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500">Chờ mở link<input aria-label="Thời gian chờ TikTok (giây)" type="number" required min="0" max="3600" step="1" value={settings.tiktok.delaySeconds} onChange={event => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, delaySeconds: Number(event.target.value) } }))} className="w-10 border-0 p-0 text-center text-xs outline-none" /> giây</label></div></div><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link TikTok cho Android <span className="text-[#d61f51]">*</span><input required type="url" value={settings.tiktok.androidUrl || form.secondUrl} onPaste={event => handleUrlPaste(event, 'tiktok')} onChange={event => updateUrl('secondUrl', event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://vt.tiktok.com/..." /></label><label className="mt-2 grid gap-1 text-xs font-medium text-gray-700">Link TikTok cho iOS <span className="text-[#d61f51]">*</span><input required type="url" value={settings.tiktok.iosUrl || form.secondUrl} onChange={event => updateIosUrl(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="https://snssdk1180.onelink.me/..." /></label><div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] text-gray-500">Dán link để tự hiện preview sản phẩm & cập nhật link iOS (giữ nguyên link Android đã nhập).</span><button type="button" disabled={busy || affiliatePending.tiktok} onClick={() => void resolveAffiliate('tiktok')} className="ml-auto rounded-md border border-[#f1b4c4] px-2.5 py-1 text-[11px] font-semibold text-[#d61f51]">{affiliatePending.tiktok ? 'Đang lấy SP...' : 'Xử lý affiliate'}</button></div><div className="mt-2 flex items-center gap-1 text-xs"><span className="text-gray-500">iOS mode:</span><button type="button" onClick={() => updateIosMode('desktop')} className={`rounded px-2 py-1 ${settings.tiktok.iosMode === 'desktop' ? 'bg-[#d61f51] text-white' : 'border border-gray-200 text-gray-600'}`}>Link desktop</button><button type="button" onClick={() => updateIosMode('onelink')} className={`rounded px-2 py-1 ${settings.tiktok.iosMode === 'onelink' ? 'bg-[#d61f51] text-white' : 'border border-gray-200 text-gray-600'}`}>Nhập OneLink</button></div><ProductPreviewCard platform="tiktok" preview={previews.tiktok} appliedImageUrl={settings.tiktok.imageUrl} onUseImage={imageUrl => setSettings(current => ({ ...current, tiktok: { ...current.tiktok, imageUrl } }))} /></fieldset>
           </div></div>
           <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium text-gray-700">Cooldown sau khi bấm link (phút)<input type="number" min="0" max="10080" value={settings.cooldownMinutes} onChange={event => setSettings(current => ({ ...current, cooldownMinutes: Number(event.target.value) }))} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" /><span className="text-[11px] font-normal text-gray-500">Nhập 0 để popup luôn có thể hiển thị lại.</span></label><div className="grid gap-2 sm:pt-6"><label className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm"><span><span className="block font-medium text-gray-700">Chỉ hiện popup từ Facebook</span><span className="text-[11px] text-gray-500">Ẩn popup nếu người xem không mở từ Facebook.</span></span><Toggle checked={settings.onlyFromFacebook !== false} onChange={value => setSettings(current => ({ ...current, onlyFromFacebook: value }))} /></label><label className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm"><span><span className="block font-medium text-gray-700">Ép mở Chrome (Android)</span><span className="text-[11px] text-gray-500">Mở bài viết bằng Chrome trước popup khi ở Facebook Android.</span></span><Toggle checked={settings.forceChromeAndroid} onChange={value => setSettings(current => ({ ...current, forceChromeAndroid: value }))} /></label><label className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm"><span><span className="block font-medium text-gray-700">Ép mở Safari (iOS)</span><span className="text-[11px] text-gray-500">Hiện hướng dẫn khi ở Facebook.</span></span><Toggle checked={settings.forceSafariIos} onChange={value => setSettings(current => ({ ...current, forceSafariIos: value }))} /></label></div></div>
         </div>
         <div className="space-y-3"><PopupTimingPreview settings={settings} name={form.name || 'Bộ đếm popup'} /><p className="text-sm font-semibold text-gray-800">Cấu hình ảnh</p>{(['tiktok', 'shopee'] as ImageField[]).map(field => { const imageUrl = settings[field].imageUrl || (field === 'shopee' ? DEFAULT_SHOPEE_IMAGE_URL : DEFAULT_TIKTOK_IMAGE_URL); const label = field === 'shopee' ? '🛍️ Shopee popup' : '♪ TikTok popup'; const ref = field === 'shopee' ? shopeeFileRef : tiktokFileRef; return <div key={field} className="rounded-xl border border-dashed border-gray-300 p-3" onPaste={event => pasteImage(event, field)}><div className="flex items-center justify-between"><span className="text-sm font-semibold text-gray-800">{label}</span><button type="button" onClick={() => setSettings(current => ({ ...current, [field]: { ...current[field], imageUrl: field === 'shopee' ? DEFAULT_SHOPEE_IMAGE_URL : DEFAULT_TIKTOK_IMAGE_URL } }))} className="text-[11px] font-semibold text-[#d61f51]">Mặc định</button></div><div className="mt-2 flex aspect-[1.7] items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50"><img src={imageUrl} alt={`${label} preview`} className="h-full w-full object-contain" /></div><div className="mt-2 flex gap-2"><input value={settings[field].imageUrl || ''} onChange={event => setSettings(current => ({ ...current, [field]: { ...current[field], imageUrl: event.target.value || null } }))} placeholder="URL ảnh hoặc dán ảnh" className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 py-2 text-xs" /><input ref={ref} type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void uploadImage(file, field) }} className="hidden" /><button type="button" disabled={busy} onClick={() => ref.current?.click()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"><Upload className="h-3.5 w-3.5" /> Upload</button></div><p className="mt-1 text-[11px] text-gray-500">Upload hoặc dán ảnh (Ctrl/Cmd + V).</p></div> })}</div>
       </div></div>
-      <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-3 sm:px-7"><button type="button" onClick={reset} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700">Hủy</button><button type="submit" disabled={busy || Boolean(affiliatePending)} className="inline-flex items-center gap-2 rounded-lg bg-[#d61f51] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : affiliatePending ? 'Đang xử lý link...' : <><Check className="h-4 w-4" /> Lưu thay đổi</>}</button></div>
+      <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-3 sm:px-7"><button type="button" onClick={reset} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700">Hủy</button><button type="submit" disabled={busy || anyAffiliatePending} className="inline-flex items-center gap-2 rounded-lg bg-[#d61f51] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Đang lưu...' : anyAffiliatePending ? 'Đang xử lý link...' : <><Check className="h-4 w-4" /> Lưu thay đổi</>}</button></div>
     </form></div>}
 
     <PopupClickSummary clicks={clickStats.data?.totals.today} error={clickStats.error} />

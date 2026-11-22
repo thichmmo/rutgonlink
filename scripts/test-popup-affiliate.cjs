@@ -322,6 +322,104 @@ if (baseline) {
     assert.equal(android().value, short); assert.equal(ios().value, product + '?ios=unchanged')
     await submit(); assert.equal(state.rows.at(-1).firstUrl, target)
   })
+  scenario('Shopee opaanlp and shope.ee links preserve raw opaanlp affiliate URL while extracting product title and image', async () => {
+    const shortShopee = 'https://shope.ee/9zTestShort'
+    const opaanlpTarget = 'https://shopee.vn/opaanlp/938402459/28818204493?__mobile__=1&uls_trackid=keep%2Fexact+1'
+    const productLookup = 'https://shopee.vn/product/938402459/28818204493'
+    state.routes.set(shortShopee, { status: 301, location: opaanlpTarget })
+    state.routes.set(opaanlpTarget, { body: '<!doctype html><html><head></head><body></body></html>' })
+    state.routes.set(productLookup, {
+      body: '<meta data-rh="true" content="Sạc Dự Phòng 30000mAh &amp; Cáp Nhanh | Shopee Việt Nam" property="og:title"><meta data-rh="true" property="og:image" content="https://down-vn.img.susercontent.com/file/vn-product-1">',
+    })
+    const result = await resolve(shortShopee)
+    assert.equal(result.status, 200)
+    assert.equal(result.body.url, opaanlpTarget, 'opaanlp affiliate link and signed query stay untouched')
+    assert.equal(result.body.title, 'Sạc Dự Phòng 30000mAh & Cáp Nhanh')
+    assert.equal(result.body.image, 'https://down-vn.img.susercontent.com/file/vn-product-1')
+  })
+  scenario('TikTok short link and OneLink extract both product title and image from og_info', async () => {
+    const ogInfo = encodeURIComponent(JSON.stringify({
+      title: 'Áo phao cổ đứng mùa đông ấm áp',
+      image: 'https://p16-oec-va.ibyteimg.com/tos-maliva-i-o3syd03w52-us/product-thumb.webp',
+    }))
+    const officialWithOg = `https://www.tiktok.com/@shop/pdp/1734002335990711390?checksum=keep%2Fraw&og_info=${ogInfo}`
+    networkResolution(short, officialWithOg)
+    const result = await resolve(short)
+    assert.equal(result.status, 200)
+    assert.equal(result.body.title, 'Áo phao cổ đứng mùa đông ấm áp')
+    assert.equal(result.body.image, 'https://p16-oec-va.ibyteimg.com/tos-maliva-i-o3syd03w52-us/product-thumb.webp')
+
+    const nestedDl = encodeURIComponent(`https://www.tiktok.com/view/product/1734002335990711390?og_info=${ogInfo}`)
+    const oneLink = `https://snssdk1180.onelink.me/BAuo?dl=${nestedDl}`
+    const oneLinkResult = await resolve(oneLink)
+    assert.equal(oneLinkResult.status, 200)
+    assert.equal(oneLinkResult.body.url, oneLink)
+    assert.equal(oneLinkResult.body.title, 'Áo phao cổ đứng mùa đông ấm áp')
+    assert.equal(oneLinkResult.body.image, 'https://p16-oec-va.ibyteimg.com/tos-maliva-i-o3syd03w52-us/product-thumb.webp')
+  })
+  scenario('pasting Shopee and TikTok links in PopupManager auto-renders product previews, updates iOS on paste, and keeps default popup banners until opted in', async () => {
+    const pastedShopee = 'https://s.shopee.vn/pasteTest1'
+    const resolvedShopee = 'https://shopee.vn/opaanlp/111/222?uls_trackid=paste1'
+    state.routes.set(pastedShopee, { status: 302, location: resolvedShopee })
+    state.routes.set(resolvedShopee, { body: '<html></html>' })
+    state.routes.set('https://shopee.vn/product/111/222', {
+      body: '<meta property="og:title" content="Tai Nghe Bluetooth Chống Ồn | Shopee Việt Nam"><meta property="og:image" content="https://down-vn.img.susercontent.com/file/shopee-earbuds.webp">',
+    })
+
+    const pastedTikTok = 'https://vt.tiktok.com/ZSPasteNew/'
+    const ogInfo = encodeURIComponent(JSON.stringify({
+      title: 'Bàn Phím Cơ Không Dây',
+      image: 'https://p16-oec-va.ibyteimg.com/tiktok-keyboard.webp',
+    }))
+    networkResolution(pastedTikTok, `https://www.tiktok.com/view/product/1735555666677778888?og_info=${ogInfo}`)
+
+    await click(button('Tạo popup'))
+    await input(field('Tên popup'), 'Paste preview popup')
+    // Pre-populate an older iOS URL to verify pasting a new Android TikTok link auto-updates iOS too
+    await input(ios(), product + '?old_ios=1')
+
+    const pasteInto = async (el, text) => {
+      el.value = ''
+      el.selectionStart = 0
+      el.selectionEnd = 0
+      await React.act(async () => {
+        const ev = new dom.window.Event('paste', { bubbles: true, cancelable: true })
+        ev.clipboardData = { getData: type => (type === 'text' ? text : '') }
+        el.dispatchEvent(ev)
+      })
+    }
+
+    await pasteInto(field('Link Shopee Desktop'), pastedShopee)
+    await pasteInto(android(), pastedTikTok)
+
+    const shopeePreview = dialog().querySelector('[data-product-preview="shopee"]')
+    const tiktokPreview = dialog().querySelector('[data-product-preview="tiktok"]')
+    assert.ok(shopeePreview, 'Shopee product preview card rendered automatically on paste')
+    assert.ok(tiktokPreview, 'TikTok product preview card rendered automatically on paste')
+    assert.match(shopeePreview.textContent, /Tai Nghe Bluetooth Chống Ồn/)
+    assert.match(tiktokPreview.textContent, /Bàn Phím Cơ Không Dây/)
+    assert.equal(shopeePreview.querySelector('img').getAttribute('src'), 'https://down-vn.img.susercontent.com/file/shopee-earbuds.webp')
+    assert.equal(tiktokPreview.querySelector('img').getAttribute('src'), 'https://p16-oec-va.ibyteimg.com/tiktok-keyboard.webp')
+    assert.equal(field('Link Shopee Desktop').value, resolvedShopee)
+    assert.equal(android().value, pastedTikTok)
+    assert.match(ios().value, /^https:\/\/www\.tiktok\.com\/view\/product\/1735555666677778888\?og_info=/)
+
+    // Default popup creative stays intact until clicking "Dùng ảnh cho popup"
+    await submit()
+    const createdPopup = state.rows.at(-1)
+    assert.equal(createdPopup.settings.shopee.imageUrl, settingsModule.DEFAULT_SHOPEE_IMAGE_URL)
+    assert.equal(createdPopup.settings.tiktok.imageUrl, settingsModule.DEFAULT_TIKTOK_IMAGE_URL)
+
+    // Reopening edit immediately hydrates TikTok product preview from saved og_info and allows opting into product image
+    const editButtons = [...document.querySelectorAll('button[title="Sửa"]')]
+    await click(editButtons.at(-1))
+    const hydratedTikTokPreview = dialog().querySelector('[data-product-preview="tiktok"]')
+    assert.ok(hydratedTikTokPreview, 'Saved popup hydrates TikTok preview immediately on edit')
+    assert.match(hydratedTikTokPreview.textContent, /Bàn Phím Cơ Không Dây/)
+    await click(button('Dùng ảnh cho popup', hydratedTikTokPreview))
+    await submit()
+    assert.equal(state.rows.at(-1).settings.tiktok.imageUrl, 'https://p16-oec-va.ibyteimg.com/tiktok-keyboard.webp')
+  })
 }
 
 async function run() {

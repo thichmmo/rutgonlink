@@ -10,6 +10,7 @@ export interface TikTokLinkResult {
   convertedUrl: string
   productId: string
   title: string | null
+  image: string | null
 }
 
 export class TikTokLinkError extends Error {
@@ -153,18 +154,44 @@ export async function resolveTikTokUrl(inputUrl: string, options: {
   throw new TikTokLinkError('Link TikTok chuyển hướng quá nhiều lần', 502)
 }
 
-function extractProductTitle(finalUrl: string) {
+function safePreviewImageUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
   try {
-    const ogInfo = new URL(finalUrl).searchParams.get('og_info')
-    if (!ogInfo) return null
-
-    const parsed = JSON.parse(ogInfo) as { title?: unknown }
-    return typeof parsed.title === 'string' && parsed.title.trim()
-      ? parsed.title.trim()
-      : null
+    const parsed = new URL(value.trim())
+    if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return null
+    return parsed.href
   } catch {
     return null
   }
+}
+
+export function extractTikTokOgInfo(urlValue: string): { title: string | null; image: string | null } {
+  const inspect = (rawUrl: string, depth = 0): { title: string | null; image: string | null } | null => {
+    if (depth > 3) return null
+    try {
+      const params = new URL(rawUrl).searchParams
+      const ogInfo = params.get('og_info')
+      if (ogInfo) {
+        const parsed = JSON.parse(ogInfo) as { title?: unknown; image?: unknown }
+        const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null
+        const image = safePreviewImageUrl(parsed.image)
+        if (title || image) return { title, image }
+      }
+      // Also inspect nested product URLs embedded inside OneLink or tiktokv.com redirect params.
+      for (const nestedKey of ['dl', 'af_dp', 'redirect_url']) {
+        const nested = params.get(nestedKey)
+        if (nested && nested !== rawUrl && (nested.includes('og_info=') || nested.includes('og_info%3D'))) {
+          const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(nested) ? nested : decodeURIComponent(nested)
+          const found = inspect(candidate, depth + 1)
+          if (found) return found
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+  return inspect(urlValue) || { title: null, image: null }
 }
 
 export function convertTikTokProductUrl(shortUrl: string, officialUrl: string): TikTokLinkResult {
@@ -180,13 +207,15 @@ export function convertTikTokProductUrl(shortUrl: string, officialUrl: string): 
 
   // Preserve the raw query byte-for-byte because it may contain signed affiliate payloads.
   const convertedUrl = `https://www.tiktok.com/view/product/${productId}${rawQuery}`
+  const preview = extractTikTokOgInfo(officialUrl)
 
   return {
     shortUrl,
     officialUrl,
     convertedUrl,
     productId,
-    title: extractProductTitle(officialUrl),
+    title: preview.title,
+    image: preview.image,
   }
 }
 

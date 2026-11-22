@@ -1,6 +1,6 @@
 # Popup affiliate regressions
 
-Run `node scripts/test-popup-affiliate.cjs` (31 scenarios). The harness loads the real React popup
+Run `node scripts/test-popup-affiliate.cjs` (34 scenarios). The harness loads the real React popup
 editor, resolver/TikTok converter, popup create/update routes, URL schema and
 normalizer. Only authentication, Prisma storage, browser timers and network are
 fixtures; no production record or affiliate request is created.
