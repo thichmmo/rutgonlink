@@ -13,7 +13,9 @@ const SHOPEE_SHORT_HOSTS = ['shope.ee', 'shp.ee']
 const TIKTOK_WRAPPER_HOSTS = ['tiktokv.com', 'onelink.me']
 const allowedHosts = [...SHOPEE_MARKET_DOMAINS, ...SHOPEE_SHORT_HOSTS, 'tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', ...TIKTOK_WRAPPER_HOSTS]
 
-const BROWSER_REDIRECT_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1'
+// s.shopee.vn / shope.ee serve a 200 JS app-shim with generic homepage OG tags to mobile UAs,
+// whereas Desktop Chrome UA receives an immediate 301 Location header to https://shopee.vn/opaanlp/...
+const DESKTOP_SHORTENER_REDIRECT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 // Shopee blocks facebookexternalhit/Twitterbot with 403 on /product/ SSR pages, whereas WhatsApp receives clean 200 OG tags.
 const SHOPEE_PREVIEW_UA = 'WhatsApp/2.24.12.78 A'
 
@@ -47,6 +49,8 @@ function safeImageUrl(raw: string | null) {
   try {
     const parsed = new URL(decodeHtmlEntities(raw).trim())
     if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return null
+    // Ignore Shopee's generic homepage logo returned by client-side ULS fallback shells.
+    if (/deo\.shopeemobile\.com\/.*\/homepagefe\//i.test(parsed.href)) return null
     return parsed.href
   } catch {
     return null
@@ -58,7 +62,12 @@ function cleanProductTitle(raw: string | null) {
   const cleaned = decodeHtmlEntities(raw)
     .replace(/\s*\|\s*Shopee(?:\s+Việt\s+Nam|\s+Vietnam|\s+[A-Z]{2,})?\s*$/i, '')
     .trim()
-  if (!cleaned || /^Shopee(?:\s+Việt\s+Nam|\s+Vietnam)?$/i.test(cleaned)) return null
+  if (
+    !cleaned ||
+    /^Shopee(?:\s+Việt\s+Nam|\s+Vietnam)?(?:\s*\|\s*(?:Mua\s+và\s+Bán|Buy\s+and\s+Sell).*)?$/i.test(cleaned)
+  ) {
+    return null
+  }
   return cleaned
 }
 
@@ -137,7 +146,7 @@ export async function POST(req: NextRequest) {
     let current = url
     for (let count = 0; count < 6; count += 1) {
       const currentHost = new URL(current).hostname.toLowerCase()
-      const ua = isShopeeShortenerHost(currentHost) ? BROWSER_REDIRECT_UA : SHOPEE_PREVIEW_UA
+      const ua = isShopeeShortenerHost(currentHost) ? DESKTOP_SHORTENER_REDIRECT_UA : SHOPEE_PREVIEW_UA
       const response = await fetch(current, {
         redirect: 'manual',
         headers: { 'user-agent': ua, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
@@ -160,6 +169,19 @@ export async function POST(req: NextRequest) {
             } catch {
               // Keep the resolved opaanlp affiliate URL intact even if Shopee's preview fetch times out.
             }
+          }
+        }
+        // Non-product campaign/shop short links on s.shopee.vn also expose OG tags directly to WhatsApp UA.
+        if (!meta.title && !meta.image && isShopeeShortenerHost(inputHost)) {
+          try {
+            const shortMetaRes = await fetch(url, {
+              redirect: 'manual',
+              headers: { 'user-agent': SHOPEE_PREVIEW_UA, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
+              signal: AbortSignal.timeout(6000),
+            })
+            if (shortMetaRes.ok) meta = metadata((await shortMetaRes.text()).slice(0, 500_000))
+          } catch {
+            // Best-effort fallback only.
           }
         }
         return NextResponse.json({ url: current, originalUrl: url, ...meta })

@@ -3,7 +3,7 @@
 The authenticated endpoint accepts credential-free HTTP(S) URLs up to the shared
 8192-character popup limit. It supports Shopee (`shopee.*`, `s.shopee.*`, `shope.ee`, `shp.ee`) and TikTok (`tiktok.com`, `vt.tiktok.com`, `vm.tiktok.com`, `tiktokv.com`, `onelink.me`) links with manual redirects and timeouts.
 - **TikTok**: Returns the signed `view/product` URL alongside both `title` and `image` extracted from `og_info` (including nested OneLink/`tiktokv.com` payloads).
-- **Shopee**: Expands shortener hops (`s.shopee.vn`, `shope.ee`, `shp.ee`) with a mobile browser UA so the exact `opaanlp` affiliate URL & tracking params stay intact, and fetches SSR Open Graph metadata (`og:title` stripped of trailing ` | Shopee...`, plus `og:image`) using `WhatsApp/2.24.12.78 A` (performing a secondary `/product/<shopId>/<itemId>` metadata lookup only when the resolved URL lands on a client-side `/opaanlp/` or `/universal-link/` redirector).
+- **Shopee**: Expands shortener hops (`s.shopee.vn`, `shope.ee`, `shp.ee`) with a Desktop Chrome UA (`DESKTOP_SHORTENER_REDIRECT_UA` — avoiding `s.shopee.vn`'s `200` mobile JS app-shim shell and receiving an immediate `301` to the `opaanlp` affiliate URL), strips generic Shopee homepage fallback titles/logos, and fetches SSR Open Graph metadata (`og:title` stripped of trailing ` | Shopee...`, plus `og:image`) using `WhatsApp/2.24.12.78 A` (performing a secondary `/product/<shopId>/<itemId>` metadata lookup when the resolved URL lands on `/opaanlp/` or `/universal-link/`).
 
 Resolved results and all redirect targets must satisfy the same URL boundary.
 TikTok receives an optional URL budget checked before each upstream fetch; public

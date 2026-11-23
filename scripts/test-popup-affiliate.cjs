@@ -336,6 +336,31 @@ if (baseline) {
     assert.equal(result.body.url, opaanlpTarget, 'opaanlp affiliate link and signed query stay untouched')
     assert.equal(result.body.title, 'Sạc Dự Phòng 30000mAh & Cáp Nhanh')
     assert.equal(result.body.image, 'https://down-vn.img.susercontent.com/file/vn-product-1')
+
+    // Assert s.shopee.vn receives Desktop Chrome UA (never iPhone mobile UA which returns 200 homepage shim)
+    // and generic homepage OG tags are rejected in favor of real product metadata.
+    const sShopee = 'https://s.shopee.vn/1qdonRD6ri'
+    let capturedShortenerUa = ''
+    const origFetch = global.fetch
+    global.fetch = async (u, init = {}) => {
+      if (String(u) === sShopee) {
+        capturedShortenerUa = init.headers?.['user-agent'] || ''
+        if (/iphone|mobile/i.test(capturedShortenerUa)) {
+          return new Response('<meta property="og:title" content="Shopee Việt Nam | Mua và Bán Trên Ứng Dụng Di Động Hoặc Website"><meta property="og:image" content="https://deo.shopeemobile.com/shopee/shopee-mobilemall-live-sg/homepagefe/26c9324913c021677768c36975d635ef.png">', { status: 200 })
+        }
+        return new Response('', { status: 301, headers: { location: opaanlpTarget } })
+      }
+      return origFetch(u, init)
+    }
+    try {
+      const sResult = await resolve(sShopee)
+      assert.match(capturedShortenerUa, /Windows NT 10\.0.*Chrome\//)
+      assert.equal(sResult.body.url, opaanlpTarget)
+      assert.equal(sResult.body.title, 'Sạc Dự Phòng 30000mAh & Cáp Nhanh')
+      assert.equal(sResult.body.image, 'https://down-vn.img.susercontent.com/file/vn-product-1')
+    } finally {
+      global.fetch = origFetch
+    }
   })
   scenario('TikTok short link and OneLink extract both product title and image from og_info', async () => {
     const ogInfo = encodeURIComponent(JSON.stringify({
