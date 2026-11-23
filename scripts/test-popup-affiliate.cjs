@@ -445,6 +445,46 @@ if (baseline) {
     await submit()
     assert.equal(state.rows.at(-1).settings.tiktok.imageUrl, 'https://p16-oec-va.ibyteimg.com/tiktok-keyboard.webp')
   })
+  scenario('saving typed s.shopee.vn or shope.ee short links without paste auto-expands to opaanlp and falls back safely offline', async () => {
+    const typedShortCreate = 'https://s.shopee.vn/1qdonCreateDirect'
+    const resolvedOpaanlpCreate = 'https://shopee.vn/opaanlp/1806348695/41884098091?__mobile__=1&uls_trackid=create1&utm_medium=affiliates'
+    state.routes.set(typedShortCreate, { status: 301, location: resolvedOpaanlpCreate })
+    const created = await saveApi({
+      name: 'Direct typed Shopee short link',
+      firstUrl: typedShortCreate,
+      secondUrl: short,
+      settings: settingsModule.defaultPopupSettings(typedShortCreate, short),
+    })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.firstUrl, resolvedOpaanlpCreate)
+    assert.equal(created.body.settings.shopee.url, resolvedOpaanlpCreate)
+    assert.equal(created.body.secondUrl, short)
+
+    const typedShortUpdate = 'https://shope.ee/updateDirect99'
+    const resolvedOpaanlpUpdate = 'https://shopee.vn/opaanlp/1806348695/41884098091?__mobile__=1&uls_trackid=update2&utm_medium=affiliates'
+    state.routes.set(typedShortUpdate, { status: 302, location: resolvedOpaanlpUpdate })
+    const updated = await saveApi({
+      name: 'Direct updated Shopee short link',
+      firstUrl: typedShortUpdate,
+      secondUrl: short,
+      settings: settingsModule.defaultPopupSettings(typedShortUpdate, short),
+    }, created.body.id)
+    assert.equal(updated.status, 200)
+    assert.equal(updated.body.firstUrl, resolvedOpaanlpUpdate)
+    assert.equal(updated.body.settings.shopee.url, resolvedOpaanlpUpdate)
+
+    const offlineShort = 'https://s.shopee.vn/offlineFallback'
+    state.routes.set(offlineShort, new Error('Network offline'))
+    const fallbackSaved = await saveApi({
+      name: 'Offline Shopee short link',
+      firstUrl: offlineShort,
+      secondUrl: short,
+      settings: settingsModule.defaultPopupSettings(offlineShort, short),
+    })
+    assert.equal(fallbackSaved.status, 201)
+    assert.equal(fallbackSaved.body.firstUrl, offlineShort)
+    assert.equal(fallbackSaved.body.settings.shopee.url, offlineShort)
+  })
 }
 
 async function run() {

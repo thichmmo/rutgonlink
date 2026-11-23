@@ -3,19 +3,15 @@ import { z } from 'zod'
 import { getManagedContentUserId } from '@/lib/content-management'
 import { expandAndConvertTikTokLink, extractTikTokOgInfo, TikTokLinkError } from '@/lib/tiktok-link'
 import { isValidPopupAffiliateUrl, MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_INVALID, POPUP_AFFILIATE_URL_TOO_LONG } from '@/lib/popup-affiliate-url'
+import { DESKTOP_SHORTENER_REDIRECT_UA, isShopeeShortenerHost, SHOPEE_MARKET_DOMAINS, SHOPEE_SHORT_HOSTS } from '@/lib/shopee-link'
 
 const schema = z.object({ url: z.string().trim()
   .max(MAX_POPUP_AFFILIATE_URL_LENGTH, POPUP_AFFILIATE_URL_TOO_LONG)
   .refine(isValidPopupAffiliateUrl, POPUP_AFFILIATE_URL_INVALID) })
 
-const SHOPEE_MARKET_DOMAINS = ['shopee.vn', 'shopee.co.th', 'shopee.sg', 'shopee.com.my', 'shopee.ph', 'shopee.co.id']
-const SHOPEE_SHORT_HOSTS = ['shope.ee', 'shp.ee']
 const TIKTOK_WRAPPER_HOSTS = ['tiktokv.com', 'onelink.me']
 const allowedHosts = [...SHOPEE_MARKET_DOMAINS, ...SHOPEE_SHORT_HOSTS, 'tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', ...TIKTOK_WRAPPER_HOSTS]
 
-// s.shopee.vn / shope.ee serve a 200 JS app-shim with generic homepage OG tags to mobile UAs,
-// whereas Desktop Chrome UA receives an immediate 301 Location header to https://shopee.vn/opaanlp/...
-const DESKTOP_SHORTENER_REDIRECT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 // Shopee blocks facebookexternalhit/Twitterbot with 403 on /product/ SSR pages, whereas WhatsApp receives clean 200 OG tags.
 const SHOPEE_PREVIEW_UA = 'WhatsApp/2.24.12.78 A'
 
@@ -25,12 +21,7 @@ function matchesDomainList(hostname: string, domains: readonly string[]) {
 }
 
 function allowed(hostname: string) {
-  return matchesDomainList(hostname, allowedHosts)
-}
-
-function isShopeeShortenerHost(hostname: string) {
-  const host = hostname.toLowerCase()
-  return matchesDomainList(host, SHOPEE_SHORT_HOSTS) || /^s\.shopee\./i.test(host)
+  return matchesDomainList(hostname, allowedHosts) || isShopeeShortenerHost(hostname)
 }
 
 function decodeHtmlEntities(input: string) {

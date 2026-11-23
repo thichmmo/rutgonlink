@@ -230,11 +230,11 @@ export function getPopupLinkOpenMode(
     if (value.startsWith('intent://')) return 'anchor-same-tab'
     return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
-  // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context
-  // that breaks Universal Links and leaves the user stranded on shopee.vn. A visible
-  // same-tab <a> tap sets WKNavigationTypeLinkActivated so iOS launches Shopee & TikTok directly.
+  // On iOS (Safari and Facebook/Messenger/Zalo WKWebViews), Shopee must also open in a referrerless
+  // _blank browsing context (targetFrame=nil, opener=null, LSAppLink referrerURL=nil) so Shopee Affiliate
+  // records "Others" instead of "Website", while TikTok keeps _self Universal Link handoff.
   if (isIosUserAgent(options.userAgent)) {
-    return 'anchor-same-tab'
+    return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
   return 'new-tab'
 }

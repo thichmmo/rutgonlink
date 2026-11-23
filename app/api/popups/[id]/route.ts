@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { ZodError } from 'zod'
 import { getManagedContentUserId, normalizeSettings, popupSchema } from '@/lib/content-management'
 import { prisma } from '@/lib/prisma'
+import { expandShopeeShortUrl } from '@/lib/shopee-link'
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -20,14 +21,22 @@ export async function PUT(req: NextRequest, { params }: Context) {
   const { id } = await params
   try {
     const data = popupSchema.parse(await req.json())
-    const settings = normalizeSettings(data.settings, data.firstUrl, data.secondUrl)
+    // Auto-expand Shopee shorteners on update so direct typing/saving also lands on opaanlp with empty referrer.
+    const resolvedFirstUrl = await expandShopeeShortUrl(data.firstUrl)
+    const rawSettings = normalizeSettings(data.settings, resolvedFirstUrl, data.secondUrl)
+    const resolvedShopeeUrl = rawSettings.shopee.url === data.firstUrl
+      ? resolvedFirstUrl
+      : await expandShopeeShortUrl(rawSettings.shopee.url)
+    const settings = resolvedShopeeUrl === rawSettings.shopee.url
+      ? rawSettings
+      : { ...rawSettings, shopee: { ...rawSettings.shopee, url: resolvedShopeeUrl } }
     const updated = await prisma.popupTemplate.updateMany({
       where: { id, userId },
       data: {
         name: data.name,
         isActive: data.isActive,
         imageUrl: data.imageUrl || null,
-        firstUrl: data.firstUrl,
+        firstUrl: resolvedFirstUrl,
         secondUrl: data.secondUrl,
         settings: settings as Prisma.InputJsonValue,
       },

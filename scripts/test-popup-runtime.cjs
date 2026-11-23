@@ -50,7 +50,7 @@ function load(file) {
     if (id === '@/lib/popup-click-token') return { createPopupClickToken: () => 'fixture-popup-click-token' }
     if (id === '@/lib/popup-click-client') return load('lib/popup-click-client.ts')
     if (id.startsWith('@/lib/')) {
-      if (['popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
+      if (['popup-settings', 'popup-link', 'shopee-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'content-management', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link'].includes(id.slice(6))) return load(id.slice(2) + '.ts')
       return {}
     }
     if (id === 'next/server' || id === 'next-auth') return {}
@@ -389,7 +389,7 @@ async function androidScenarios() {
       assert.equal(iosStep.url, settings.tiktok.iosUrl)
       assert.equal(iosStep.launchUrl, iosStep.url)
       assert.equal(iosStep.openMode, 'anchor-same-tab')
-      assert.equal(getPopupStep(settings, 0, iosUa).openMode, 'anchor-same-tab')
+      assert.equal(getPopupStep(settings, 0, iosUa).openMode, 'anchor-new-tab')
     }
     assert.equal(JSON.stringify(settings), saved)
   })
@@ -1475,7 +1475,7 @@ async function main() {
         assert.equal(h.calls[0].state, 'Shopee', 'Visible anchor stays pinned to Shopee during native link activation')
         assert.equal(h.state(), 'TikTok', 'Card advances to TikTok immediately after native link activation')
         assert.equal(h.calls[0].url, shopee)
-        assert.equal(h.calls[0].mode, 'anchor-same-tab')
+        assert.equal(h.calls[0].mode, 'anchor-new-tab')
         assert.equal(h.calls[0].nativeAction, true)
         assert.equal(h.calls[0].attached, true)
         assert.equal(h.calls[0].hidden, false)
@@ -1520,7 +1520,7 @@ async function main() {
             assert.equal(requests.length, 1, 'Resolve on the server before the popup is ready')
             await h.click(); await h.blur(); await h.focus(); await h.click()
             assert.equal(requests.length, 1, 'Never await a lookup inside the app-launch click')
-            assert.equal(h.calls[0].mode, 'anchor-same-tab', 'Shopee uses visible Universal Link anchor without spawning Tab #2')
+            assert.equal(h.calls[0].mode, 'anchor-new-tab', 'Shopee uses referrerless _blank anchor so Shopee Affiliate records Others')
             assert.equal(h.calls[0].nativeAction, true)
             assert.equal(h.calls[1].mode, 'anchor-same-tab')
             assert.equal(h.calls[1].nativeAction, true)
@@ -1804,27 +1804,27 @@ async function main() {
         await h.focus(); assert.equal(h.button().disabled, false)
       })
     })
-    await scenario(kind + ' iPhone Safari and Facebook both use visible same-tab Universal Link anchors without spawning Tab #2', async () => {
+    await scenario(kind + ' iPhone Safari and Facebook use referrerless _blank anchor for Shopee and _self Universal Link for TikTok', async () => {
       for (const iosUa of [safariIos, facebookIos]) {
         await using(kind, { ua: iosUa, handle: 'throw' }, async h => {
           const firstAnchor = h.button()
           assert.equal(firstAnchor.tagName, 'A')
-          assert.equal(firstAnchor.getAttribute('target'), '_self')
+          assert.equal(firstAnchor.getAttribute('target'), '_blank')
           await h.click()
-          assert.equal(h.calls[0].mode, 'anchor-same-tab')
-          assert.equal(h.calls[0].target, '_self')
+          assert.equal(h.calls[0].mode, 'anchor-new-tab')
+          assert.equal(h.calls[0].target, '_blank')
           assert.equal(h.calls[0].rel, 'noopener noreferrer')
           assert.equal(h.calls[0].hidden, false)
           assert.equal(h.calls[0].attached, true)
           assert.equal(h.calls[0].nativeAction, true)
           assert.equal(h.calls[0].url, shopee)
-          assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
           assert.equal(h.state(), 'TikTok')
           await h.blur(); await h.focus()
           assert.equal(h.button().disabled, false)
           const secondAnchor = h.button()
           assert.equal(secondAnchor.tagName, 'A')
           assert.equal(secondAnchor.getAttribute('target'), '_self')
+          assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
           await h.click()
           assert.equal(h.calls[1].mode, 'anchor-same-tab')
           assert.equal(h.calls[1].target, '_self')
@@ -1848,7 +1848,7 @@ async function main() {
           assert.equal(h.state(), 'TikTok')
           assert.equal(h.button().disabled, false)
           await h.click()
-          assert.deepEqual(h.calls.map(call => call.mode), ['anchor-same-tab', 'anchor-same-tab'])
+          assert.deepEqual(h.calls.map(call => call.mode), ['anchor-new-tab', 'anchor-same-tab'])
           assert.equal(h.state(), 'ARTICLE')
         })
       }
@@ -1913,11 +1913,19 @@ async function main() {
           assert.ok(anchor)
           assert.equal(anchor.href, shopee)
           assert.doesNotMatch(anchor.href, /^intent:\/\//)
+          assert.equal(anchor.getAttribute('target'), '_blank', 'Shopee opens in _blank across both iOS and Android so Shopee Affiliate records Others')
           assert.equal(anchor.getAttribute('rel'), 'noopener noreferrer')
           assert.equal((anchor.getAttribute('referrerpolicy') || anchor.referrerPolicy || '').toLowerCase(), 'no-referrer')
         })
       }
     }
+
+    const directIosHtml = await buildPage({
+      id: 'post-direct-ios', slug: 'post-direct-ios', title: 'Direct', content: '', contentFormat: 'plain',
+      isDirectWrapper: true, user: { managedContentBlocks: [] },
+      popup: { id: 'p1', isActive: true, updatedAt: new Date('2026-11-23'), imageUrl: null, firstUrl: shopee, secondUrl: product, settings: defaultPopupSettings(shopee, product) },
+    }, 'ca33newss.xyz', facebookIos, false, { isFacebookSource: true })
+    assert.match(directIosHtml, /data-direct-popup-platform="Shopee"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/)
 
     const routeSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/[shortCode]/route.ts'), 'utf8')
     const postPopupSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/posts/[slug]/PostPopup.tsx'), 'utf8')
@@ -1963,12 +1971,8 @@ async function main() {
           assert.equal(shopeeBtn.disabled, false)
           assert.equal(shopeeBtn.getAttribute('rel'), 'noopener noreferrer')
           assert.equal((shopeeBtn.getAttribute('referrerpolicy') || shopeeBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
-          if (device.os === 'android') {
-            assert.equal(shopeeBtn.target, '_blank', `${kind} ${device.label} opens Shopee in _blank`)
-            assert.equal(shopeeBtn.href, shopee, `${kind} ${device.label} keeps raw HTTPS Shopee URL`)
-          } else {
-            assert.equal(shopeeBtn.target, '_self', `${kind} ${device.label} opens Shopee Universal Link in _self`)
-          }
+          assert.equal(shopeeBtn.target, '_blank', `${kind} ${device.label} opens Shopee in referrerless _blank across both iOS and Android`)
+          assert.equal(shopeeBtn.href, shopee, `${kind} ${device.label} keeps raw HTTPS Shopee URL`)
           await h.click()
           await h.away(500); await h.back()
           assert.equal(h.state(), 'TikTok', `${kind} ${device.label} advances cleanly to TikTok`)

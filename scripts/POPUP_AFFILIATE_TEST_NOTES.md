@@ -1,7 +1,7 @@
 # Popup affiliate regressions
 
-Run `node scripts/test-popup-affiliate.cjs` (34 scenarios). The harness loads the real React popup
-editor, resolver/TikTok converter, popup create/update routes, URL schema and
+Run `node scripts/test-popup-affiliate.cjs` (35 scenarios). The harness loads the real React popup
+editor, resolver/TikTok converter, popup create/update routes (`lib/shopee-link.ts` save-time `s.shopee.*` / `shope.ee` auto-expansion + offline fallback), URL schema and
 normalizer. Only authentication, Prisma storage, browser timers and network are
 fixtures; no production record or affiliate request is created.
 
