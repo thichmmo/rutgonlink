@@ -381,15 +381,15 @@ async function androidScenarios() {
       assert.equal(step.url, shortTikTok)
       assert.equal(step.launchUrl, helper.buildAndroidPopupLaunchUrl(shortTikTok, 'TIKTOK', ua))
       assert.equal(step.openMode, 'anchor-same-tab')
-      assert.equal(getPopupStep(settings, 0, ua).launchUrl, shopee)
-      assert.equal(getPopupStep(settings, 0, ua).openMode, 'anchor-new-tab')
+      assert.equal(getPopupStep(settings, 0, ua).launchUrl, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
+      assert.equal(getPopupStep(settings, 0, ua).openMode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
     }
     for (const iosUa of [facebookIos, safariIos]) {
       const iosStep = getPopupStep(settings, 1, iosUa)
       assert.equal(iosStep.url, settings.tiktok.iosUrl)
       assert.equal(iosStep.launchUrl, iosStep.url)
       assert.equal(iosStep.openMode, 'anchor-same-tab')
-      assert.equal(getPopupStep(settings, 0, iosUa).openMode, 'anchor-new-tab')
+      assert.equal(getPopupStep(settings, 0, iosUa).openMode, 'anchor-same-tab')
     }
     assert.equal(JSON.stringify(settings), saved)
   })
@@ -540,8 +540,8 @@ async function androidScenarios() {
         assert.equal(h.calls.length, 0)
         assert.equal(h.clickEvents.length, 0)
         await h.click()
-        assert.equal(h.calls[0].url, shopee)
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.calls[0].url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', androidChrome))
+        assert.equal(h.calls[0].mode, 'anchor-same-tab')
         await h.away(3500); await h.back()
         assert.equal(h.state(), 'TikTok')
         assert.equal(h.calls.length, 1)
@@ -611,13 +611,13 @@ async function androidScenarios() {
         await h.click(); await h.click()
         assert.equal(h.calls.length, 1, 'Pending launch blocks an immediate second tap')
         const first = h.calls[0]
-        assert.equal(first.mode, 'anchor-new-tab')
-        assert.equal(first.target, '_blank')
+        assert.equal(first.mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
+        assert.equal(first.target, ua === android ? '_blank' : '_self')
         assert.equal(first.attached, true)
         assert.equal(first.hidden, false)
         assert.equal(first.nativeAction, true)
         assert.equal(h.button(), originalAnchor, 'Do not detach the tapped link before its default action')
-        assert.equal(first.url, shopee)
+        assert.equal(first.url, helper.buildAndroidPopupLaunchUrl(shopee, 'SHOPEE', ua))
         assert.equal(first.state, 'Shopee', 'Pending app handoff keeps the clicked popup visible')
         assert.match(first.session[0][1], /^1\|/)
         assert.equal(h.doc.querySelector('a[hidden]'), null)
@@ -688,7 +688,7 @@ async function androidScenarios() {
         await h.click(fallback)
         assert.equal(h.calls[1].length, undefined)
         assert.equal(h.calls.length, 2)
-        assert.equal(h.calls[1].mode, 'anchor-new-tab')
+        assert.equal(h.calls[1].mode, ua === android ? 'anchor-new-tab' : 'anchor-same-tab')
         assert.equal(h.calls[1].url, shopee)
         await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
@@ -874,20 +874,20 @@ async function androidScenarios() {
           assert.equal(h.state(), 'Shopee')
           assert.equal(await h.mouse('contextmenu'), false, 'Long-press on physical Android/OpenHarmony must not redirect to mesale')
           const firstBtn = h.button()
-          assert.equal(firstBtn.target, '_blank', 'Android Shopee uses referrerless _blank HTTPS anchor so Shopee Affiliate records Others')
-          assert.equal(firstBtn.href, shopee)
-          assert.doesNotMatch(firstBtn.href, /^intent:\/\//)
+          assert.equal(firstBtn.target, '_self', 'OEM intent:// must use _self to avoid blank orphan tabs and popup blockers')
+          assert.match(firstBtn.href, /^intent:\/\/shopee\.vn\/.*#Intent;scheme=https;action=android\.intent\.action\.VIEW;category=android\.intent\.category\.BROWSABLE;package=com\.shopee\.vn;S\.browser_fallback_url=/)
+          assert.ok(firstBtn.href.includes('S.browser_fallback_url=' + encodeURIComponent(shopee)))
           assert.equal(firstBtn.getAttribute('rel'), 'noopener noreferrer')
           assert.equal((firstBtn.getAttribute('referrerpolicy') || firstBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
           await h.click()
-          assert.equal(h.calls[0].mode, 'anchor-new-tab')
-          // Verify timeout web fallback opens raw HTTPS in referrerless _blank
+          assert.equal(h.calls[0].mode, 'anchor-same-tab')
+          // Verify timeout web fallback opens raw HTTPS in _self without popup-blocker _blank failure
           await h.tick(2600)
           const webFallback = h.doc.querySelector('[data-popup-web-fallback]')
           assert.ok(webFallback)
           await h.click(webFallback)
           assert.equal(h.calls[1].url, shopee)
-          assert.equal(h.calls[1].mode, 'anchor-new-tab')
+          assert.equal(h.calls[1].mode, 'anchor-same-tab')
           await h.away(); await h.back()
           assert.equal(h.state(), 'TikTok')
           const secondBtn = h.button()
@@ -976,9 +976,8 @@ async function androidScenarios() {
       }, async h => {
         assert.equal(h.state(), 'Shopee', 'Signed _fbh handoff unlocks popup inside Android Chrome')
         const shopeeBtn = h.button()
-        assert.equal(shopeeBtn.target, '_blank')
-        assert.equal(shopeeBtn.href, shopee)
-        assert.doesNotMatch(shopeeBtn.href, /^intent:\/\//)
+        assert.equal(shopeeBtn.target, '_self')
+        assert.match(shopeeBtn.href, /^intent:\/\/shopee\.vn\/.*package=com\.shopee\.vn;S\.browser_fallback_url=/)
         await h.click(); await h.away(); await h.back()
         assert.equal(h.state(), 'TikTok')
         const tiktokBtn = h.button()
@@ -1475,7 +1474,7 @@ async function main() {
         assert.equal(h.calls[0].state, 'Shopee', 'Visible anchor stays pinned to Shopee during native link activation')
         assert.equal(h.state(), 'TikTok', 'Card advances to TikTok immediately after native link activation')
         assert.equal(h.calls[0].url, shopee)
-        assert.equal(h.calls[0].mode, 'anchor-new-tab')
+        assert.equal(h.calls[0].mode, 'anchor-same-tab')
         assert.equal(h.calls[0].nativeAction, true)
         assert.equal(h.calls[0].attached, true)
         assert.equal(h.calls[0].hidden, false)
@@ -1520,7 +1519,7 @@ async function main() {
             assert.equal(requests.length, 1, 'Resolve on the server before the popup is ready')
             await h.click(); await h.blur(); await h.focus(); await h.click()
             assert.equal(requests.length, 1, 'Never await a lookup inside the app-launch click')
-            assert.equal(h.calls[0].mode, 'anchor-new-tab', 'Shopee uses referrerless _blank anchor so Shopee Affiliate records Others')
+            assert.equal(h.calls[0].mode, 'anchor-same-tab', 'Shopee uses _self Universal Link with no-referrer so iPhone 15 opens Shopee App and records Others')
             assert.equal(h.calls[0].nativeAction, true)
             assert.equal(h.calls[1].mode, 'anchor-same-tab')
             assert.equal(h.calls[1].nativeAction, true)
@@ -1804,15 +1803,16 @@ async function main() {
         await h.focus(); assert.equal(h.button().disabled, false)
       })
     })
-    await scenario(kind + ' iPhone Safari and Facebook use referrerless _blank anchor for Shopee and _self Universal Link for TikTok', async () => {
+    await scenario(kind + ' iPhone Safari and Facebook use _self Universal Link anchors for both Shopee and TikTok with no-referrer', async () => {
       for (const iosUa of [safariIos, facebookIos]) {
         await using(kind, { ua: iosUa, handle: 'throw' }, async h => {
           const firstAnchor = h.button()
           assert.equal(firstAnchor.tagName, 'A')
-          assert.equal(firstAnchor.getAttribute('target'), '_blank')
+          assert.equal(firstAnchor.getAttribute('target'), '_self')
+          assert.equal(h.doc.querySelector('a[target="_blank"]'), null)
           await h.click()
-          assert.equal(h.calls[0].mode, 'anchor-new-tab')
-          assert.equal(h.calls[0].target, '_blank')
+          assert.equal(h.calls[0].mode, 'anchor-same-tab')
+          assert.equal(h.calls[0].target, '_self')
           assert.equal(h.calls[0].rel, 'noopener noreferrer')
           assert.equal(h.calls[0].hidden, false)
           assert.equal(h.calls[0].attached, true)
@@ -1848,7 +1848,7 @@ async function main() {
           assert.equal(h.state(), 'TikTok')
           assert.equal(h.button().disabled, false)
           await h.click()
-          assert.deepEqual(h.calls.map(call => call.mode), ['anchor-new-tab', 'anchor-same-tab'])
+          assert.deepEqual(h.calls.map(call => call.mode), ['anchor-same-tab', 'anchor-same-tab'])
           assert.equal(h.state(), 'ARTICLE')
         })
       }
@@ -1911,9 +1911,16 @@ async function main() {
         await using(kind, { ua: testUa }, async h => {
           const anchor = h.doc.querySelector('[data-popup-native-link]')
           assert.ok(anchor)
-          assert.equal(anchor.href, shopee)
-          assert.doesNotMatch(anchor.href, /^intent:\/\//)
-          assert.equal(anchor.getAttribute('target'), '_blank', 'Shopee opens in _blank across both iOS and Android so Shopee Affiliate records Others')
+          if (testUa === androidChrome) {
+            assert.match(anchor.href, /^intent:\/\/shopee\.vn\/.*package=com\.shopee\.vn;S\.browser_fallback_url=/)
+            assert.equal(anchor.getAttribute('target'), '_self')
+          } else if (testUa === android) {
+            assert.equal(anchor.href, shopee)
+            assert.equal(anchor.getAttribute('target'), '_blank')
+          } else {
+            assert.equal(anchor.href, shopee)
+            assert.equal(anchor.getAttribute('target'), '_self', 'iOS Shopee uses _self Universal Link with no-referrer so iPhone 15 opens Shopee App and records Others')
+          }
           assert.equal(anchor.getAttribute('rel'), 'noopener noreferrer')
           assert.equal((anchor.getAttribute('referrerpolicy') || anchor.referrerPolicy || '').toLowerCase(), 'no-referrer')
         })
@@ -1925,7 +1932,7 @@ async function main() {
       isDirectWrapper: true, user: { managedContentBlocks: [] },
       popup: { id: 'p1', isActive: true, updatedAt: new Date('2026-11-23'), imageUrl: null, firstUrl: shopee, secondUrl: product, settings: defaultPopupSettings(shopee, product) },
     }, 'ca33newss.xyz', facebookIos, false, { isFacebookSource: true })
-    assert.match(directIosHtml, /data-direct-popup-platform="Shopee"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/)
+    assert.match(directIosHtml, /data-direct-popup-platform="Shopee"[^>]*target="_self"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/)
 
     const routeSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/[shortCode]/route.ts'), 'utf8')
     const postPopupSrc = fs.readFileSync(path.resolve(__dirname, '..', 'app/posts/[slug]/PostPopup.tsx'), 'utf8')
@@ -1934,13 +1941,35 @@ async function main() {
     const nextConfigSrc = fs.readFileSync(path.resolve(__dirname, '..', 'next.config.ts'), 'utf8')
     assert.match(nextConfigSrc, /key:\s*'Referrer-Policy',\s*value:\s*'no-referrer'/)
   })
-  await scenario('full 12-device matrix and live popup edit/swap preserve every Shopee and TikTok click with Others attribution', async () => {
+  await scenario('legacy unexpanded s.shopee.vn popup expands to /opaanlp/ on iOS server preparation before rendering', async () => {
+    const legacyShortShopee = 'https://s.shopee.vn/1qdonRD6ri'
+    const expandedOpaanlp = 'https://shopee.vn/opaanlp/938402459/28818204493?__mobile__=1&exp_group=rollout&gads_t_sig=gqRjZGVrxHCF&mmp_pid=an_17300840528&uls_trackid=575he8nr02kj&utm_medium=affiliates'
+    const iphone15FbUa = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22B83 [FBAN/FBIOS;FBAV/489.0.0.44.109;FBDV/iPhone16,1;FBSN/iOS;FBSV/18.1]'
+    await withFetch(url => {
+      if (url === legacyShortShopee) return new Response(null, { status: 301, headers: { location: expandedOpaanlp } })
+      throw new Error('Unexpected lookup: ' + url)
+    }, async requests => {
+      for (const kind of ['route', 'react']) {
+        await using(kind, { ua: iphone15FbUa, shopeeUrl: legacyShortShopee }, async h => {
+          const btn = h.button()
+          assert.equal(btn.href, expandedOpaanlp, `${kind} expands legacy s.shopee.vn to exact /opaanlp/ URL`)
+          assert.equal(btn.getAttribute('target'), '_self')
+          assert.equal(btn.getAttribute('rel'), 'noopener noreferrer')
+          assert.equal((btn.getAttribute('referrerpolicy') || btn.referrerPolicy || '').toLowerCase(), 'no-referrer')
+        })
+      }
+      assert.equal(requests.length, 1, 'Cached across concurrent/sequential iOS requests')
+    })
+  })
+  await scenario('full 15-device /opaanlp/ matrix and live popup edit/swap preserve native Shopee App launch and Others attribution', async () => {
+    const opaanlpShopee1 = 'https://shopee.vn/opaanlp/938402459/28818204493?__mobile__=1&exp_group=rollout&gads_t_sig=gqRjZGVrxHCFomtpsTE0MjUx&mmp_pid=an_17300840528&uls_trackid=575he8nr02kj&utm_medium=affiliates'
     const newShopee = 'https://shopee.vn/opaanlp/987654321/123456789?__mobile__=1&gads_t_sig=VTJGc2RHVmtYMTlxTFVSVVRrdENkWVp3RFo3Mkw5czd4Z0hzdEF1WVFib2xET2c'
     const newTikTok = 'https://www.tiktok.com/view/product/1730999888777666555?checksum=new%2Fsig&trackParams=%7B%22affiliate%22%3A%22swapped%22%7D'
     const deviceMatrix = [
+      { label: 'iPhone 15 Facebook IAB', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22B83 [FBAN/FBIOS;FBAV/489.0.0.44.109;FBDV/iPhone16,1;FBSN/iOS;FBSV/18.1]', os: 'ios' },
       { label: 'iPhone 16 Pro Safari', ua: safariIos, os: 'ios' },
-      { label: 'iPhone 15 Facebook IAB', ua: facebookIos, os: 'ios' },
       { label: 'iPhone Messenger IAB', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22D63 [FBAN/FBIOS;FBAV/495.0.0.41.109;FBBV/694821;MessengerForiOS]', os: 'ios' },
+      { label: 'iPhone Zalo IAB', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Zalo iOS/241101', os: 'ios' },
       { label: 'iPadOS 18 Safari', ua: 'Mozilla/5.0 (iPad; CPU OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1', os: 'ios' },
       { label: 'Android 15 Pixel 9 Chrome', ua: androidChrome, os: 'android' },
       { label: 'Samsung S24 SamsungBrowser', ua: 'Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36', os: 'android' },
@@ -1949,16 +1978,19 @@ async function main() {
       { label: 'Vivo V30 VivoBrowser', ua: 'Mozilla/5.0 (Linux; Android 14; V2318) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 VivoBrowser/22.6.0.0', os: 'android' },
       { label: 'Huawei Mate 60 HarmonyOS ArkWeb', ua: 'Mozilla/5.0 (Phone; OpenHarmony 5.0; HarmonyOS) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 Mobile', os: 'android' },
       { label: 'Firefox Mobile Android', ua: 'Mozilla/5.0 (Android 14; Mobile; rv:134.0) Gecko/134.0 Firefox/134.0', os: 'android' },
+      { label: 'Zalo Android IAB', ua: 'Mozilla/5.0 (Linux; Android 14; SM-A546E; wv) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36 Zalo Android 241002', os: 'android' },
+      { label: 'Messenger Android IAB', ua: 'Mozilla/5.0 (Linux; Android 14; V2247; wv) AppleWebKit/537.36 Chrome/129 Mobile Safari/537.36 Orca-Android', os: 'android' },
       { label: 'Facebook Android IAB direct popup', ua: android, os: 'android', inAppWebview: true },
     ]
 
     for (const kind of ['route', 'react']) {
       for (const device of deviceMatrix) {
-        // Phase 1: Complete Popup 1 with 60m cooldown, verifying Shopee -> TikTok -> ARTICLE and click beacons
+        // Phase 1: Complete Popup 1 with 60m cooldown, verifying /opaanlp/ Shopee -> TikTok -> ARTICLE and click beacons
         const afterPopup1 = await using(kind, {
           ua: device.ua,
           popupId: 'popup-old',
           updatedAt: '2026-11-22T01:00:00.000Z',
+          shopeeUrl: opaanlpShopee1,
           cooldownMinutes: 60,
           firstDelay: 1,
           secondDelay: 2,
@@ -1971,8 +2003,17 @@ async function main() {
           assert.equal(shopeeBtn.disabled, false)
           assert.equal(shopeeBtn.getAttribute('rel'), 'noopener noreferrer')
           assert.equal((shopeeBtn.getAttribute('referrerpolicy') || shopeeBtn.referrerPolicy || '').toLowerCase(), 'no-referrer')
-          assert.equal(shopeeBtn.target, '_blank', `${kind} ${device.label} opens Shopee in referrerless _blank across both iOS and Android`)
-          assert.equal(shopeeBtn.href, shopee, `${kind} ${device.label} keeps raw HTTPS Shopee URL`)
+          assert.doesNotMatch(shopeeBtn.href, /\/universal-link\//, 'Must strictly preserve /opaanlp/ path')
+          if (device.inAppWebview) {
+            assert.equal(shopeeBtn.target, '_blank')
+            assert.equal(shopeeBtn.href, opaanlpShopee1)
+          } else if (device.os === 'android') {
+            assert.equal(shopeeBtn.target, '_self', `${kind} ${device.label} launches com.shopee.vn intent in _self`)
+            assert.equal(shopeeBtn.href, `intent://${opaanlpShopee1.slice('https://'.length)}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.shopee.vn;S.browser_fallback_url=${encodeURIComponent(opaanlpShopee1)};end`)
+          } else {
+            assert.equal(shopeeBtn.target, '_self', `${kind} ${device.label} launches iOS Universal Link in _self`)
+            assert.equal(shopeeBtn.href, opaanlpShopee1, `${kind} ${device.label} keeps exact /opaanlp/ URL`)
+          }
           await h.click()
           await h.away(500); await h.back()
           assert.equal(h.state(), 'TikTok', `${kind} ${device.label} advances cleanly to TikTok`)
@@ -1997,7 +2038,7 @@ async function main() {
           return h.snapshot()
         })
 
-        // Phase 2: Owner swaps post to Popup 2 (new Shopee + TikTok URLs) while visitor still has Popup 1's 60m cooldown stored.
+        // Phase 2: Owner swaps post to Popup 2 (new Shopee /opaanlp/ + TikTok URLs) while visitor still has Popup 1's 60m cooldown stored.
         // Next visit on the exact same device must immediately run Popup 2 without losing either click!
         await using(kind, {
           ...afterPopup1,
@@ -2015,7 +2056,11 @@ async function main() {
           referrer: 'https://lm.facebook.com/',
         }, async h => {
           assert.equal(h.state(), 'Shopee', `${kind} ${device.label} shows new Popup 2 immediately despite Popup 1 cooldown`)
-          assert.equal(h.button().href, newShopee)
+          if (device.os === 'android' && !device.inAppWebview) {
+            assert.equal(h.button().href, `intent://${newShopee.slice('https://'.length)}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.shopee.vn;S.browser_fallback_url=${encodeURIComponent(newShopee)};end`)
+          } else {
+            assert.equal(h.button().href, newShopee)
+          }
           await h.click()
           await h.away(200); await h.back()
           assert.equal(h.state(), 'TikTok')

@@ -82,7 +82,7 @@ const prisma = {
     },
   },
 }
-const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'post-default-domain-config', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'admin-audit', 'popup-settings', 'popup-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
+const allowed = new Set(['content-management', 'public-post-link', 'numeric-post-link-server', 'post-fallback-config', 'post-default-domain-config', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'admin-audit', 'popup-settings', 'popup-link', 'shopee-link', 'popup-browser-gate', 'popup-settings-server', 'tiktok-link', 'popup-affiliate-url', 'intermediate-image', 'site-config', 'shared-domains', 'video-embed', 'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'popup-click-client'])
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports
   const module = { exports: {} }
@@ -316,8 +316,11 @@ scenario('direct wrapper allocates numeric /p7 link without article body, requir
   row.popup = { id: 'p1', isActive: true, imageUrl: null, firstUrl: 'https://shopee.vn/opaanlp/1/2', secondUrl: 'https://vt.tiktok.com/ZSFIXTURE/', updatedAt: new Date('2026-11-22T00:00:00.000Z'), settings: { shopee: { enabled: true, androidEnabled: true, iosEnabled: true, url: 'https://shopee.vn/opaanlp/1/2', delaySeconds: 0 }, tiktok: { enabled: true, androidEnabled: true, iosEnabled: true, url: 'https://vt.tiktok.com/ZSFIXTURE/', androidUrl: 'https://vt.tiktok.com/ZSFIXTURE/', iosUrl: 'https://vt.tiktok.com/ZSFIXTURE/', delaySeconds: 0 }, cooldownMinutes: 0, onlyFromFacebook: true, forceChromeAndroid: false, forceSafariIos: false } }
   const androidRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36' })
   const androidHtml = await androidRes.text()
-  assert(androidHtml.includes('data-direct-popup-platform="Shopee" href="https://shopee.vn/opaanlp/1/2" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
+  assert(androidHtml.includes('data-direct-popup-platform="Shopee" href="intent://shopee.vn/opaanlp/1/2#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.shopee.vn;S.browser_fallback_url=https%3A%2F%2Fshopee.vn%2Fopaanlp%2F1%2F2;end" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
   assert(androidHtml.includes('data-direct-popup-platform="TikTok"'))
+  const iosRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22B83 [FBAN/FBIOS;FBAV/489.0.0.44.109;FBDV/iPhone16,1]' })
+  const iosHtml = await iosRes.text()
+  assert(iosHtml.includes('data-direct-popup-platform="Shopee" href="https://shopee.vn/opaanlp/1/2" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
   row.popup = null
   const copied = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: post.id }) }))
   assert.equal(copied.status, 201)

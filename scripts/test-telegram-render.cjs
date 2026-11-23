@@ -42,7 +42,7 @@ function load(file) {
       return load(relative + extension)
     }
     if (id.startsWith('@/lib/')) {
-      const allowed = ['popup-settings', 'popup-link', 'popup-settings-server', 'popup-click-client',
+      const allowed = ['popup-settings', 'popup-link', 'shopee-link', 'popup-affiliate-url', 'popup-settings-server', 'popup-click-client',
         'tiktok-link', 'content-management', 'intermediate-image', 'site-config', 'shared-domains', 'tranco-boost-config', 'traffic-source', 'facebook-handoff-token', 'video-embed',
         'post-preview', 'public-post-guard', 'telegram-settings', 'telegram-render', 'public-post-link']
       return allowed.includes(id.slice(6)) ? load(id.slice(2) + '.ts') : {}

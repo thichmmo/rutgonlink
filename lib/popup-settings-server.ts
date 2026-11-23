@@ -1,16 +1,45 @@
 import { buildTikTokIosLaunchUrl, isIosUserAgent, isTikTokIosRedirectUrl, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
 import { popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
+import { expandShopeeShortUrl, isShopeeShortUrl } from '@/lib/shopee-link'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
 const shortLinkCache = new Map<string, { value: Promise<string>; expiresAt: number }>()
 const CACHE_LIMIT = 200
+
+function evictOldestIfNeeded() {
+  if (shortLinkCache.size >= CACHE_LIMIT) shortLinkCache.delete(shortLinkCache.keys().next().value!)
+}
+
+async function resolvePopupShopeeShortLink(url: string) {
+  const cacheKey = `shopee:${url}`
+  const cached = shortLinkCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+  shortLinkCache.delete(cacheKey)
+  evictOldestIfNeeded()
+
+  // Expand legacy unexpanded s.shopee.* / shope.ee / shp.ee popups to shopee.vn/opaanlp/... before rendering
+  // so iOS Universal Links match shopee.vn AASA directly and never pass s.shopee.vn JS referral.
+  const entry = { value: Promise.resolve(url), expiresAt: Date.now() + 5 * 60_000 }
+  entry.value = expandShopeeShortUrl(url, { signal: AbortSignal.timeout(4000) })
+    .then(expanded => {
+      if (expanded !== url && !isShopeeShortUrl(expanded)) return expanded
+      entry.expiresAt = Date.now() + 15_000
+      return url
+    })
+    .catch(() => {
+      entry.expiresAt = Date.now() + 15_000
+      return url
+    })
+  shortLinkCache.set(cacheKey, entry)
+  return entry.value
+}
 
 async function resolvePopupShortLink(url: string) {
   const cacheKey = `ios:${url}`
   const cached = shortLinkCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
   shortLinkCache.delete(cacheKey)
-  if (shortLinkCache.size >= CACHE_LIMIT) shortLinkCache.delete(shortLinkCache.keys().next().value!)
+  evictOldestIfNeeded()
 
   // Resolve before rendering, not inside the click handler: awaiting network on
   // the click loses the user gesture needed for app handoff. Android uses its
@@ -43,11 +72,22 @@ export async function preparePopupSettingsForRequest(settings: PopupSettings, us
     delete settings.tiktok.androidLaunchUrl
   }
   if (!isIosUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent, options)) return settings
-  const url = settings.tiktok.iosUrl || settings.tiktok.url
-  if (!isTikTokShortUrl(url)) return settings
-  const launchUrl = await resolvePopupShortLink(url)
-  return launchUrl === url ? settings : {
+  const shopeeUrl = settings.shopee.url
+  const tiktokUrl = settings.tiktok.iosUrl || settings.tiktok.url
+  const needsShopeeExpand = isShopeeShortUrl(shopeeUrl)
+  const needsTikTokExpand = isTikTokShortUrl(tiktokUrl)
+  if (!needsShopeeExpand && !needsTikTokExpand) return settings
+
+  const [resolvedShopeeUrl, resolvedTikTokUrl] = await Promise.all([
+    needsShopeeExpand ? resolvePopupShopeeShortLink(shopeeUrl) : Promise.resolve(shopeeUrl),
+    needsTikTokExpand ? resolvePopupShortLink(tiktokUrl) : Promise.resolve(tiktokUrl),
+  ])
+  if (resolvedShopeeUrl === shopeeUrl && resolvedTikTokUrl === tiktokUrl) return settings
+  return {
     ...settings,
-    tiktok: { ...settings.tiktok, iosUrl: launchUrl, iosMode: isTikTokOneLinkUrl(launchUrl) ? 'onelink' : settings.tiktok.iosMode },
+    ...(resolvedShopeeUrl !== shopeeUrl ? { shopee: { ...settings.shopee, url: resolvedShopeeUrl } } : {}),
+    ...(resolvedTikTokUrl !== tiktokUrl
+      ? { tiktok: { ...settings.tiktok, iosUrl: resolvedTikTokUrl, iosMode: isTikTokOneLinkUrl(resolvedTikTokUrl) ? 'onelink' : settings.tiktok.iosMode } }
+      : {}),
   }
 }
