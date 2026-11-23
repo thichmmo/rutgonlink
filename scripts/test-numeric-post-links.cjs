@@ -318,9 +318,9 @@ scenario('direct wrapper allocates numeric /p7 link without article body, requir
   const androidHtml = await androidRes.text()
   assert(androidHtml.includes('data-direct-popup-platform="Shopee" href="intent://shopee.vn/opaanlp/1/2#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.shopee.vn;S.browser_fallback_url=https%3A%2F%2Fshopee.vn%2Fopaanlp%2F1%2F2;end" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
   assert(androidHtml.includes('data-direct-popup-platform="TikTok"'))
-  const iosRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22B83 [FBAN/FBIOS;FBAV/489.0.0.44.109;FBDV/iPhone16,1]' })
+  const iosRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22F76 [FBAN/FBIOS;FBAV/515.0.0.43.106;FBDV/iPhone15,4;FBSN/iOS;FBSV/18.5]' })
   const iosHtml = await iosRes.text()
-  assert(iosHtml.includes('data-direct-popup-platform="Shopee" href="https://shopee.vn/opaanlp/1/2" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
+  assert(iosHtml.includes('data-direct-popup-platform="Shopee" href="shopeevn://reactPath?navigate_url=https%3A%2F%2Fshopee.vn%2Fopaanlp%2F1%2F2&amp;path=shopee%2FTRANSFER_PAGE&amp;tab=buy&amp;use_deeplink=1&amp;version=1" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
   row.popup = null
   const copied = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: post.id }) }))
   assert.equal(copied.status, 201)

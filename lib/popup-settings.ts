@@ -1,4 +1,4 @@
-import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getTikTokIosLaunchUrl, isAndroidDeviceUserAgent, isTikTokOneLinkUrl } from '@/lib/popup-link'
+import { buildAndroidPopupLaunchUrl, getPopupLinkOpenMode, getShopeeIosLaunchUrl, getTikTokIosLaunchUrl, isAndroidDeviceUserAgent, isTikTokOneLinkUrl } from '@/lib/popup-link'
 import { isFacebookUserAgent } from '@/lib/traffic-source'
 
 export type PopupPlatformSettings = {
@@ -133,7 +133,11 @@ export function getPopupStep(settings: PopupSettings, step: 0 | 1, userAgent: st
   const forceBrowser = isAndroidUserAgent(userAgent) && settings.forceChromeAndroid ? 'Chrome'
     : isIosUserAgent(userAgent) && settings.forceSafariIos ? 'Safari' : null
   if (step === 0) {
-    const launchUrl = isAndroidUserAgent(userAgent) ? buildAndroidPopupLaunchUrl(settings.shopee.url, 'SHOPEE', userAgent) : settings.shopee.url
+    // Android wraps /opaanlp/ in a scheme=https intent; iOS wraps /opaanlp/ in shopeevn://reactPath
+    // while keeping step.url as the untouched HTTPS /opaanlp/ URL for web fallback.
+    const launchUrl = isAndroidUserAgent(userAgent)
+      ? buildAndroidPopupLaunchUrl(settings.shopee.url, 'SHOPEE', userAgent)
+      : getShopeeIosLaunchUrl(settings.shopee.url, userAgent)
     return {
       platform: 'Shopee',
       url: settings.shopee.url,
