@@ -441,6 +441,28 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   let opening = false;
   let retryStep = null;
   let pendingOpen = null;
+  const stepEventIds = {};
+  const sentClickKeys = {};
+  let pendingClick = null;
+  const getOrCreateClickEventId = (clickKey) => {
+    if (stepEventIds[clickKey]) return stepEventIds[clickKey];
+    const next = window.crypto?.randomUUID?.() || (Date.now() + '-' + Math.random().toString(36).slice(2) + '-' + Math.random().toString(36).slice(2));
+    stepEventIds[clickKey] = next;
+    return next;
+  };
+  const armPendingClick = (clickKey, platformName) => {
+    if (sentClickKeys[clickKey]) { pendingClick = null; return; }
+    pendingClick = { key: clickKey, platform: platformName, eventId: getOrCreateClickEventId(clickKey) };
+  };
+  const flushPendingClick = () => {
+    const active = pendingClick;
+    if (!active) return;
+    pendingClick = null;
+    if (document.documentElement.hasAttribute('data-post-guard-blocked')) return;
+    if (sentClickKeys[active.key]) return;
+    sentClickKeys[active.key] = true;
+    recordPopupClick(tracking, active.platform, active.eventId);
+  };
   const readStoredStep = () => {
     const values = [];
     // A one-use history-return hint is not a repeat cooldown: fresh visits clear it.
@@ -498,7 +520,11 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   };
   commitStep(readStoredStep(), false);
   const syncAfterReturn = () => {
-    if (pendingOpen && document.visibilityState === 'hidden') { pendingOpen.leftPage = true; return; }
+    if (document.visibilityState === 'hidden') {
+      if (pendingOpen) pendingOpen.leftPage = true;
+      flushPendingClick();
+      return;
+    }
     if (document.visibilityState !== 'visible') return;
     // Consent focus changes are not an Android app departure and must not consume resume state.
     if (android && pendingOpen && !pendingOpen.leftPage) return;
@@ -509,8 +535,11 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     render();
   };
   document.addEventListener('visibilitychange', syncAfterReturn);
-  const markPageHidden = () => { if (pendingOpen) pendingOpen.leftPage = true; };
-  const markPageBlurred = () => { if (!android) markPageHidden(); };
+  const markPageHidden = () => {
+    if (pendingOpen) pendingOpen.leftPage = true;
+    flushPendingClick();
+  };
+  const markPageBlurred = () => { if (!android && pendingOpen) pendingOpen.leftPage = true; };
   const markPageVisible = () => syncAfterReturn();
   window.addEventListener('pagehide', markPageHidden);
   window.addEventListener('pageshow', syncAfterReturn);
@@ -577,7 +606,9 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
       // Hold the clicked step during synchronous native <a> click so href/attachment stay intact;
       // on iOS advance the card immediately on the next macrotask after link activation fires.
       retryStep = nativeEvent ? fromStep : (android ? fromStep : null);
-      recordPopupClick(tracking, platform.platform);
+      // Arm rather than firing immediately so canceled OS/browser app prompts, uninstalled iOS schemes,
+      // and Android 2.5s retry taps never inflate click totals above Shopee Affiliate.
+      armPendingClick('step:' + fromStep, platform.platform);
       // Persist before navigation so a mobile app handoff resumes at the next popup.
       commitStep(nextStep);
       // Do not detach the trusted anchor before its default navigation runs.
@@ -586,7 +617,11 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         window.setTimeout(() => { if (pendingOpen === pending) { retryStep = null; render(); } }, 0);
       }
       if (platform.openMode === 'same-tab') {
-        try { window.location.replace(url); } catch (_) {
+        try {
+          window.location.replace(url);
+          flushPendingClick();
+        } catch (_) {
+          pendingClick = null;
           pendingOpen = null;
           opening = false;
           commitStep(fromStep);
@@ -612,6 +647,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
           tab = window.open(url, '_blank', 'noopener,noreferrer');
         }
       } catch (_) {
+        pendingClick = null;
         pendingOpen = null;
         opening = false;
         commitStep(fromStep);
@@ -620,6 +656,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
         return;
       }
       if (tab) {
+        flushPendingClick();
         pendingOpen = null;
         opening = false;
         try { tab.opener = null; } catch (_) {}
@@ -667,7 +704,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     el.addEventListener('click', event => {
       if (document.documentElement.hasAttribute('data-post-guard-blocked')) { event.preventDefault(); return; }
       const platform = el.getAttribute('data-direct-popup-platform');
-      if (platform) recordPopupClick(tracking, platform);
+      if (platform) armPendingClick('direct:' + platform.toUpperCase(), platform);
     });
   });
   if (step >= 2) { document.body.classList.remove('managed-locked'); overlay.remove(); return; }
