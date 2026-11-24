@@ -4,20 +4,10 @@ export type PopupLinkOpenMode = 'new-tab' | 'anchor-new-tab' | 'anchor-same-tab'
 const FACEBOOK_IN_APP_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid/i
 const TIKTOK_HOST_PATTERN = /(^|\.)tiktok\.com$/i
 const TIKTOK_DEEP_LINK_LABEL = 'click_wap_p_product_detail_t_launch_pop_up_s_product_detail_e__f_product_detail_fp__fps_affiliate_links_rf_product_detail'
-const SHOPEE_IOS_MARKET_SCHEMES: ReadonlyArray<readonly [domain: string, scheme: string]> = [
-  ['shopee.vn', 'shopeevn'],
-  ['shopee.co.th', 'shopeeth'],
-  ['shopee.sg', 'shopeesg'],
-  ['shopee.com.my', 'shopeemy'],
-  ['shopee.ph', 'shopeeph'],
-  ['shopee.co.id', 'shopeeid'],
-]
-const SHOPEE_IOS_SCHEME_PREFIX_PATTERN = /^shopee(?:vn|th|sg|my|ph|id):\/\/reactPath\?/i
-const SHOPEE_IOS_FORWARDED_UTM_KEYS = ['utm_campaign', 'utm_content', 'utm_medium', 'utm_source', 'utm_term'] as const
 
 export const TIKTOK_ANDROID_HOSTS = ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com']
 // Verified against live /.well-known/assetlinks.json for package com.shopee.vn (shp.ee/shope.ee return 404 and must redirect over HTTPS first).
-export const SHOPEE_ANDROID_HOSTS = ['shopee.vn', 'www.shopee.vn', 'mall.shopee.vn', 's.shopee.vn', 'vn.shp.ee']
+export const SHOPEE_ANDROID_HOSTS = ['shopee.vn', 'www.shopee.vn', 's.shopee.vn', 'vn.shp.ee']
 const ANDROID_DEVICE_UA_PATTERN = /android|(?:harmonyos|openharmony).*(?:mobile|phone|arkweb)/i
 // OEM browsers (Samsung Internet, Xiaomi Mi Browser, OPPO/Realme HeyTap, Vivo, Huawei, UC, Firefox)
 // and non-FB4A in-app webviews (FBLite, Zalo, Messenger, Instagram, Threads, Telegram, TikTok, LINE)
@@ -100,15 +90,15 @@ export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: str
 }
 
 export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform, userAgent = '') {
+  // Keep Shopee on raw HTTPS (opened in _blank with noopener/noreferrer/no-referrer, matching Boclink)
+  // so Android/OEM browsers never pass intent EXTRA_REFERRER / browser package as "Website" to Shopee Affiliate.
+  if (platform === 'SHOPEE') return value
   // Omit userAgent only in legacy compatibility callers; active Android requests pass userAgent.
-  if (!userAgent) return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
-  // Standalone/OEM Android browsers (Chrome, Samsung, Xiaomi, OPPO, Vivo, Huawei/HarmonyOS, Firefox, UC)
-  // and non-FB4A webviews invoke PackageManager directly via scheme=https intent:// with the exact
-  // unmodified /opaanlp/ URL, while Referrer-Policy: no-referrer keeps EXTRA_REFERRER empty ("Others").
+  if (!userAgent) return getTikTokAndroidLaunchUrl(value)
+  // Standalone/OEM Android browsers invoke PackageManager directly via scheme=https intent:// for TikTok
+  // so TikTok Shop jumps natively on one tap without stopping on web shared cards.
   if (!isAndroidIntentBrowserUserAgent(userAgent)) return value
-  return platform === 'SHOPEE'
-    ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
-    : buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
+  return buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
 }
 
 export function isTikTokOneLinkUrl(value: string) {
@@ -217,75 +207,6 @@ export function getTikTokIosLaunchUrl(value: string, userAgent: string) {
     : value
 }
 
-export function isShopeeIosDeepLinkUrl(value: string) {
-  return SHOPEE_IOS_SCHEME_PREFIX_PATTERN.test(value)
-}
-
-function resolveShopeeIosMarketScheme(hostname: string) {
-  const host = hostname.toLowerCase()
-  if (/^s\.shopee\./i.test(host)) return null
-  for (const [domain, scheme] of SHOPEE_IOS_MARKET_SCHEMES) {
-    if (host === domain || host === `www.${domain}` || host === `mall.${domain}`) return scheme
-  }
-  return null
-}
-
-export function buildShopeeIosLaunchUrl(value: string) {
-  if (isShopeeIosDeepLinkUrl(value)) return value
-  let parsed: URL
-  try {
-    parsed = new URL(value)
-    encodeURIComponent(value)
-  } catch {
-    return value
-  }
-  const scheme = resolveShopeeIosMarketScheme(parsed.hostname)
-  if (
-    !scheme
-    || parsed.protocol !== 'https:'
-    || parsed.username
-    || parsed.password
-    || parsed.port
-    || value.length > MAX_ANDROID_LAUNCH_URL_LENGTH
-    || !value.startsWith('https://')
-    || /[\s\\]/.test(value)
-    || parsed.pathname === '/universal-link'
-    || parsed.pathname.startsWith('/universal-link/')
-    || parsed.pathname.includes('/login/')
-    || parsed.pathname.includes('forgot_password')
-    || parsed.pathname.startsWith('/buyer/w/')
-    || parsed.pathname.includes('/verify/ivs/')
-    || parsed.pathname.startsWith('/s/browser/')
-  ) {
-    return value
-  }
-
-  // Match Shopee ULS CONFIG.deepLinkUrl 1:1 while preserving the exact unmodified /opaanlp/ URL in navigate_url.
-  // Firing shopeevn://reactPath directly on a trusted _self <a> tap bypasses Facebook iOS 18.5+ Universal Link
-  // suppression and swcd browser-pinned domains without s.shopee.vn's 3s referral redirect ("Others").
-  const entries: Array<[string, string]> = [
-    ['navigate_url', value],
-    ['path', 'shopee/TRANSFER_PAGE'],
-    ['tab', 'buy'],
-  ]
-  const ulsTrackId = parsed.searchParams.get('uls_trackid')
-  if (ulsTrackId) entries.push(['uls_trackid', ulsTrackId])
-  entries.push(['use_deeplink', '1'])
-  for (const key of SHOPEE_IOS_FORWARDED_UTM_KEYS) {
-    const paramValue = parsed.searchParams.get(key)
-    if (paramValue) entries.push([key, paramValue])
-  }
-  entries.push(['version', '1'])
-  const result = `${scheme}://reactPath?${entries.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`
-  return result.length <= MAX_ANDROID_LAUNCH_URL_LENGTH ? result : value
-}
-
-export function getShopeeIosLaunchUrl(value: string, userAgent: string) {
-  return isIosUserAgent(userAgent)
-    ? buildShopeeIosLaunchUrl(value)
-    : value
-}
-
 export function isIosUserAgent(userAgent: string) {
   return /iphone|ipad|ipod/i.test(userAgent)
 }
@@ -304,16 +225,14 @@ export function getPopupLinkOpenMode(
   options: { userAgent: string },
 ): PopupLinkOpenMode {
   if (isAndroidDeviceUserAgent(options.userAgent)) {
-    // Standalone/OEM Android browsers and explicit intent:// URIs navigate in _self to avoid blank orphan tabs
-    // and popup blockers; legacy FB4A WebView (when forceChromeAndroid is off) opens raw HTTPS in _blank.
-    if (isAndroidIntentBrowserUserAgent(options.userAgent) || value.startsWith('intent://')) return 'anchor-same-tab'
+    // Explicit intent:// URIs (TikTok on standalone Android browsers) must navigate in _self to avoid blank orphan tabs,
+    // whereas Shopee opens raw HTTPS in a referrerless _blank browsing context so Shopee Affiliate records "Others".
+    if (value.startsWith('intent://')) return 'anchor-same-tab'
     return platform === 'SHOPEE' ? 'anchor-new-tab' : 'anchor-same-tab'
   }
-  // On iOS (iPhone 15 & all iPhones/iPads in Facebook IAB, Messenger, Zalo, and Safari), target="_blank"
-  // triggers WKUIDelegate.createWebViewWithConfiguration -> webView.load(request) (WKNavigationTypeOther),
-  // which suppresses iOS Universal Links and strands visitors on shopee.vn/opaanlp. A visible _self <a> tap
-  // preserves WKNavigationTypeLinkActivated so LSAppLink opens Shopee & TikTok natively while no-referrer
-  // keeps configuration.referrerURL = nil ("Others").
+  // On iOS (Safari and in-app webviews), target="_blank" spawns a child tab/webview context
+  // that breaks Universal Links and leaves the user stranded on shopee.vn. A visible
+  // same-tab <a> tap sets WKNavigationTypeLinkActivated so iOS launches Shopee & TikTok directly.
   if (isIosUserAgent(options.userAgent)) {
     return 'anchor-same-tab'
   }
