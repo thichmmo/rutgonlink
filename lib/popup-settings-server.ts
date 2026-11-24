@@ -1,5 +1,5 @@
 import { buildTikTokIosLaunchUrl, isIosUserAgent, isTikTokIosRedirectUrl, isTikTokOneLinkUrl, isTikTokShortUrl } from '@/lib/popup-link'
-import { isMobileUserAgent, popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
+import { popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
 import { expandShopeeShortUrl, isShopeeShortUrl } from '@/lib/shopee-link'
 import { resolveTikTokUrl } from '@/lib/tiktok-link'
 
@@ -71,13 +71,11 @@ export async function preparePopupSettingsForRequest(settings: PopupSettings, us
     settings = { ...settings, tiktok: { ...settings.tiktok } }
     delete settings.tiktok.androidLaunchUrl
   }
-  if (!isMobileUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent, options)) return settings
+  if (!isIosUserAgent(userAgent) || !popupAppliesToDevice(settings, userAgent, options)) return settings
   const shopeeUrl = settings.shopee.url
   const tiktokUrl = settings.tiktok.iosUrl || settings.tiktok.url
-  // Expand legacy unexpanded s.shopee.* / shope.ee / shp.ee popups on BOTH Android and iOS so no mobile
-  // visitor ever hits s.shopee.vn's JS referral shell ("Website"), while keeping TikTok resolution iOS-only.
   const needsShopeeExpand = isShopeeShortUrl(shopeeUrl)
-  const needsTikTokExpand = isIosUserAgent(userAgent) && isTikTokShortUrl(tiktokUrl)
+  const needsTikTokExpand = isTikTokShortUrl(tiktokUrl)
   if (!needsShopeeExpand && !needsTikTokExpand) return settings
 
   const [resolvedShopeeUrl, resolvedTikTokUrl] = await Promise.all([

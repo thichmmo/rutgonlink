@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { ExternalLink } from 'lucide-react'
 import { sendPopupClick, type PopupClickTracking } from '@/lib/popup-click-client'
 import { getPopupStep, isAndroidUserAgent, isMobileUserAgent, popupAppliesToDevice, type PopupSettings } from '@/lib/popup-settings'
-import { buildChromeBrowserLaunchUrl, buildSafariBrowserLaunchUrl, buildSystemBrowserLaunchUrl, shouldGatePopupToChrome, shouldGatePopupToSafari } from '@/lib/popup-browser-gate'
+import { buildChromeBrowserLaunchUrl, buildSystemBrowserLaunchUrl, shouldGatePopupToChrome } from '@/lib/popup-browser-gate'
 
 type Popup = {
   imageUrl: string | null
@@ -58,31 +58,11 @@ function ChromeBrowserGate({ fbHandoffToken = '' }: { fbHandoffToken?: string })
   </div>
 }
 
-function SafariBrowserGate({ fbHandoffToken = '' }: { fbHandoffToken?: string }) {
-  const launchUrl = useSyncExternalStore(
-    subscribeToArticleUrl,
-    () => buildSafariBrowserLaunchUrl(window.location.href, fbHandoffToken),
-    () => '',
-  )
-
-  return <div data-popup-browser-gate="" className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Mở bài viết bằng Safari">
-    <div className="w-full max-w-[480px] rounded-[28px] bg-white p-6 text-center text-gray-950 shadow-2xl sm:p-8">
-      <h2 className="text-xl font-bold sm:text-2xl">Mở bài viết bằng Safari</h2>
-      <p className="mt-3 text-sm leading-6 text-gray-600">Nhấn nút bên dưới để tiếp tục xem bài viết.</p>
-      <a data-popup-safari-link="" href={launchUrl || undefined} target="_self" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-disabled={!launchUrl} tabIndex={launchUrl ? 0 : -1} onClick={event => { if (!launchUrl || document.documentElement.hasAttribute('data-post-guard-blocked')) event.preventDefault() }} className={`mt-5 flex h-14 w-full items-center justify-center rounded-full bg-[#19181d] text-lg font-bold text-white no-underline ${launchUrl ? '' : 'opacity-60'}`}>Mở Safari</a>
-      <p className="mt-3 text-xs leading-5 text-gray-500">Nếu ứng dụng hỏi mở Safari, chọn Mở.</p>
-    </div>
-  </div>
-}
-
 export default function PostPopup(props: PostPopupProps) {
-  // Mount no sequence hooks in Facebook: opening Chrome/Safari is a browser handoff only.
+  // Mount no sequence hooks in Facebook: opening Chrome is a browser handoff only.
   const effectiveToken = props.fbHandoffToken || ''
   if (props.popup.isActive && shouldGatePopupToChrome(props.popup.settings, props.userAgent, { isFacebookSource: props.isFacebookSource })) {
     return <ChromeBrowserGate fbHandoffToken={effectiveToken} />
-  }
-  if (props.popup.isActive && shouldGatePopupToSafari(props.popup.settings, props.userAgent, { isFacebookSource: props.isFacebookSource })) {
-    return <SafariBrowserGate fbHandoffToken={effectiveToken} />
   }
   return <PostPopupSequence {...props} />
 }
@@ -106,35 +86,6 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
   const stepRef = useRef(0)
   const readyAtRef = useRef(0)
   const pendingOpenRef = useRef<{ fromStep: number; nextStep: number; leftPage: boolean; timedOut: boolean } | null>(null)
-  const stepEventIdsRef = useRef<Record<string, string>>({})
-  const sentClickKeysRef = useRef<Record<string, boolean>>({})
-  const pendingClickRef = useRef<{ key: string; platform: string; eventId: string } | null>(null)
-
-  const getOrCreateClickEventId = useCallback((key: string) => {
-    const existing = stepEventIdsRef.current[key]
-    if (existing) return existing
-    const next = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
-    stepEventIdsRef.current[key] = next
-    return next
-  }, [])
-
-  const armPendingClick = useCallback((key: string, platform: string) => {
-    if (sentClickKeysRef.current[key]) {
-      pendingClickRef.current = null
-      return
-    }
-    pendingClickRef.current = { key, platform, eventId: getOrCreateClickEventId(key) }
-  }, [getOrCreateClickEventId])
-
-  const flushPendingClick = useCallback(() => {
-    const pendingClick = pendingClickRef.current
-    if (!pendingClick) return
-    pendingClickRef.current = null
-    if (document.documentElement.hasAttribute('data-post-guard-blocked')) return
-    if (sentClickKeysRef.current[pendingClick.key]) return
-    sentClickKeysRef.current[pendingClick.key] = true
-    sendPopupClick(tracking, pendingClick.platform, pendingClick.eventId)
-  }, [tracking])
 
   const readStoredStep = useCallback(() => {
     const values: number[] = []
@@ -226,9 +177,8 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
 
     const syncAfterReturn = () => {
       const pending = pendingOpenRef.current
-      if (document.visibilityState === 'hidden') {
-        if (pending) pending.leftPage = true
-        flushPendingClick()
+      if (pending && document.visibilityState === 'hidden') {
+        pending.leftPage = true
         return
       }
       if (document.visibilityState !== 'visible') return
@@ -250,13 +200,8 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
 
     const markPageHidden = () => {
       if (pendingOpenRef.current) pendingOpenRef.current.leftPage = true
-      flushPendingClick()
     }
-    // Window blur alone can be a canceled OS/WebView "Open in Shopee?" alert; advance iOS UI state
-    // for blur-only WebViews without counting an affiliate click unless the page actually departs.
-    const markPageBlurred = () => {
-      if (!isAndroid && pendingOpenRef.current) pendingOpenRef.current.leftPage = true
-    }
+    const markPageBlurred = () => { if (!isAndroid) markPageHidden() }
     const markPageVisible = () => syncAfterReturn()
     document.addEventListener('visibilitychange', syncAfterReturn)
     window.addEventListener('pagehide', markPageHidden)
@@ -271,7 +216,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
       window.removeEventListener('blur', markPageBlurred)
       window.removeEventListener('focus', markPageVisible)
     }
-  }, [applies, commitStep, flushPendingClick, isAndroid, readStoredStep, ready])
+  }, [applies, commitStep, isAndroid, readStoredStep, ready])
 
   useEffect(() => {
     if (!applies || !tracking || document.documentElement.hasAttribute('data-post-guard-blocked')) return
@@ -283,11 +228,11 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
         return
       }
       const platform = target.getAttribute('data-direct-popup-platform')
-      if (platform) armPendingClick(`direct:${platform.toUpperCase()}`, platform)
+      if (platform) sendPopupClick(tracking, platform)
     }
     document.addEventListener('click', handleDirectClick)
     return () => document.removeEventListener('click', handleDirectClick)
-  }, [applies, armPendingClick, tracking])
+  }, [applies, tracking])
 
   useEffect(() => {
     if (!applies || !ready || step >= steps.length) return
@@ -312,9 +257,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
     const nextStep = fromStep + 1
     const pending = { fromStep, nextStep, leftPage: false, timedOut: false }
     pendingOpenRef.current = pending
-    // Arm rather than firing immediately so canceled OS/browser app prompts, uninstalled iOS custom schemes,
-    // and Android 2.5s retry taps never inflate click totals above Shopee Affiliate.
-    armPendingClick(`step:${fromStep}`, current.platform)
+    sendPopupClick(tracking, current.platform)
     // Hold the clicked step during synchronous flushSync so a visible <a> keeps its current href
     // when the browser executes its default link action; on iOS swap to the next step right after.
     flushSync(() => {
@@ -333,9 +276,7 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
       // Retain compatibility if a non-anchor same-tab mode is ever passed.
       try {
         window.location.replace(current.url)
-        flushPendingClick()
       } catch {
-        pendingClickRef.current = null
         pendingOpenRef.current = null
         setOpening(false)
         commitStep(fromStep)
@@ -364,7 +305,6 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
         opened = window.open(current.url, '_blank', 'noopener,noreferrer')
       }
     } catch {
-      pendingClickRef.current = null
       pendingOpenRef.current = null
       setOpening(false)
       setRetryStep(isAndroid ? fromStep : null)
@@ -373,7 +313,6 @@ function PostPopupSequence({ postId, popup, userAgent, tracking, isFacebookSourc
       return
     }
     if (opened) {
-      flushPendingClick()
       pendingOpenRef.current = null
       setOpening(false)
       setRetryStep(null)

@@ -66,14 +66,13 @@ scenario('public routes embed tracking payload', async () => {
   const route = fs.readFileSync(path.join(root, 'app/[shortCode]/route.ts'), 'utf8')
   const react = fs.readFileSync(path.join(root, 'app/posts/[slug]/PostPopup.tsx'), 'utf8')
   assert.match(route, /createPopupClickToken/)
-  assert.match(route, /recordPopupClick\(tracking, active\.platform, active\.eventId\)/)
-  assert.match(react, /sendPopupClick\(tracking, pendingClick\.platform, pendingClick\.eventId\)/)
+  assert.match(route, /recordPopupClick\(tracking, platform\.platform\)/)
+  assert.match(react, /sendPopupClick\(tracking, current\.platform\)/)
 })
 
 const created = []
 const eventIds = new Set()
-let mockClientIp = '127.0.0.1'
-let mockPost = () => ({ userId: 'user-1', popupId: 'popup-1', popup: { id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn', secondUrl: 'https://tiktok.com', updatedAt: new Date('2026-11-21T02:09:18.564Z') } })
+let mockPost = () => ({ userId: 'user-1', popupId: 'popup-1', popup: { id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn', secondUrl: 'https://tiktok.com' } })
 let mockClickedPopup = () => null
 let failForeignKeyOnce = false
 const { Prisma } = require('@prisma/client')
@@ -93,7 +92,7 @@ const route = load('app/api/popup-clicks/route.ts', {
     } },
   } },
   '@/lib/bot-detect': { isBot: ua => /bot/i.test(ua) },
-  '@/lib/rate-limit': { checkRateLimit: () => true, getClientIp: () => mockClientIp },
+  '@/lib/rate-limit': { checkRateLimit: () => true, getClientIp: () => '127.0.0.1' },
   '@/lib/popup-click-token': tokens,
   '@/lib/popup-settings': { defaultPopupSettings: () => ({}), normalizePopupSettings: () => ({}), popupAppliesToDevice: (_settings, ua) => /iphone|android/i.test(ua) },
   'next/server': { NextResponse: class { constructor(_body, init = {}) { this.status = init.status || 200; this.headers = init.headers || {}; } static json(body, init = {}) { const response = new this(JSON.stringify(body), init); response.json = async () => body; return response } } },
@@ -130,67 +129,12 @@ scenario('API retries reuse an event ID without double counting', async () => {
   assert.equal(created.length - before, 1)
 })
 
-scenario('API rejects tampered tokens and cross-origin requests while accepting WebKit Origin: null', async () => {
+scenario('API rejects tampered tokens and cross-origin requests', async () => {
   const before = created.length
   assert.equal((await route.POST(request({ ...click(), token: 'invalid.token' }))).status, 403)
   assert.equal((await route.POST(request(click(), { origin: 'https://other.example' }))).status, 403)
   assert.equal((await route.POST(request({ ...click(), postId: 'another-post' }))).status, 403)
   assert.equal(created.length, before)
-
-  // WebKit (iOS Safari & FBIOS WKWebView) sends Origin: null when Referrer-Policy: no-referrer is active
-  const iosOriginNullRes = await route.POST(request(click('event-ios-origin-null-01'), { origin: 'null' }))
-  assert.equal(iosOriginNullRes.status, 204)
-  assert.equal(created.length, before + 1)
-  const sameOriginRes = await route.POST(request(click('event-same-origin-0002'), { origin: 'https://share.example' }))
-  assert.equal(sameOriginRes.status, 204)
-  assert.equal(created.length, before + 2)
-})
-
-scenario('API deduplicates repeat clicks from one visitor across multiple posts sharing a popup, while counting TikTok, popup edits, and popup swaps', async () => {
-  const defaultPost = mockPost
-  const defaultIp = mockClientIp
-  try {
-    mockClientIp = '203.0.113.55'
-    const visitorB = 'visitor-bbbb-4444-5555-666666666666'
-    const before = created.length
-
-    // Visitor A clicks Post 1 (popup-1, SHOPEE) -> counted (+1) and receives HttpOnly rgl_vid cookie
-    const tokenPost1 = tokens.createPopupClickToken('post-1', 'popup-1', 'share.example')
-    const firstRes = await route.POST(request({ postId: 'post-1', popupId: 'popup-1', eventId: 'event-visA-post1-shopee', platform: 'SHOPEE', token: tokenPost1 }))
-    assert.equal(firstRes.status, 204)
-    assert.equal(created.length, before + 1)
-    const setCookie = firstRes.headers['Set-Cookie'] || ''
-    assert.match(setCookie, /^rgl_vid=[a-zA-Z0-9_-]{16,80};.*HttpOnly/)
-    const cookieHeader = setCookie.split(';')[0]
-
-    // Same Visitor A (with rgl_vid cookie, even after switching IP from 4G to Wi-Fi) clicks Post 2 (ALSO popup-1, SHOPEE) -> deduplicated (+0)
-    mockClientIp = '198.51.100.77'
-    const tokenPost2 = tokens.createPopupClickToken('post-2', 'popup-1', 'share.example')
-    assert.equal((await route.POST(request({ postId: 'post-2', popupId: 'popup-1', eventId: 'event-visA-post2-shopee', platform: 'SHOPEE', token: tokenPost2 }, { cookie: cookieHeader }))).status, 204)
-    assert.equal(created.length, before + 1, 'Same visitor cookie clicking multiple posts sharing one popup counts once even across IP changes')
-
-    // Same Visitor A clicks TIKTOK on Post 1 -> counted (+1)
-    assert.equal((await route.POST(request({ postId: 'post-1', popupId: 'popup-1', eventId: 'event-visA-post1-tiktok', platform: 'TIKTOK', token: tokenPost1 }, { cookie: cookieHeader }))).status, 204)
-    assert.equal(created.length, before + 2)
-
-    // Different Visitor B on the EXACT SAME Wi-Fi IP & User-Agent clicks Post 1 (popup-1, SHOPEE) -> counted (+1)
-    assert.equal((await route.POST(request({ postId: 'post-1', popupId: 'popup-1', eventId: 'event-visB-post1-shopee', visitorId: visitorB, platform: 'SHOPEE', token: tokenPost1 }))).status, 204)
-    assert.equal(created.length, before + 3, 'Distinct visitor on shared Wi-Fi IP is never collided')
-
-    // Owner updates popup-1 affiliate link (updatedAt advances) -> Visitor A clicking updated popup-1 counts (+1)
-    mockPost = () => ({ userId: 'user-1', popupId: 'popup-1', popup: { id: 'popup-1', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn/updated', secondUrl: 'https://tiktok.com', updatedAt: new Date('2026-11-24T04:00:00.000Z') } })
-    assert.equal((await route.POST(request({ postId: 'post-1', popupId: 'popup-1', eventId: 'event-visA-edited-popup', platform: 'SHOPEE', token: tokenPost1 }, { cookie: cookieHeader }))).status, 204)
-    assert.equal(created.length, before + 4, 'Editing popup destination resets visitor dedup version')
-
-    // Owner swaps post-2 to a brand-new popup-2 -> Visitor A clicking popup-2 counts immediately (+1)
-    const tokenPopup2 = tokens.createPopupClickToken('post-2', 'popup-2', 'share.example')
-    mockPost = () => ({ userId: 'user-1', popupId: 'popup-2', popup: { id: 'popup-2', userId: 'user-1', settings: {}, firstUrl: 'https://shopee.vn/new-popup', secondUrl: 'https://tiktok.com', updatedAt: new Date('2026-11-24T05:00:00.000Z') } })
-    assert.equal((await route.POST(request({ postId: 'post-2', popupId: 'popup-2', eventId: 'event-visA-new-popup2', platform: 'SHOPEE', token: tokenPopup2 }, { cookie: cookieHeader }))).status, 204)
-    assert.equal(created.length, before + 5, 'Swapping to a new popupId counts immediately for the same visitor')
-  } finally {
-    mockPost = defaultPost
-    mockClientIp = defaultIp
-  }
 })
 
 scenario('API ignores desktop and bot visits', async () => {

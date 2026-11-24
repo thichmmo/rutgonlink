@@ -1,5 +1,4 @@
-import { IOS_IN_APP_WEBVIEW_PATTERN } from '@/lib/popup-link'
-import { isAndroidUserAgent, isIosUserAgent, popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
+import { isAndroidUserAgent, popupAppliesToDevice, type PopupEligibilityOptions, type PopupSettings } from '@/lib/popup-settings'
 
 // Cover Facebook/Lite/Messenger, Instagram, Threads (Barcelona), Zalo, TikTok, Telegram, and LINE Android webviews.
 export const ANDROID_IN_APP_WEBVIEW_PATTERN = /fban|fbav|fbios|fb_iab|fb4a|fbandroid|fblite|orca-android|messenger|instagram|barcelona|\bzalo\b|bytedancewebview|musical_ly|telegram-android|\bline\//i
@@ -10,33 +9,6 @@ export function shouldGatePopupToChrome(settings: PopupSettings, userAgent: stri
     && ANDROID_IN_APP_WEBVIEW_PATTERN.test(userAgent)
     && popupAppliesToDevice(settings, userAgent, options)
     && Boolean((settings.tiktok.androidUrl || settings.tiktok.url).trim())
-}
-
-export function shouldGatePopupToSafari(settings: PopupSettings, userAgent: string, options?: PopupEligibilityOptions) {
-  return settings.forceSafariIos
-    && isIosUserAgent(userAgent)
-    && IOS_IN_APP_WEBVIEW_PATTERN.test(userAgent)
-    && popupAppliesToDevice(settings, userAgent, options)
-    && Boolean((settings.shopee.url || settings.tiktok.iosUrl || settings.tiktok.url).trim())
-}
-
-// Keep this function self-contained: the standalone renderer embeds its source.
-export function buildSafariBrowserLaunchUrl(currentArticleUrl: string, fbHandoffToken = '') {
-  try {
-    const url = new URL(currentArticleUrl)
-    if (!/^https?:$/.test(url.protocol) || !url.host || url.username || url.password) return ''
-    let rawHref = url.href
-    if (fbHandoffToken && !/[?&]_fbh=/.test(url.search)) {
-      const hashIndex = rawHref.indexOf('#')
-      const base = hashIndex === -1 ? rawHref : rawHref.slice(0, hashIndex)
-      const hash = hashIndex === -1 ? '' : rawHref.slice(hashIndex)
-      rawHref = `${base}${base.includes('?') ? '&' : '?'}_fbh=${encodeURIComponent(fbHandoffToken)}${hash}`
-    }
-    // MobileSafari registers x-safari-https:// / x-safari-http:// on iOS 15-18.5+ for 1-tap escape out of FBIOS WKWebView.
-    return rawHref.replace(/^https?:/i, match => `x-safari-${match.toLowerCase()}`)
-  } catch {
-    return ''
-  }
 }
 
 // Keep this function self-contained: the standalone renderer embeds its source.

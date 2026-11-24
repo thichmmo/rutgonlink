@@ -45,7 +45,6 @@ export async function expandShopeeShortUrl(url: string, options?: { signal?: Abo
       if (!isShopeeShortenerHost(currentHost)) return current
       const response = await fetch(current, {
         redirect: 'manual',
-        referrerPolicy: 'no-referrer',
         headers: { 'user-agent': DESKTOP_SHORTENER_REDIRECT_UA, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
         signal,
       })
