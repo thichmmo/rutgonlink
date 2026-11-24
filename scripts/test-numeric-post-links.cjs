@@ -320,7 +320,10 @@ scenario('direct wrapper allocates numeric /p7 link without article body, requir
   assert(androidHtml.includes('data-direct-popup-platform="TikTok"'))
   const iosRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22F76 [FBAN/FBIOS;FBAV/515.0.0.43.106;FBDV/iPhone15,4;FBSN/iOS;FBSV/18.5]' })
   const iosHtml = await iosRes.text()
-  assert(iosHtml.includes('data-direct-popup-platform="Shopee" href="shopeevn://reactPath?navigate_url=https%3A%2F%2Fshopee.vn%2Fopaanlp%2F1%2F2&amp;path=shopee%2FTRANSFER_PAGE&amp;tab=buy&amp;use_deeplink=1&amp;version=1" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
+  assert(iosHtml.includes('data-direct-popup-platform="Shopee" href="shopeevn://reactPath?navigate_url=https%3A%2F%2Fshopee.vn%2Fopaanlp%2F1%2F2&amp;path=shopee%2FTRANSFER_PAGE&amp;tab=buy&amp;version=1" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
+  const safariRes = await visit('50000', 'ca33newss.xyz', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1', referer: 'https://lm.facebook.com/' })
+  const safariHtml = await safariRes.text()
+  assert(safariHtml.includes('data-direct-popup-platform="Shopee" href="https://shopee.vn/opaanlp/1/2" target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer"'))
   row.popup = null
   const copied = await body(await duplicate.POST(request({}), { params: Promise.resolve({ id: post.id }) }))
   assert.equal(copied.status, 201)

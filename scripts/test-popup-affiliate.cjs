@@ -327,15 +327,17 @@ if (baseline) {
     const opaanlpTarget = 'https://shopee.vn/opaanlp/938402459/28818204493?__mobile__=1&uls_trackid=keep%2Fexact+1'
     const productLookup = 'https://shopee.vn/product/938402459/28818204493'
     state.routes.set(shortShopee, { status: 301, location: opaanlpTarget })
-    state.routes.set(opaanlpTarget, { body: '<!doctype html><html><head></head><body></body></html>' })
+    state.routes.set(opaanlpTarget, new Error('Resolver must NEVER fetch /opaanlp/ signed affiliate URL on the server'))
     state.routes.set(productLookup, {
       body: '<meta data-rh="true" content="Sạc Dự Phòng 30000mAh &amp; Cáp Nhanh | Shopee Việt Nam" property="og:title"><meta data-rh="true" property="og:image" content="https://down-vn.img.susercontent.com/file/vn-product-1">',
     })
+    state.network = []
     const result = await resolve(shortShopee)
     assert.equal(result.status, 200)
     assert.equal(result.body.url, opaanlpTarget, 'opaanlp affiliate link and signed query stay untouched')
     assert.equal(result.body.title, 'Sạc Dự Phòng 30000mAh & Cáp Nhanh')
     assert.equal(result.body.image, 'https://down-vn.img.susercontent.com/file/vn-product-1')
+    assert.deepEqual(state.network, [shortShopee, productLookup], 'Skips /opaanlp/ fetch and looks up unsigned /product/ directly')
 
     // Assert s.shopee.vn receives Desktop Chrome UA (never iPhone mobile UA which returns 200 homepage shim)
     // and generic homepage OG tags are rejected in favor of real product metadata.

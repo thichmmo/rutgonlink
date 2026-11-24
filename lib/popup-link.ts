@@ -13,7 +13,9 @@ const SHOPEE_IOS_MARKET_SCHEMES: ReadonlyArray<readonly [domain: string, scheme:
   ['shopee.co.id', 'shopeeid'],
 ]
 const SHOPEE_IOS_SCHEME_PREFIX_PATTERN = /^shopee(?:vn|th|sg|my|ph|id):\/\/reactPath\?/i
-const SHOPEE_IOS_FORWARDED_UTM_KEYS = ['utm_campaign', 'utm_content', 'utm_medium', 'utm_source', 'utm_term'] as const
+// Captive iOS social/chat WKWebViews (Facebook FBIOS on iOS 18.5+, Messenger, Instagram, Threads, Zalo, TikTok, Telegram, LINE)
+// suppress https://shopee.vn/opaanlp/... Universal Links; standalone Mobile Safari invokes Apple LSAppLink natively.
+export const IOS_IN_APP_WEBVIEW_PATTERN = /fban|fbav|fbios|fb_iab|messenger|instagram|barcelona|\bzalo\b|bytedancewebview|musical_ly|telegram|\bline\//i
 
 export const TIKTOK_ANDROID_HOSTS = ['tiktok.com', 'www.tiktok.com', 'vt.tiktok.com', 'vm.tiktok.com', 'shop.tiktok.com']
 // Verified against live /.well-known/assetlinks.json for package com.shopee.vn (shp.ee/shope.ee return 404 and must redirect over HTTPS first).
@@ -23,7 +25,8 @@ const ANDROID_DEVICE_UA_PATTERN = /android|(?:harmonyos|openharmony).*(?:mobile|
 // and non-FB4A in-app webviews (FBLite, Zalo, Messenger, Instagram, Threads, Telegram, TikTok, LINE)
 // suppress automatic https:// App Links or drop _blank windows unless wrapped in a scheme=https intent.
 const ANDROID_OEM_BROWSER_PATTERN = /samsungbrowser|miuibrowser|heytapbrowser|oppobrowser|realmelink|vivobrowser|huaweibrowser|arkweb|ucbrowser|firefox\/|fblite|orca-android|messenger|instagram|barcelona|\bzalo\b|bytedancewebview|musical_ly|telegram-android|\bline\//i
-// Exclude only legacy FB4A WebView (gated to Chrome when forceChromeAndroid is enabled) and Presto Opera Mini.
+const OPERA_MINI_UA_PATTERN = /opera mini\//i
+// Exclude legacy FB4A WebView only for TikTok short-link pass-through when Chrome gate is off; Shopee must always launch com.shopee.vn via intent://.
 const ANDROID_SKIP_INTENT_PATTERN = /fban\/fb4a|fb_iab\/fb4a|opera mini\//i
 const MAX_ANDROID_LAUNCH_URL_LENGTH = 8192
 
@@ -37,6 +40,10 @@ export function isAndroidOemBrowserUserAgent(userAgent: string) {
 
 export function isAndroidIntentBrowserUserAgent(userAgent: string) {
   return isAndroidDeviceUserAgent(userAgent) && !ANDROID_SKIP_INTENT_PATTERN.test(userAgent)
+}
+
+export function isAndroidShopeeIntentUserAgent(userAgent: string) {
+  return isAndroidDeviceUserAgent(userAgent) && !OPERA_MINI_UA_PATTERN.test(userAgent)
 }
 
 function parseSafeHttpsAppUrl(value: string, allowedHosts: readonly string[]) {
@@ -102,13 +109,15 @@ export function getTikTokAndroidLaunchUrl(value: string, preparedLaunchUrl?: str
 export function buildAndroidPopupLaunchUrl(value: string, platform: PopupLinkPlatform, userAgent = '') {
   // Omit userAgent only in legacy compatibility callers; active Android requests pass userAgent.
   if (!userAgent) return platform === 'SHOPEE' ? value : getTikTokAndroidLaunchUrl(value)
-  // Standalone/OEM Android browsers (Chrome, Samsung, Xiaomi, OPPO, Vivo, Huawei/HarmonyOS, Firefox, UC)
-  // and non-FB4A webviews invoke PackageManager directly via scheme=https intent:// with the exact
-  // unmodified /opaanlp/ URL, while Referrer-Policy: no-referrer keeps EXTRA_REFERRER empty ("Others").
+  // Shopee launches com.shopee.vn via scheme=https intent:// across ALL Android browsers & WebViews (including FB4A
+  // when forceChromeAndroid is off) so shopee.vn/opaanlp never loads in-browser (which sets stm_source=rw -> "Website").
+  if (platform === 'SHOPEE') {
+    return isAndroidShopeeIntentUserAgent(userAgent)
+      ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
+      : value
+  }
   if (!isAndroidIntentBrowserUserAgent(userAgent)) return value
-  return platform === 'SHOPEE'
-    ? buildAndroidHttpsAppIntentUrl(value, SHOPEE_ANDROID_HOSTS, 'com.shopee.vn')
-    : buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
+  return buildAndroidHttpsAppIntentUrl(value, TIKTOK_ANDROID_HOSTS, 'com.ss.android.ugc.trill')
 }
 
 export function isTikTokOneLinkUrl(value: string) {
@@ -260,28 +269,21 @@ export function buildShopeeIosLaunchUrl(value: string) {
     return value
   }
 
-  // Match Shopee ULS CONFIG.deepLinkUrl 1:1 while preserving the exact unmodified /opaanlp/ URL in navigate_url.
-  // Firing shopeevn://reactPath directly on a trusted _self <a> tap bypasses Facebook iOS 18.5+ Universal Link
-  // suppression and swcd browser-pinned domains without s.shopee.vn's 3s referral redirect ("Others").
-  const entries: Array<[string, string]> = [
-    ['navigate_url', value],
-    ['path', 'shopee/TRANSFER_PAGE'],
-    ['tab', 'buy'],
-  ]
-  const ulsTrackId = parsed.searchParams.get('uls_trackid')
-  if (ulsTrackId) entries.push(['uls_trackid', ulsTrackId])
-  entries.push(['use_deeplink', '1'])
-  for (const key of SHOPEE_IOS_FORWARDED_UTM_KEYS) {
-    const paramValue = parsed.searchParams.get(key)
-    if (paramValue) entries.push([key, paramValue])
-  }
-  entries.push(['version', '1'])
-  const result = `${scheme}://reactPath?${entries.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`
+  // Route captive iOS WKWebViews (e.g. Facebook FBIOS on iPhone 15 iOS 18.5) directly into Shopee App with the
+  // exact unmodified /opaanlp/ URL in navigate_url, omitting s.shopee.vn's use_deeplink=1 web-shim flag so
+  // Shopee records h5_inapp with empty referrer ("Others") instead of mobile web ("Website").
+  const result = `${scheme}://reactPath?navigate_url=${encodeURIComponent(value)}&path=shopee%2FTRANSFER_PAGE&tab=buy&version=1`
   return result.length <= MAX_ANDROID_LAUNCH_URL_LENGTH ? result : value
 }
 
+export function isIosInAppWebViewUserAgent(userAgent: string) {
+  return isIosUserAgent(userAgent) && IOS_IN_APP_WEBVIEW_PATTERN.test(userAgent)
+}
+
 export function getShopeeIosLaunchUrl(value: string, userAgent: string) {
-  return isIosUserAgent(userAgent)
+  // Captive iOS WKWebViews (FBIOS, Messenger, Zalo, etc.) suppress https://shopee.vn/opaanlp/ Universal Links
+  // and need shopeevn://reactPath; standalone Mobile Safari invokes Apple's native Universal Link directly ("Others").
+  return isIosInAppWebViewUserAgent(userAgent)
     ? buildShopeeIosLaunchUrl(value)
     : value
 }

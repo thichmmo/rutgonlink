@@ -137,9 +137,28 @@ export async function POST(req: NextRequest) {
     let current = url
     for (let count = 0; count < 6; count += 1) {
       const currentHost = new URL(current).hostname.toLowerCase()
+      // Never fetch /opaanlp/ or /universal-link/ affiliate URLs on the server (avoids touching signed uls_trackid
+      // endpoints and skips 300KB OG-less HTML shells); look up OG metadata from clean /product/<shopId>/<itemId> directly.
+      const directPreviewUrl = !isShopeeShortenerHost(currentHost) ? extractShopeeProductPreviewUrl(current) : null
+      if (directPreviewUrl) {
+        let meta: { title: string | null; image: string | null } = { title: null, image: null }
+        try {
+          const previewRes = await fetch(directPreviewUrl, {
+            redirect: 'manual',
+            referrerPolicy: 'no-referrer',
+            headers: { 'user-agent': SHOPEE_PREVIEW_UA, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
+            signal: AbortSignal.timeout(6000),
+          })
+          if (previewRes.ok) meta = metadata((await previewRes.text()).slice(0, 500_000))
+        } catch {
+          // Keep the resolved opaanlp affiliate URL intact even if Shopee's preview fetch times out.
+        }
+        return NextResponse.json({ url: current, originalUrl: url, ...meta })
+      }
       const ua = isShopeeShortenerHost(currentHost) ? DESKTOP_SHORTENER_REDIRECT_UA : SHOPEE_PREVIEW_UA
       const response = await fetch(current, {
         redirect: 'manual',
+        referrerPolicy: 'no-referrer',
         headers: { 'user-agent': ua, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
         signal: AbortSignal.timeout(8000),
       })
@@ -147,26 +166,12 @@ export async function POST(req: NextRequest) {
       if (!location || ![301, 302, 303, 307, 308].includes(response.status)) {
         const html = (await response.text()).slice(0, 500_000)
         let meta = metadata(html)
-        if (!meta.title && !meta.image) {
-          const previewLookupUrl = extractShopeeProductPreviewUrl(current)
-          if (previewLookupUrl) {
-            try {
-              const previewRes = await fetch(previewLookupUrl, {
-                redirect: 'manual',
-                headers: { 'user-agent': SHOPEE_PREVIEW_UA, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
-                signal: AbortSignal.timeout(6000),
-              })
-              if (previewRes.ok) meta = metadata((await previewRes.text()).slice(0, 500_000))
-            } catch {
-              // Keep the resolved opaanlp affiliate URL intact even if Shopee's preview fetch times out.
-            }
-          }
-        }
         // Non-product campaign/shop short links on s.shopee.vn also expose OG tags directly to WhatsApp UA.
         if (!meta.title && !meta.image && isShopeeShortenerHost(inputHost)) {
           try {
             const shortMetaRes = await fetch(url, {
               redirect: 'manual',
+              referrerPolicy: 'no-referrer',
               headers: { 'user-agent': SHOPEE_PREVIEW_UA, accept: 'text/html,*/*', 'accept-language': 'vi-VN,vi;q=0.9' },
               signal: AbortSignal.timeout(6000),
             })

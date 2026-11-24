@@ -13,7 +13,7 @@ import { isValidIntermediateImage } from '@/lib/intermediate-image'
 import { SHARED_DOMAINS } from '@/lib/shared-domains'
 import { normalizeSettings, sanitizeRichHtml } from '@/lib/content-management'
 import { DEVTOOLS_REDIRECT_URL, getPopupStep, popupAppliesToDevice } from '@/lib/popup-settings'
-import { buildChromeBrowserLaunchUrl, buildSystemBrowserLaunchUrl, shouldGatePopupToChrome } from '@/lib/popup-browser-gate'
+import { buildChromeBrowserLaunchUrl, buildSafariBrowserLaunchUrl, buildSystemBrowserLaunchUrl, shouldGatePopupToChrome, shouldGatePopupToSafari } from '@/lib/popup-browser-gate'
 import { preparePopupSettingsForRequest } from '@/lib/popup-settings-server'
 import { MANAGED_MEDIA_CSS } from '@/lib/video-embed'
 import { getPostPreviewImageUrl } from '@/lib/post-preview'
@@ -368,7 +368,7 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
   const fallbackHistoryScript = isFallback && !isFacebookCrawler
     ? `<script>try{if(window.history&&window.history.replaceState)window.history.replaceState(null,"",${escapeInlineJson(canonicalPath)}+window.location.search+window.location.hash);}catch(_){}</script>`
     : ''
-  const chromeGateCss = '.managed-browser-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-browser-gate-card{width:min(480px,100%);padding:28px;border-radius:28px;background:#fff;color:#19181d;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-browser-gate-card h2{margin:0;font-size:24px}.managed-browser-gate-card p{margin:14px 0 0;font-size:14px;line-height:1.7;color:#4b5563}.managed-browser-gate-card a[data-popup-chrome-link]{display:block;margin-top:20px;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:18px;font-weight:700;text-decoration:none}.managed-browser-gate-card a[data-popup-system-browser-link]{display:inline-block;margin-top:10px;color:#d61f51;font-size:12px;font-weight:600;text-decoration:none}.managed-browser-gate-card a[aria-disabled="true"]{opacity:.6}.managed-browser-gate-card small{display:block;margin-top:14px;color:#6b7280;font-size:12px;line-height:1.6}'
+  const chromeGateCss = '.managed-browser-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px;background:#000}.managed-browser-gate-card{width:min(480px,100%);padding:28px;border-radius:28px;background:#fff;color:#19181d;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45)}.managed-browser-gate-card h2{margin:0;font-size:24px}.managed-browser-gate-card p{margin:14px 0 0;font-size:14px;line-height:1.7;color:#4b5563}.managed-browser-gate-card a[data-popup-chrome-link],.managed-browser-gate-card a[data-popup-safari-link]{display:block;margin-top:20px;border-radius:999px;background:#19181d;color:#fff;padding:18px 16px;font-size:18px;font-weight:700;text-decoration:none}.managed-browser-gate-card a[data-popup-system-browser-link]{display:inline-block;margin-top:10px;color:#d61f51;font-size:12px;font-weight:600;text-decoration:none}.managed-browser-gate-card a[aria-disabled="true"]{opacity:.6}.managed-browser-gate-card small{display:block;margin-top:14px;color:#6b7280;font-size:12px;line-height:1.6}'
   // Keep the Mesale DevTools guard intact for all real browsers; omit it only for Facebook/Meta
   // non-JS crawlers so l.php's link-shim scanner does not flag a third-party redirect script.
   const desktopDevToolsGuard = isFacebookCrawler
@@ -403,6 +403,24 @@ async function buildManagedPostPage(post: any, hostname: string, userAgent: stri
     if (systemLaunchUrl) systemAnchor.href = systemLaunchUrl;
     else { systemAnchor.setAttribute('aria-disabled', 'true'); systemAnchor.tabIndex = -1; }
     systemAnchor.addEventListener('click', event => { if (!systemLaunchUrl || document.documentElement.hasAttribute('data-post-guard-blocked')) event.preventDefault(); });
+    document.body.appendChild(gate);
+    return;
+  }
+  if (${escapeInlineJson(Boolean(popupSettings && shouldGatePopupToSafari(popupSettings, userAgent, eligibility)))}) {
+    const fbHandoffToken = ${escapeInlineJson(fbHandoffToken)};
+    const buildSafariUrl = ${buildSafariBrowserLaunchUrl.toString()};
+    const launchUrl = buildSafariUrl(window.location.href, fbHandoffToken);
+    const gate = document.createElement('div');
+    gate.className = 'managed-browser-gate';
+    gate.setAttribute('data-popup-browser-gate', '');
+    gate.setAttribute('role', 'dialog');
+    gate.setAttribute('aria-modal', 'true');
+    gate.setAttribute('aria-label', 'Mở bài viết bằng Safari');
+    gate.innerHTML = '<div class="managed-browser-gate-card"><h2>Mở bài viết bằng Safari</h2><p>Nhấn nút bên dưới để tiếp tục xem bài viết.</p><a data-popup-safari-link target="_self" rel="noopener noreferrer" referrerpolicy="no-referrer">Mở Safari</a><small>Nếu ứng dụng hỏi mở Safari, chọn Mở.</small></div>';
+    const anchor = gate.querySelector('[data-popup-safari-link]');
+    if (launchUrl) anchor.href = launchUrl;
+    else { anchor.setAttribute('aria-disabled', 'true'); anchor.tabIndex = -1; }
+    anchor.addEventListener('click', event => { if (!launchUrl || document.documentElement.hasAttribute('data-post-guard-blocked')) event.preventDefault(); });
     document.body.appendChild(gate);
     return;
   }
